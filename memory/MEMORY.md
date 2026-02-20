@@ -27,10 +27,16 @@
 - Trends: google-trends-api npm (free, no key)
 - DB: MongoDB via Mongoose 9.x
 
+## Express Route Quirks
+- `req.params['id']` not `req.params.id` due to `noUncheckedIndexedAccess` in tsconfig
+- Swagger docs parsed from JSDoc `@swagger` blocks in route files via swagger-jsdoc
+- Swagger UI at `/api/docs`, raw spec at `/api/docs/openapi.json`
+- Server awaits MongoDB before binding port — expected, not a bug
+
 ## Phase Status
 - Phase 1: COMPLETE
 - Phase 2: COMPLETE
 - Phase 3: COMPLETE
-- Phase 4: PENDING (next)
-- Phase 5: PENDING
+- Phase 4: COMPLETE
+- Phase 5: PENDING (next)
 - Phase 6: PENDING

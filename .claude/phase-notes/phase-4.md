@@ -1,5 +1,10 @@
 # Phase 4: All Backend API Routes + Swagger/OpenAPI Documentation
-# Status: PENDING (start after Phase 3 complete)
+# Status: COMPLETE ✓ (2026-02-20)
+# Notes:
+# - 13 endpoints documented in OpenAPI spec (verified with swagger-jsdoc)
+# - Swagger UI at GET /api/docs, raw spec at GET /api/docs/openapi.json
+# - Server only starts after MongoDB connects (by design — await connectDB())
+# - req.params keys use bracket notation (req.params['id']) due to noUncheckedIndexedAccess
 
 ---
 

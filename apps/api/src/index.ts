@@ -5,6 +5,7 @@ import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import { connectDB } from './config/db'
 import { errorHandler } from './middleware/errorHandler'
+import { createSwaggerRouter } from './swagger/setup'
 
 // Routes
 import authRoutes from './routes/auth'
@@ -27,15 +28,22 @@ app.use(cookieParser())
 
 // ── Health Check ─────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    docs: `http://localhost:${PORT}/api/docs`,
+  })
 })
 
-// ── Routes ───────────────────────────────────────────────────────────────────
+// ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes)
 app.use('/api/persona', personaRoutes)
 app.use('/api/onboarding', onboardingRoutes)
 app.use('/api/trends', trendsRoutes)
 app.use('/api/suggestions', suggestionsRoutes)
+
+// ── Swagger UI ────────────────────────────────────────────────────────────────
+app.use('/api/docs', createSwaggerRouter())
 
 // ── 404 Handler ───────────────────────────────────────────────────────────────
 app.use((_req, res) => {
@@ -49,9 +57,10 @@ app.use(errorHandler)
 async function start() {
   await connectDB()
   app.listen(PORT, () => {
-    console.log(`[api] Server running on http://localhost:${PORT}`)
-    console.log(`[api] Health: http://localhost:${PORT}/api/health`)
-    console.log(`[api] Docs:   http://localhost:${PORT}/api/docs  (Phase 4)`)
+    console.log(`[api] Server running on  http://localhost:${PORT}`)
+    console.log(`[api] Health check:      http://localhost:${PORT}/api/health`)
+    console.log(`[api] Swagger UI:        http://localhost:${PORT}/api/docs`)
+    console.log(`[api] OpenAPI JSON:      http://localhost:${PORT}/api/docs/openapi.json`)
   })
 }
 
