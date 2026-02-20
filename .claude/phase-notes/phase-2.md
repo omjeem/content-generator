@@ -1,5 +1,6 @@
 # Phase 2: MongoDB Connection + All Schema Models + JWT Auth
-# Status: PENDING (start after Phase 1 complete)
+# Status: COMPLETE ✓ (2026-02-20)
+# Notes: Mongoose 9.2.1 installed — pre-hook uses async function without next param (Mongoose 9 style)
 
 ---
 

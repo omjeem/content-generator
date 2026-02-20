@@ -32,29 +32,30 @@ const userSchema = new Schema<IUserDocument>(
       maxlength: [100, 'Name too long'],
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: {
+      // Strip password from all JSON responses
+      transform(_doc, ret) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        delete (ret as any).password
+        return ret
+      },
+    },
+  }
 )
 
-// Hash password before saving
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next()
+// Hash password before saving (Mongoose 9 compatible)
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return
   this.password = await bcrypt.hash(this.password, 12)
-  next()
 })
 
 // Instance method to compare passwords
 userSchema.methods.comparePassword = async function (
   candidatePassword: string
 ): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password)
+  return bcrypt.compare(candidatePassword, this.password as string)
 }
-
-// Never return password in JSON responses
-userSchema.set('toJSON', {
-  transform: (_doc, ret) => {
-    delete ret.password
-    return ret
-  },
-})
 
 export const User: Model<IUserDocument> = mongoose.model<IUserDocument>('User', userSchema)
