@@ -134,9 +134,9 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
       industry: persona.industry ?? 'business',
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
     })
-    console.log(`[pipeline] Step 3: Found ${trends.trends.length} relevant trends.`)
+    console.log(`[pipeline] Step 3: Found ${trends.trends.length} relevant trends.`, trends)
   } catch (err) {
-    console.warn('[pipeline] Step 3: Trend research failed, continuing with empty trends:', err)
+    console.warn('[pipeline] Step 3: Trend research failed, continuing with empty trends:', err, trends)
     trends = { trends: [], rawTrends: [] }
   }
 

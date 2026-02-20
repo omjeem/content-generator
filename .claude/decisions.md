@@ -31,13 +31,22 @@
   - Fallback: If scraping fails, user pastes posts manually
 - **File**: `apps/api/src/services/linkedin.ts`
 
-## Decision 4: google-trends-api for Trend Research
-- **Chosen**: `google-trends-api` npm package
-- **Rejected**: Twitter/X API (paid), News API (limited free tier)
-- **Reason**: Completely free, no API key, no rate limiting for reasonable use.
-  Returns trending searches by category/geo.
-- **Backup**: Tavily free tier (TAVILY_API_KEY) for broader web search
-- **File**: `apps/api/src/services/trends.ts`
+## Decision 4: Gemini-powered Trend Generation (replaces google-trends-api)
+- **Originally chosen**: `google-trends-api` npm package
+- **Replaced on 2026-02-20** because:
+  - `relatedTopics` endpoint returns `{"default":{"rankedList":[]}}` — empty (Google requires consent cookies)
+  - `dailyTrends` endpoint returns a 404 HTML page — endpoint removed by Google
+  - Package version 4.9.2 is effectively dead
+- **New approach**: Call Gemini directly (`generateText` from `ai` + `@ai-sdk/google`)
+  - `getTrendingTopics(keywords, geo)` — asks Gemini for 10 relevant trending topics
+  - `getDailyTrends(geo)` — asks Gemini for 15 daily trending topics in the geo
+  - Returns JSON arrays, parsed and deduplicated
+  - Falls back to evergreen topics if Gemini call fails
+- **Files changed**:
+  - `apps/api/src/services/trends.ts` — full rewrite, no more google-trends-api import
+  - `apps/api/src/agents/trendResearch.ts` — removed `googleTrendsTool` (was using broken service),
+    agent now only does relevance-filtering + content-angle enrichment of Gemini-generated topics
+- **Result**: Produces rich, niche-specific trending topics with relevance reasons and content angles
 
 ## Decision 5: Mastra AI for Multi-Agent Orchestration
 - **Chosen**: Mastra AI (`@mastra/core`)
