@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --linkedin-blue: #0077B5;
+  --linkedin-dark: #005885;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}
