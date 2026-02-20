@@ -40,7 +40,7 @@ content-generator/          ← ROOT (Turborepo workspace)
 | Monorepo | Turborepo | Fast build caching, simple workspace, industry standard |
 | Backend | Hono + TypeScript | Lightweight, TypeScript-first, faster than Express |
 | AI Framework | Mastra AI | Native multi-agent, built-in working memory, tool use support |
-| LLM | Gemini API (google/gemini-1.5-pro) | Free tier, generous limits, strong reasoning |
+| LLM | Gemini API (google/gemini-2.5-flash) | Free tier, generous limits, strong reasoning |
 | LinkedIn Scraping | Puppeteer | No API key needed, most reliable headless scraper |
 | Trend Data | google-trends-api npm | Completely free, no signup, no key |
 | Database | MongoDB + Mongoose | Flexible schema for evolving persona/chat data |

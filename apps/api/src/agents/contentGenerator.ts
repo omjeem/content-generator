@@ -26,7 +26,7 @@ export type ContentIdeas = z.infer<typeof ContentIdeasSchema>
 export const contentGeneratorAgent = new Agent({
   id: 'content-generator',
   name: 'content-generator',
-  model: google('gemini-1.5-pro'), // Pro for highest quality ideas
+  model: google('gemini-2.5-flash'), // Pro for highest quality ideas
   instructions: `You are an expert LinkedIn ghostwriter and content strategist.
 
 You will receive a user persona and trending topics.

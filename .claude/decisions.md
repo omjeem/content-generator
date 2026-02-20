@@ -12,12 +12,12 @@
 - **Packages**: express, cors, cookie-parser, @types/express, @types/cors, @types/cookie-parser
 
 ## Decision 2: Gemini over OpenAI/Anthropic in Mastra
-- **Chosen**: Google Gemini (gemini-1.5-pro or gemini-2.5-flash)
+- **Chosen**: Google Gemini (gemini-2.5-flash or gemini-2.5-flash)
 - **Rejected**: OpenAI GPT-4, Anthropic Claude
 - **Reason**: Free tier available at ai.google.dev with no credit card needed.
   The user does not need to pay anything to run this app.
 - **Mastra config**: Use `@ai-sdk/google` provider in Mastra agent definitions
-- **Model ID**: `google('gemini-1.5-pro')` or `google('gemini-2.5-flash')`
+- **Model ID**: `google('gemini-2.5-flash')` or `google('gemini-2.5-flash')`
 
 ## Decision 3: Puppeteer for LinkedIn Scraping
 - **Chosen**: Puppeteer

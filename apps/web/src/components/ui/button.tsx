@@ -30,6 +30,19 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       lg: 'h-11 px-6 text-base gap-2',
     }
 
+    // asChild uses Radix Slot which requires exactly one child — no spinner
+    if (asChild) {
+      return (
+        <Comp
+          ref={ref}
+          className={cn(base, variants[variant], sizes[size], className)}
+          {...props}
+        >
+          {children}
+        </Comp>
+      )
+    }
+
     return (
       <Comp
         ref={ref}
