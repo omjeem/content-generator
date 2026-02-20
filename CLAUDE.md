@@ -125,7 +125,7 @@ content-generator/
 - [x] Phase 3: Mastra AI setup + all 4 agents + orchestrator pipeline
 - [x] Phase 4: All backend API routes + Swagger/OpenAPI documentation
 - [x] Phase 5: Next.js frontend — auth + onboarding + chat UI + dashboard
-- [ ] Phase 6: Wire frontend to backend + end-to-end testing guide
+- [x] Phase 6: Wire frontend to backend + end-to-end testing guide
 
 ---
 

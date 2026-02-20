@@ -58,7 +58,7 @@ const generateSchema = z.object({
  *                   type: array
  *                   items:
  *                     $ref: '#/components/schemas/Suggestion'
- *                 suggestionId:
+ *                 id:
  *                   type: string
  *                 trendsUsed:
  *                   type: array
@@ -89,7 +89,7 @@ router.post('/generate', async (req: AuthRequest, res: Response, next: NextFunct
       case 'success':
         res.json({
           suggestions: result.suggestions,
-          suggestionId: result.suggestionId,
+          id: result.suggestionId,
           trendsUsed: result.trendsUsed,
           generatedAt: new Date().toISOString(),
         })

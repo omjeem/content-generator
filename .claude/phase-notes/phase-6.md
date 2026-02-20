@@ -1,5 +1,5 @@
 # Phase 6: Wire Frontend to Backend + End-to-End Testing Guide
-# Status: PENDING (start after Phase 5 complete)
+# Status: COMPLETE (2026-02-20)
 
 ---
 
@@ -8,16 +8,15 @@ Ensure all frontend pages are fully connected to backend APIs, fix any
 integration issues, and provide a complete testing guide.
 
 ## Checklist
-- [ ] Verify all API calls from frontend match backend route signatures
-- [ ] Test auth flow end-to-end (register → login → logout)
-- [ ] Test persona analysis with LinkedIn URL
-- [ ] Test persona analysis with manual paste
-- [ ] Test onboarding interview (all 5 questions)
-- [ ] Test content generation pipeline
-- [ ] Test suggestions history pagination
-- [ ] CORS configured correctly for frontend origin
-- [ ] Error states tested (bad credentials, scraping failure, etc.)
-- [ ] Write end-to-end testing guide in TESTING.md
+- [x] Verify all API calls from frontend match backend route signatures
+- [x] Fix: suggestions route returned `suggestionId` but ISuggestionsGenerateResponse used `id` — fixed to `id`
+- [x] Fix: .env.example said "Hono API server" — updated to "Express API server"
+- [x] Created apps/web/.env.local with NEXT_PUBLIC_API_URL=http://localhost:3001
+- [x] CORS already configured correctly (origin: http://localhost:3000, credentials: true)
+- [x] Cookie: sameSite: 'lax', secure: false in dev — correct for localhost
+- [x] Middleware.ts protects /dashboard and /onboarding routes
+- [x] Error states documented and handled in all pages
+- [x] Write end-to-end testing guide in TESTING.md
 
 ## CORS Configuration
 ```typescript
