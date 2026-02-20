@@ -1,5 +1,13 @@
 # Phase 3: Mastra AI Setup + All 4 Agents + Orchestrator
-# Status: PENDING (start after Phase 2 complete)
+# Status: COMPLETE ✓ (2026-02-20)
+# IMPORTANT NOTES for future sessions:
+# - Mastra version: 1.5.0 — Agent requires 'id' field in addition to 'name'
+# - Import path: Agent from '@mastra/core/agent', createTool from '@mastra/core/tools'
+# - generate() returns result.text (string) — NOT result.object
+# - Structured output: parse JSON from result.text using regex, then Zod.parse()
+# - Tool execute receives raw input object (not {context: ...}) — use toolInput?.field ?? toolInput?.context?.field
+# - tsconfig lib must include "DOM" for Puppeteer page.evaluate() to see document
+# - google-trends-api has no @types package — use require() with manual interface types
 
 ---
 
