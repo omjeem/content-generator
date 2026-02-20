@@ -4,9 +4,10 @@ import { personaAnalystAgent, analyzePersona, resolvePostsFromInput } from './pe
 import { onboardingAgent } from './onboarding'
 import { trendResearchAgent, researchTrendsForUser } from './trendResearch'
 import { contentGeneratorAgent, generateContentIdeas } from './contentGenerator'
+import { personaChatAgent } from './personaChat'
 import { UserPersona } from '../models/UserPersona'
 import { ContentSuggestion } from '../models/ContentSuggestion'
-import type { ISuggestion } from '@repo/shared-types'
+import type { ISuggestion, IGenerateContextOptions } from '@repo/shared-types'
 
 // ── Mastra instance ───────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ export const mastra = new Mastra({
     onboarding: onboardingAgent,
     trendResearch: trendResearchAgent,
     contentGenerator: contentGeneratorAgent,
+    personaChat: personaChatAgent,
   },
 })
 
@@ -26,6 +28,7 @@ export interface PipelineInput {
   linkedinUrl?: string
   manualPosts?: string
   forceReanalyze?: boolean
+  context?: IGenerateContextOptions  // optional flexible generation context
 }
 
 export type PipelineStatus =
@@ -144,7 +147,7 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   let ideas
   try {
     console.log('[pipeline] Step 4: Generating content ideas...')
-    ideas = await generateContentIdeas({ persona, trends })
+    ideas = await generateContentIdeas({ persona, trends, context: input.context })
     console.log(`[pipeline] Step 4: Generated ${ideas.ideas.length} content ideas.`)
   } catch (err) {
     console.error('[pipeline] Step 4 error:', err)
@@ -165,6 +168,10 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
       format: idea.format,
       hook: idea.hook,
       whyItFits: idea.whyItFits,
+      seoKeywords: idea.seoKeywords ?? [],
+      clickbaitHooks: idea.clickbaitHooks ?? [],
+      postPointers: idea.postPointers ?? [],
+      callToAction: idea.callToAction ?? '',
     })),
   })
 

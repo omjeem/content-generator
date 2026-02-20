@@ -98,3 +98,43 @@
 - **Web (Next.js)**: Port 3000
 - **Why 3001 for API**: Next.js defaults to 3000, so API gets 3001 to avoid conflicts
 - **In .env**: `PORT=3001`, `NEXT_PUBLIC_API_URL=http://localhost:3001`
+
+## Decision 11: Flexible Content Generation (3 Modes) — 2026-02-21
+- **Chosen approach**: Pre-generate options panel with 3 modes: profile, topic-focus, chat-refined
+- **Why 3 modes**: Users have wildly different needs each session — sometimes they want
+  full-persona generation, sometimes they want to focus on a specific niche, sometimes they
+  want to clarify their thinking via chat first before generating
+- **Stateless refine-context endpoint**: Single `POST /api/suggestions/refine-context` that
+  receives full messages array — no session management needed, frontend owns the history
+- **Context passthrough**: `IGenerateContextOptions` interface threaded from frontend →
+  route → pipeline → generateContentIdeas → prompt. Agent gets a `## GENERATION CONTEXT OVERRIDE`
+  section added to the prompt with mode-specific guidance
+- **Files**: `suggestions.ts` route, `contentGenerator.ts`, `mastra.ts`, `GenerateOptionsPanel.tsx`
+
+## Decision 12: Hidden-Block Pattern for Structured AI Output — 2026-02-21
+- **Pattern**: `<!--BLOCK_NAME {...json...} BLOCK_NAME-->` embedded in LLM response
+- **Why**: Allows the LLM to return both human-readable text AND structured data in a
+  single response without needing strict JSON-only output (which LLMs often fail at)
+- **Already used in**: onboarding agent (`<!--INTERVIEW_DATA-->`) and refine-context route (`<!--CONTEXT_SUMMARY-->`)
+- **Extended to**: persona-chat agent (`<!--PERSONA_CHANGES-->`)
+- **Extraction**: Regex match `/<BLOCK_START\s*([\s\S]*?)\s*BLOCK_END>/` then JSON.parse
+- **Stripping**: Regex replace removes the block from the visible reply
+
+## Decision 13: Persona Chat with User-Approved Changes — 2026-02-21
+- **Pattern**: AI proposes changes → user reviews → user explicitly applies (2-step)
+- **Why not auto-apply**: Persona is critical data. Auto-applying AI suggestions could
+  overwrite carefully crafted personas with incorrect interpretations.
+- **Implementation**: `pendingChanges` returned in chat response → `PendingChangesCard`
+  shown in frontend → user clicks Apply → `POST /api/persona-chat/apply-changes`
+- **Partial updates**: Only fields present in `changes` object are updated via MongoDB `$set`
+- **Files**: `personaChat.ts` agent, `personaChat.ts` routes, `profile/page.tsx`, `PendingChangesCard.tsx`
+
+## Decision 14: Rich Content Brief in Each Suggestion — 2026-02-21
+- **Added fields**: `seoKeywords[]`, `clickbaitHooks[]`, `postPointers[]`, `callToAction`
+- **Why**: Users need a complete content brief they can immediately use to write the post,
+  not just an idea. The brief removes the "blank page" problem.
+- **Backward compat**: All new fields default to `[]` / `''` in Mongoose so existing
+  documents without these fields don't break
+- **Agent prompt**: Extended with concrete full example showing all 9 fields filled out
+- **UI**: Expandable "Full Content Brief" section in SuggestionCard with a "Copy Full Brief"
+  button that formats all fields into a clean copyable text block

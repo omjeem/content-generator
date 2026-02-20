@@ -3,12 +3,13 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { SuggestionCard } from '@/components/suggestions/SuggestionCard'
+import { GenerateOptionsPanel } from '@/components/suggestions/GenerateOptionsPanel'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { personaApi, suggestionsApi, ApiError } from '@/lib/api'
-import type { ISuggestion, IUserPersona } from '@repo/shared-types'
+import type { ISuggestion, IUserPersona, IGenerateContextOptions } from '@repo/shared-types'
 
-type GenerateState = 'idle' | 'loading' | 'done' | 'error'
+type GenerateState = 'idle' | 'choosing' | 'loading' | 'done' | 'error'
 
 const LOADING_STEPS = [
   'Analysing your LinkedIn persona…',
@@ -47,13 +48,13 @@ export default function DashboardPage() {
     return () => clearInterval(interval)
   }, [generateState])
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(async (context: IGenerateContextOptions) => {
     setGenerateError('')
     setGenerateState('loading')
     setSuggestions([])
 
     try {
-      const result = await suggestionsApi.generate()
+      const result = await suggestionsApi.generate({ context })
       setSuggestions(result.suggestions)
       setTrendsUsed(result.trendsUsed)
       setGenerateState('done')
@@ -117,10 +118,11 @@ export default function DashboardPage() {
 
       {/* Generate section */}
       {generateState !== 'done' && (
-        <Card className="mb-8">
-          <CardContent className="p-8 text-center">
-            {generateState === 'idle' && (
-              <>
+        <div className="mb-8">
+          {/* Idle — show the "Generate" button that opens the options panel */}
+          {generateState === 'idle' && (
+            <Card>
+              <CardContent className="p-8 text-center">
                 <p className="text-gray-600 mb-4 max-w-md mx-auto">
                   {!personaReady
                     ? 'Loading your profile…'
@@ -135,7 +137,7 @@ export default function DashboardPage() {
                 )}
                 <Button
                   size="lg"
-                  onClick={handleGenerate}
+                  onClick={() => setGenerateState('choosing')}
                   disabled={!interviewComplete || personaLoading}
                   className="min-w-[220px]"
                 >
@@ -149,32 +151,52 @@ export default function DashboardPage() {
                     first.
                   </p>
                 )}
-              </>
-            )}
+              </CardContent>
+            </Card>
+          )}
 
-            {generateState === 'loading' && (
-              <div className="space-y-4">
-                <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-linkedin/10 mb-2">
-                  <span className="text-2xl animate-spin">⚙️</span>
-                </div>
-                <p className="text-gray-700 font-medium">{LOADING_STEPS[loadingStep]}</p>
-                <div className="mx-auto max-w-xs h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-linkedin rounded-full animate-pulse" style={{ width: '60%' }} />
-                </div>
-                <p className="text-xs text-gray-400">This takes 10–20 seconds</p>
-              </div>
-            )}
+          {/* Choosing — show the options panel */}
+          {generateState === 'choosing' && (
+            <GenerateOptionsPanel
+              disabled={!interviewComplete || personaLoading}
+              onGenerate={handleGenerate}
+              onCancel={() => setGenerateState('idle')}
+            />
+          )}
 
-            {generateState === 'error' && (
-              <>
+          {/* Loading */}
+          {generateState === 'loading' && (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <div className="space-y-4">
+                  <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-linkedin/10 mb-2">
+                    <span className="text-2xl animate-spin">⚙️</span>
+                  </div>
+                  <p className="text-gray-700 font-medium">{LOADING_STEPS[loadingStep]}</p>
+                  <div className="mx-auto max-w-xs h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-linkedin rounded-full animate-pulse" style={{ width: '60%' }} />
+                  </div>
+                  <p className="text-xs text-gray-400">This takes 10–20 seconds</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Error */}
+          {generateState === 'error' && (
+            <Card>
+              <CardContent className="p-8 text-center">
                 <p className="text-red-600 mb-4">{generateError || 'Something went wrong.'}</p>
-                <Button onClick={handleGenerate} size="lg">
-                  Try Again
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                <div className="flex gap-3 justify-center">
+                  <Button variant="outline" onClick={() => setGenerateState('idle')}>Cancel</Button>
+                  <Button onClick={() => setGenerateState('choosing')} size="lg">
+                    Try Again
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Results */}

@@ -7,6 +7,11 @@ export interface ISuggestionItem {
   format: PostFormat
   hook: string
   whyItFits: string
+  // Rich content brief fields
+  seoKeywords: string[]
+  clickbaitHooks: string[]
+  postPointers: string[]
+  callToAction: string
 }
 
 export interface IContentSuggestionDocument extends Document {
@@ -28,6 +33,11 @@ const suggestionItemSchema = new Schema<ISuggestionItem>(
     },
     hook: { type: String, required: true },
     whyItFits: { type: String, required: true },
+    // Rich fields — default to [] / '' for backward-compat with old documents
+    seoKeywords: { type: [String], default: [] },
+    clickbaitHooks: { type: [String], default: [] },
+    postPointers: { type: [String], default: [] },
+    callToAction: { type: String, default: '' },
   },
   { _id: false }
 )

@@ -9,7 +9,7 @@ export interface IMessageDocument {
 export interface IChatSessionDocument extends Document {
   userId: mongoose.Types.ObjectId
   sessionId: string
-  agentType: 'onboarding' | 'orchestrator'
+  agentType: 'onboarding' | 'orchestrator' | 'persona-chat'
   messages: IMessageDocument[]
   contextSummary?: string
   createdAt: Date
@@ -48,7 +48,7 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
     },
     agentType: {
       type: String,
-      enum: ['onboarding', 'orchestrator'],
+      enum: ['onboarding', 'orchestrator', 'persona-chat'],
       required: true,
     },
     messages: {

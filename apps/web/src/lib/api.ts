@@ -10,6 +10,11 @@ import type {
   ISuggestionsGenerateResponse,
   IContentSuggestion,
   IPaginatedResponse,
+  IGenerateContextOptions,
+  IPersonaChatMessage,
+  IPersonaChatResponse,
+  IApplyPersonaChangesRequest,
+  IPersonaUpdateResponse,
 } from '@repo/shared-types'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
@@ -109,10 +114,23 @@ export const suggestionsApi = {
     linkedinUrl?: string
     manualPosts?: string
     forceReanalyze?: boolean
+    context?: IGenerateContextOptions
   }) =>
     request<ISuggestionsGenerateResponse>('/api/suggestions/generate', {
       method: 'POST',
       body: JSON.stringify(body ?? {}),
+    }),
+
+  refineContext: (body: { messages: { role: 'user' | 'assistant'; content: string }[] }) =>
+    request<{
+      reply: string
+      summary?: string
+      topicFocus?: string
+      targetAudienceOverride?: string
+      platformGoal?: string
+    }>('/api/suggestions/refine-context', {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
 
   list: (page = 1, limit = 10) =>
@@ -122,4 +140,25 @@ export const suggestionsApi = {
 
   getById: (id: string) =>
     request<{ suggestion: IContentSuggestion }>(`/api/suggestions/${id}`),
+}
+
+// ── Persona Chat ───────────────────────────────────────────────────────────────
+
+export const personaChatApi = {
+  chat: (body: IPersonaChatMessage) =>
+    request<IPersonaChatResponse>('/api/persona-chat/chat', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  applyChanges: (body: IApplyPersonaChangesRequest) =>
+    request<IPersonaUpdateResponse>('/api/persona-chat/apply-changes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getHistory: () =>
+    request<{ messages: IChatSession['messages']; sessionId: string | null }>(
+      '/api/persona-chat/history'
+    ),
 }

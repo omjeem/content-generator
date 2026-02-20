@@ -15,6 +15,7 @@ export interface IUserPersonaDocument extends Document {
   industry?: string
   contentPillars: string[]
   postingFrequency?: string
+  platformGoal?: 'thought-leadership' | 'lead-generation' | 'personal-brand' | 'hiring' | 'community-building'
   interviewComplete: boolean
   createdAt: Date
   updatedAt: Date
@@ -41,6 +42,10 @@ const userPersonaSchema = new Schema<IUserPersonaDocument>(
     industry: { type: String },
     contentPillars: { type: [String], default: [] },
     postingFrequency: { type: String },
+    platformGoal: {
+      type: String,
+      enum: ['thought-leadership', 'lead-generation', 'personal-brand', 'hiring', 'community-building'],
+    },
     interviewComplete: { type: Boolean, default: false },
   },
   { timestamps: true }

@@ -14,6 +14,19 @@ export interface IUser {
 
 // --- User Persona ---
 
+export type PlatformGoal =
+  | 'thought-leadership'
+  | 'lead-generation'
+  | 'personal-brand'
+  | 'hiring'
+  | 'community-building'
+
+export type ContentMixPreference =
+  | 'more-carousels'
+  | 'more-text-posts'
+  | 'more-polls'
+  | 'balanced'
+
 export interface IUserPersona {
   _id: string
   userId: string
@@ -30,6 +43,7 @@ export interface IUserPersona {
   industry?: string
   contentPillars: string[]
   postingFrequency?: string
+  platformGoal?: PlatformGoal     // ← new: user's primary LinkedIn objective
   interviewComplete: boolean
   createdAt: string
   updatedAt: string
@@ -47,7 +61,7 @@ export interface IChatSession {
   _id: string
   userId: string
   sessionId: string
-  agentType: 'onboarding' | 'orchestrator'
+  agentType: 'onboarding' | 'orchestrator' | 'persona-chat'  // ← added persona-chat
   messages: IMessage[]
   contextSummary?: string
   createdAt: string
@@ -64,6 +78,11 @@ export interface ISuggestion {
   format: PostFormat
   hook: string
   whyItFits: string
+  // ← new rich fields for full content brief
+  seoKeywords: string[]         // 3-5 hashtags / SEO keywords
+  clickbaitHooks: string[]      // 2-3 bolder alternative hook variants
+  postPointers: string[]        // 4-6 bullet points of content to write
+  callToAction: string          // suggested CTA to close the post
 }
 
 export interface IContentSuggestion {
@@ -117,6 +136,17 @@ export interface IOnboardingResponse {
   questionsAnswered: number
 }
 
+// --- Feature: Flexible Content Generation Context ---
+
+export interface IGenerateContextOptions {
+  mode: 'profile' | 'topic-focus' | 'chat-refined'
+  topicFocus?: string                    // used when mode='topic-focus'
+  targetAudienceOverride?: string
+  platformGoal?: PlatformGoal
+  contentMix?: ContentMixPreference
+  chatRefinementContext?: string         // summary from pre-gen chat, mode='chat-refined'
+}
+
 export interface ISuggestionsGenerateResponse {
   suggestions: ISuggestion[]
   id: string
@@ -130,4 +160,50 @@ export interface IPaginatedResponse<T> {
   page: number
   limit: number
   totalPages: number
+}
+
+// --- Feature: Persona Chat (live profile update via AI) ---
+
+export interface IPersonaPendingChanges {
+  goals?: string
+  targetAudience?: string
+  industry?: string
+  contentPillars?: string[]
+  postingFrequency?: string
+  topics?: string[]
+  tone?: string
+  writingStyle?: string
+  platformGoal?: PlatformGoal
+}
+
+export interface IPersonaChatMessage {
+  message: string
+  sessionId?: string
+}
+
+export interface IPersonaChatResponse {
+  reply: string
+  sessionId: string
+  pendingChanges?: IPersonaPendingChanges
+  changesApplied: boolean
+}
+
+export interface IApplyPersonaChangesRequest {
+  changes: IPersonaPendingChanges
+}
+
+export interface IPersonaUpdateResponse {
+  persona: IUserPersona
+  message: string
+}
+
+// --- Feature: Pre-generation context refinement chat ---
+
+export interface IRefineContextRequest {
+  messages: IMessage[]
+}
+
+export interface IRefineContextResponse {
+  reply: string
+  summary: string
 }

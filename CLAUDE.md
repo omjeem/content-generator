@@ -60,7 +60,8 @@ content-generator/
 │   │       │   ├── persona.ts         ← analyze, get persona
 │   │       │   ├── onboarding.ts      ← chat, session, status
 │   │       │   ├── trends.ts          ← get trends
-│   │       │   └── suggestions.ts     ← generate, list, get by id
+│   │       │   ├── suggestions.ts     ← generate, refine-context, list, get by id
+│   │       │   └── personaChat.ts     ← chat, apply-changes, history, persona
 │   │       ├── middleware/
 │   │       │   ├── auth.ts            ← JWT verification
 │   │       │   └── errorHandler.ts
@@ -69,7 +70,8 @@ content-generator/
 │   │       │   ├── personaAnalyst.ts  ← Agent 1
 │   │       │   ├── onboarding.ts      ← Agent 2
 │   │       │   ├── trendResearch.ts   ← Agent 3
-│   │       │   └── contentGenerator.ts← Agent 4
+│   │       │   ├── contentGenerator.ts← Agent 4 (with rich content brief)
+│   │       │   └── personaChat.ts     ← Agent 5 (live persona editor)
 │   │       ├── services/
 │   │       │   ├── linkedin.ts        ← Puppeteer scraper
 │   │       │   └── trends.ts          ← google-trends-api wrapper
@@ -93,12 +95,14 @@ content-generator/
 │           │   │   └── page.tsx       ← 2-step: URL/paste + interview chat
 │           │   └── dashboard/
 │           │       ├── layout.tsx     ← Protected layout with sidebar
-│           │       ├── page.tsx       ← Generate + latest suggestions
+│           │       ├── page.tsx       ← Generate (with options panel) + suggestions
+│           │       ├── profile/page.tsx ← Persona editor + AI strategy chat
 │           │       └── suggestions/page.tsx ← History
 │           ├── components/
 │           │   ├── ui/                ← shadcn/ui components
 │           │   ├── chat/              ← ChatInterface.tsx
-│           │   ├── suggestions/       ← SuggestionCard.tsx
+│           │   ├── suggestions/       ← SuggestionCard.tsx, GenerateOptionsPanel.tsx
+│           │   ├── persona/           ← PendingChangesCard.tsx
 │           │   └── layout/            ← Navbar.tsx, Sidebar.tsx
 │           ├── lib/
 │           │   ├── api.ts             ← API client functions
@@ -126,6 +130,7 @@ content-generator/
 - [x] Phase 4: All backend API routes + Swagger/OpenAPI documentation
 - [x] Phase 5: Next.js frontend — auth + onboarding + chat UI + dashboard
 - [x] Phase 6: Wire frontend to backend + end-to-end testing guide
+- [x] Phase 7: Flexible generation (3 modes), Persona Chat, Rich Content Briefs (2026-02-21)
 
 ---
 

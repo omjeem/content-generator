@@ -43,6 +43,9 @@ export function Navbar({ userName }: NavbarProps) {
           <Link href="/dashboard/suggestions" className="text-gray-600 hover:text-linkedin transition-colors">
             History
           </Link>
+          <Link href="/dashboard/profile" className="text-gray-600 hover:text-linkedin transition-colors">
+            My Profile
+          </Link>
           <Link href="/onboarding" className="text-gray-600 hover:text-linkedin transition-colors">
             Profile Setup
           </Link>

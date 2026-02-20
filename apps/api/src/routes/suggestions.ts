@@ -4,14 +4,41 @@ import { authenticate, AuthRequest } from '../middleware/auth'
 import { runContentPipelineWithRetry } from '../agents/mastra'
 import { ContentSuggestion } from '../models/ContentSuggestion'
 import mongoose from 'mongoose'
+import { generateText } from 'ai'
+import { google } from '@ai-sdk/google'
 
 const router = Router()
 router.use(authenticate)
+
+const platformGoalEnum = z.enum([
+  'thought-leadership',
+  'lead-generation',
+  'personal-brand',
+  'hiring',
+  'community-building',
+])
+
+const contentMixEnum = z.enum([
+  'more-carousels',
+  'more-text-posts',
+  'more-polls',
+  'balanced',
+])
+
+const generateContextSchema = z.object({
+  mode: z.enum(['profile', 'topic-focus', 'chat-refined']),
+  topicFocus: z.string().optional(),
+  targetAudienceOverride: z.string().optional(),
+  platformGoal: platformGoalEnum.optional(),
+  contentMix: contentMixEnum.optional(),
+  chatRefinementContext: z.string().optional(),
+}).optional()
 
 const generateSchema = z.object({
   linkedinUrl: z.string().url().optional(),
   manualPosts: z.string().optional(),
   forceReanalyze: z.boolean().optional().default(false),
+  context: generateContextSchema,
 })
 
 // ── POST /api/suggestions/generate ───────────────────────────────────────────
@@ -83,6 +110,7 @@ router.post('/generate', async (req: AuthRequest, res: Response, next: NextFunct
       linkedinUrl: body.linkedinUrl,
       manualPosts: body.manualPosts,
       forceReanalyze: body.forceReanalyze,
+      context: body.context,
     })
 
     switch (result.status) {
@@ -238,6 +266,121 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
     }
 
     res.json({ suggestion })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ── POST /api/suggestions/refine-context ─────────────────────────────────────
+// Stateless single-turn chat to refine content generation context before generating.
+// Frontend sends growing messages array; backend replies with AI message + extracted summary.
+/**
+ * @swagger
+ * /api/suggestions/refine-context:
+ *   post:
+ *     tags: [Suggestions]
+ *     summary: Chat to refine generation context before calling /generate
+ *     description: |
+ *       Stateless endpoint. Send the full messages array each call.
+ *       The AI assistant asks clarifying questions about topic focus, audience, goals.
+ *       When context is clear, it returns a summary to pass to /generate as chatRefinementContext.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [messages]
+ *             properties:
+ *               messages:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     role:
+ *                       type: string
+ *                       enum: [user, assistant]
+ *                     content:
+ *                       type: string
+ *     responses:
+ *       200:
+ *         description: AI reply + optional summary when context is gathered
+ */
+const refineContextSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+  })).min(1),
+})
+
+router.post('/refine-context', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { messages } = refineContextSchema.parse(req.body)
+
+    const systemPrompt = `You are a content strategy assistant helping a LinkedIn creator define the perfect angle for their next batch of content ideas.
+
+Your job: ask 2-3 focused questions to understand:
+1. What specific topic or niche they want to focus on (if any)
+2. Who exactly they want to reach with this batch
+3. What outcome they want (leads, engagement, brand awareness, etc.)
+
+Keep replies SHORT (2-4 sentences). Ask ONE question at a time.
+
+When you have enough context (after 2-3 exchanges), output a special block at the END of your reply:
+<!--CONTEXT_SUMMARY
+{
+  "summary": "A 2-3 sentence brief describing: topic focus, target audience, and desired outcome",
+  "topicFocus": "The main topic/niche focus (or null if not specified)",
+  "targetAudienceOverride": "Specific audience description (or null)",
+  "platformGoal": "thought-leadership|lead-generation|personal-brand|hiring|community-building (or null)"
+}
+CONTEXT_SUMMARY-->
+
+If you don't have enough context yet, do NOT include the summary block — just continue the conversation.`
+
+    const aiMessages = messages.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+
+    const { text } = await generateText({
+      model: google('gemini-2.5-flash'),
+      system: systemPrompt,
+      messages: aiMessages,
+    })
+
+    // Extract structured summary if present
+    const summaryMatch = text.match(/<!--CONTEXT_SUMMARY\s*([\s\S]*?)\s*CONTEXT_SUMMARY-->/)
+    let summary: string | undefined
+    let topicFocus: string | undefined
+    let targetAudienceOverride: string | undefined
+    let platformGoal: string | undefined
+
+    if (summaryMatch) {
+      try {
+        const parsed = JSON.parse(summaryMatch[1]!)
+        summary = parsed.summary
+        topicFocus = parsed.topicFocus ?? undefined
+        targetAudienceOverride = parsed.targetAudienceOverride ?? undefined
+        platformGoal = parsed.platformGoal ?? undefined
+      } catch {
+        // ignore parse error, just return the reply
+      }
+    }
+
+    // Strip the summary block from the visible reply
+    const visibleReply = text.replace(/<!--CONTEXT_SUMMARY[\s\S]*?CONTEXT_SUMMARY-->/g, '').trim()
+
+    res.json({
+      reply: visibleReply,
+      summary,
+      topicFocus,
+      targetAudienceOverride,
+      platformGoal,
+    })
   } catch (err) {
     next(err)
   }
