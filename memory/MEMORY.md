@@ -38,5 +38,5 @@
 - Phase 2: COMPLETE
 - Phase 3: COMPLETE
 - Phase 4: COMPLETE
-- Phase 5: PENDING (next)
-- Phase 6: PENDING
+- Phase 5: COMPLETE
+- Phase 6: PENDING (next)

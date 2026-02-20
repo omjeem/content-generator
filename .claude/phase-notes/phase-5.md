@@ -1,5 +1,5 @@
 # Phase 5: Next.js Frontend
-# Status: PENDING (start after Phase 4 complete)
+# Status: COMPLETE (2026-02-20)
 
 ---
 
@@ -8,17 +8,31 @@ Build the complete frontend — auth pages, onboarding flow, chat UI, and
 suggestions dashboard. All pages styled with Tailwind + shadcn/ui.
 
 ## Checklist
-- [ ] Install shadcn/ui and init
-- [ ] apps/web/src/lib/api.ts — API client (axios or fetch wrapper)
-- [ ] apps/web/src/lib/auth.ts — JWT/cookie management
-- [ ] apps/web/src/types/index.ts — import from @repo/shared-types
-- [ ] Auth pages: /login, /register
-- [ ] Onboarding page: /onboarding (2-step flow)
-- [ ] Dashboard: /dashboard (suggestions + generate button)
-- [ ] Suggestions history: /dashboard/suggestions
-- [ ] Layout with navbar
-- [ ] Protected route wrapper
-- [ ] Loading states and error handling
+- [x] Install shadcn/ui and init (axios, lucide-react, clsx, tailwind-merge, Radix UI primitives)
+- [x] apps/web/src/lib/api.ts — API client (fetch wrapper with ApiError class)
+- [x] apps/web/src/lib/utils.ts — cn() helper
+- [x] Auth pages: /login, /register
+- [x] Onboarding page: /onboarding (3-step: profile-input → interview → complete)
+- [x] Dashboard: /dashboard (status cards + generate + suggestion cards)
+- [x] Suggestions history: /dashboard/suggestions (paginated, expandable sets)
+- [x] Dashboard layout: apps/web/src/app/dashboard/layout.tsx
+- [x] Layout with navbar (Navbar.tsx with logout)
+- [x] Protected route wrapper (apps/web/src/middleware.ts)
+- [x] Loading states and error handling throughout
+
+## Files Created
+- src/lib/api.ts — Full typed API client (authApi, personaApi, onboardingApi, suggestionsApi)
+- src/lib/utils.ts — cn() helper
+- src/components/ui/{button,input,textarea,card,badge}.tsx
+- src/components/layout/Navbar.tsx
+- src/components/chat/ChatInterface.tsx
+- src/components/suggestions/SuggestionCard.tsx
+- src/app/(auth)/login/page.tsx
+- src/app/(auth)/register/page.tsx
+- src/app/onboarding/page.tsx
+- src/app/dashboard/layout.tsx
+- src/app/dashboard/page.tsx
+- src/app/dashboard/suggestions/page.tsx
 
 ## Page Specifications
 
