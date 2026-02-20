@@ -2,8 +2,8 @@ import { z } from 'zod'
 
 const envSchema = z.object({
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
-  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  GEMINI_API_KEY: z.string().min(1, 'GEMINI_API_KEY is required'),
+  JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
+  GOOGLE_GENERATIVE_AI_API_KEY: z.string().min(1, 'GOOGLE_GENERATIVE_AI_API_KEY is required'),
   PORT: z.string().default('3001'),
   NEXT_PUBLIC_API_URL: z.string().default('http://localhost:3000'),
   // Optional — fallback for trend research

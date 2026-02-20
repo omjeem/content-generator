@@ -226,7 +226,7 @@ Access to fetch at 'http://localhost:3001/...' from origin 'http://localhost:300
 Content generation failed: ...
 ```
 **Check:** `GEMINI_API_KEY` is set. Visit https://ai.google.dev to get a free key.
-**Check:** Free tier limits: 15 RPM, 1M tokens/day for `gemini-1.5-flash`.
+**Check:** Free tier limits: 15 RPM, 1M tokens/day for `gemini-2.5-flash`.
 **Fix:** If hitting rate limits, wait 60 seconds and retry.
 
 ---

@@ -145,7 +145,7 @@ Check: IP whitelist in Atlas allows 0.0.0.0/0 for development
 
 ### Gemini API rate limit
 ```
-Fix: Use gemini-1.5-flash instead of gemini-1.5-pro (higher free quota)
+Fix: Use gemini-2.5-flash instead of gemini-1.5-pro (higher free quota)
 ```
 
 ### LinkedIn scraping blocked

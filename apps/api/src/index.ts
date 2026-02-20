@@ -1,5 +1,4 @@
-import 'dotenv/config'
-import './config/env' // Validate env vars on startup — exits if invalid
+import './config/env' // Validate env vars — .env loaded via nodemon --require ../../load-env.cjs
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
@@ -19,7 +18,7 @@ const PORT = process.env.PORT || 3001
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000',
+  origin: true,   // reflect request origin — allows any origin in dev
   credentials: true,
 }))
 app.use(express.json())

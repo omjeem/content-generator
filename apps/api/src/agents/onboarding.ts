@@ -36,7 +36,7 @@ export type InterviewAnswers = z.infer<typeof InterviewAnswersSchema>
 export const onboardingAgent = new Agent({
   id: 'onboarding-interview',
   name: 'onboarding-interview',
-  model: google('gemini-1.5-flash'),
+  model: google('gemini-2.5-flash'),
   instructions: `You are a friendly LinkedIn content strategist conducting an onboarding interview.
 
 Your job is to gather information about the user's LinkedIn content strategy by asking targeted questions ONE AT A TIME.

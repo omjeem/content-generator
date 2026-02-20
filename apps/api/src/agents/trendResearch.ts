@@ -47,7 +47,7 @@ export type TrendResult = z.infer<typeof TrendResultSchema>
 export const trendResearchAgent = new Agent({
   id: 'trend-research',
   name: 'trend-research',
-  model: google('gemini-1.5-flash'),
+  model: google('gemini-2.5-flash'),
   instructions: `You are a trend research specialist for LinkedIn content creators.
 
 Given a user's industry and topics, use the google-trends tool to find trending topics,

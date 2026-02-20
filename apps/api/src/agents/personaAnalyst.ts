@@ -51,7 +51,7 @@ const linkedinScrapeTool = createTool({
 export const personaAnalystAgent = new Agent({
   id: 'persona-analyst',
   name: 'persona-analyst',
-  model: google('gemini-1.5-flash'),
+  model: google('gemini-2.5-flash'),
   instructions: `You are an expert LinkedIn content analyst.
 
 Given a collection of LinkedIn posts from a single author, analyse their content and extract:

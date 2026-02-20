@@ -7,7 +7,7 @@
 - Structured output: parse JSON from `result.text` with regex, then Zod.parse()
 - Tool `execute` receives raw input — access as `toolInput?.field ?? toolInput?.context?.field`
 - `@ai-sdk/google` exports: `createGoogleGenerativeAI` and `google` (default provider)
-- Model: `google('gemini-1.5-flash')` for fast agents, `google('gemini-1.5-pro')` for quality
+- Model: `google('gemini-2.5-flash')` for fast agents, `google('gemini-1.5-pro')` for quality
 
 ## TypeScript Quirks Found
 - Mongoose 9.x: pre-hook uses `async function()` without `next` param
@@ -22,7 +22,7 @@
 ## Tech Stack (immutable decisions)
 - Backend: Express (NOT Hono — user requested Express on 2026-02-20)
 - AI: Mastra 1.5.0 + @ai-sdk/google (Gemini)
-- LLM: gemini-1.5-flash (agents), gemini-1.5-pro (content generator)
+- LLM: gemini-2.5-flash (agents), gemini-1.5-pro (content generator)
 - Scraping: Puppeteer (headless, with ScrapingBlockedError fallback)
 - Trends: google-trends-api npm (free, no key)
 - DB: MongoDB via Mongoose 9.x
