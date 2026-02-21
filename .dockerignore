@@ -1,0 +1,57 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .dockerignore — keeps Docker build context small and fast
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Dependencies — always reinstalled inside the container
+node_modules
+**/node_modules
+
+# Build outputs — rebuilt inside the container
+dist
+**/dist
+.next
+**/.next
+out
+**/out
+
+# Turbo cache
+.turbo
+**/.turbo
+*.tsbuildinfo
+
+# Environment files — NEVER include secrets in Docker images
+.env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Editor / OS
+.DS_Store
+.vscode
+.idea
+Thumbs.db
+*.swp
+
+# Test / Coverage
+coverage
+**/coverage
+*.test.ts
+*.spec.ts
+
+# Docs / Dev-only files
+TESTING.md
+README.md
+*.md
+!packages/shared-types/README.md
+
+# Misc
+cookies.txt
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
