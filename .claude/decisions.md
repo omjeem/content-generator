@@ -31,22 +31,52 @@
   - Fallback: If scraping fails, user pastes posts manually
 - **File**: `apps/api/src/services/linkedin.ts`
 
-## Decision 4: Gemini-powered Trend Generation (replaces google-trends-api)
-- **Originally chosen**: `google-trends-api` npm package
-- **Replaced on 2026-02-20** because:
-  - `relatedTopics` endpoint returns `{"default":{"rankedList":[]}}` — empty (Google requires consent cookies)
-  - `dailyTrends` endpoint returns a 404 HTML page — endpoint removed by Google
-  - Package version 4.9.2 is effectively dead
-- **New approach**: Call Gemini directly (`generateText` from `ai` + `@ai-sdk/google`)
-  - `getTrendingTopics(keywords, geo)` — asks Gemini for 10 relevant trending topics
-  - `getDailyTrends(geo)` — asks Gemini for 15 daily trending topics in the geo
-  - Returns JSON arrays, parsed and deduplicated
-  - Falls back to evergreen topics if Gemini call fails
-- **Files changed**:
-  - `apps/api/src/services/trends.ts` — full rewrite, no more google-trends-api import
-  - `apps/api/src/agents/trendResearch.ts` — removed `googleTrendsTool` (was using broken service),
-    agent now only does relevance-filtering + content-angle enrichment of Gemini-generated topics
-- **Result**: Produces rich, niche-specific trending topics with relevance reasons and content angles
+## Decision 4: Real-API Trend Fetching (replaces LLM-hallucinated trends) — updated 2026-02-21
+- **History**: google-trends-api v4.9.2 broken on 2026-02-20 (endpoints dead/blocked)
+- **Interim fix**: Replaced with Gemini `generateText` (LLM hallucinated trends — no real data)
+- **Final fix on 2026-02-21**: Replaced with real live API sources — no LLM hallucination
+
+### Data Sources (3-tier, highest quality first)
+
+**Tier 1 — Tavily** (when `TAVILY_API_KEY` is set)
+- AI-optimised web search engine built for AI agents
+- `topic: "news"`, `time_range: "week"` — real articles from the past 7 days
+- Returns relevance-scored results for the user's exact niche keywords
+- npm: `@tavily/core`, Free: 1,000 searches/month
+
+**Tier 2 — Hacker News Algolia + RSS Feeds** (always-on, zero API keys)
+- **HN Algolia** (`hn.algolia.com/api/v1/search_by_date`):
+  - No API key, ~10,000 req/hour, completely free
+  - Filters by `points>10` to ensure community-validated quality
+  - Best for: AI/ML, SaaS, startup, engineering, product management topics
+- **RSS Feeds** (curated 6 sources):
+  - TechCrunch, HBR, VentureBeat, Fast Company, MIT Tech Review, Inc. Magazine
+  - No keys, no rate limits, plain HTTP fetch via `rss-parser` npm package
+  - Feed selection is dynamic: top 3 feeds by keyword relevance score are chosen per request
+  - Best for: business, leadership, marketing, innovation, entrepreneurship
+
+**Tier 3 — Evergreen fallback** (no network call)
+- Returns content-pillar-based topics if all APIs fail
+- Ensures the pipeline never blocks on trend fetch errors
+
+### Architecture change
+- `fetchRealTrendingContent(keywords, industry, geo)` — new main export, returns `RawTrendItem[]`
+  with `title`, `url`, `source`, `score`, `publishedAt` from real articles
+- `getTrendingTopics` / `getDailyTrends` kept as deprecated compatibility wrappers
+- `trendResearchAgent` role changed: it now receives REAL article titles and is instructed
+  NOT to invent topics — only filter + enrich the real data with LinkedIn angles
+- All 3 sources (Tavily + HN + RSS) called in parallel via `Promise.all` for speed
+- Deduplication by title normalisation; ranked by score then source quality
+
+### New packages
+- `rss-parser@3.13.0` — parses RSS/Atom feeds, ships TS types, no key needed
+- `@tavily/core@0.7.1` — official Tavily client, optional (only used if key set)
+
+### Files changed
+- `apps/api/src/services/trends.ts` — full rewrite with real API sources
+- `apps/api/src/agents/trendResearch.ts` — updated prompt to receive real article titles
+- `apps/api/package.json` — added `rss-parser` and `@tavily/core`
+- `.env.example` — updated Tavily comment to reflect new role
 
 ## Decision 5: Mastra AI for Multi-Agent Orchestration
 - **Chosen**: Mastra AI (`@mastra/core`)
