@@ -59,13 +59,20 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
 rawTrends should list ALL the input titles (up to 30).`,
 })
 
+// ── Usage tuple type ──────────────────────────────────────────────────────────
+
+export interface TrendResearchResult {
+  result: TrendResult
+  usage: { inputTokens: number; outputTokens: number }
+}
+
 // ── Helper: run trend research for a user ────────────────────────────────────
 
 export async function researchTrendsForUser(input: {
   industry: string
   topics: string[]
   geo?: string
-}): Promise<TrendResult> {
+}): Promise<TrendResearchResult> {
   const geo = input.geo ?? 'US'
   const keywords = [input.industry, ...input.topics].filter(Boolean).slice(0, 6)
 
@@ -90,7 +97,7 @@ export async function researchTrendsForUser(input: {
   // ── Fallback if all APIs fail ─────────────────────────────────────────────
   if (rawItems.length === 0) {
     console.warn('[trendResearch] All APIs failed — using evergreen fallback')
-    return buildFallbackResult(input.industry, input.topics)
+    return { result: buildFallbackResult(input.industry, input.topics), usage: { inputTokens: 0, outputTokens: 0 } }
   }
 
   // ── Step 2: Format items for the agent ───────────────────────────────────
@@ -123,27 +130,32 @@ Select the 4-8 most relevant stories. Add relevance reason and content angle for
 Return ONLY the JSON object.`
 
   try {
-    const result = await trendResearchAgent.generate(prompt)
-    const text = result.text ?? ''
+    const agentResult = await trendResearchAgent.generate(prompt)
+    const text = agentResult.text ?? ''
     console.log(`[trendResearch] Agent responded (${text.length} chars)`)
+
+    const usage = {
+      inputTokens: agentResult.usage?.inputTokens ?? 0,
+      outputTokens: agentResult.usage?.outputTokens ?? 0,
+    }
 
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) {
       console.warn('[trendResearch] No JSON in agent response — using fallback with raw titles')
-      return buildFallbackResult(input.industry, input.topics, allRawTitles)
+      return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage }
     }
 
     const parsed = TrendResultSchema.safeParse(JSON.parse(jsonMatch[0]))
     if (!parsed.success) {
       console.warn('[trendResearch] Schema validation failed:', parsed.error.message)
-      return buildFallbackResult(input.industry, input.topics, allRawTitles)
+      return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage }
     }
 
     console.log(`[trendResearch] ✓ ${parsed.data.trends.length} curated trends from real data`)
-    return parsed.data
+    return { result: parsed.data, usage }
   } catch (err) {
     console.error('[trendResearch] Agent error:', (err as Error).message)
-    return buildFallbackResult(input.industry, input.topics, allRawTitles)
+    return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage: { inputTokens: 0, outputTokens: 0 } }
   }
 }
 

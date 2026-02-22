@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { runOnboardingChat, getInterviewStatus } from '../agents/onboarding'
+import { checkTokenQuota } from '../services/tokenUsage'
 import { ChatSession } from '../models/ChatSession'
 import mongoose from 'mongoose'
 
@@ -62,6 +63,18 @@ const chatSchema = z.object({
 router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = chatSchema.parse(req.body)
+
+    // Pre-flight quota check
+    const quota = await checkTokenQuota(req.userId!)
+    if (!quota.allowed) {
+      res.status(429).json({
+        error: 'Token quota exceeded',
+        message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
+        tokensUsed: quota.tokensUsed,
+        tokenLimit: quota.tokenLimit,
+      })
+      return
+    }
 
     const result = await runOnboardingChat({
       userId: req.userId!,

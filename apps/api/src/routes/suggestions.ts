@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { runContentPipelineWithRetry } from '../agents/mastra'
 import { ContentSuggestion } from '../models/ContentSuggestion'
+import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
 import mongoose from 'mongoose'
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
@@ -142,6 +143,12 @@ router.post('/generate', async (req: AuthRequest, res: Response, next: NextFunct
           error: result.message,
           scrapingError: result.scrapingError,
           fallback: 'Use the manualPosts field to paste your LinkedIn posts directly.',
+        })
+        break
+
+      case 'quota_exceeded':
+        res.status(429).json({
+          error: result.message ?? 'Token quota exceeded.',
         })
         break
 
@@ -320,6 +327,18 @@ router.post('/refine-context', async (req: AuthRequest, res: Response, next: Nex
   try {
     const { messages } = refineContextSchema.parse(req.body)
 
+    // Pre-flight quota check
+    const quota = await checkTokenQuota(req.userId!)
+    if (!quota.allowed) {
+      res.status(429).json({
+        error: 'Token quota exceeded',
+        message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
+        tokensUsed: quota.tokensUsed,
+        tokenLimit: quota.tokenLimit,
+      })
+      return
+    }
+
     const systemPrompt = `You are a content strategy assistant helping a LinkedIn creator define the perfect angle for their next batch of content ideas.
 
 Your job: ask 2-3 focused questions to understand:
@@ -346,10 +365,20 @@ If you don't have enough context yet, do NOT include the summary block — just 
       content: m.content,
     }))
 
-    const { text } = await generateText({
+    const { text, usage: genUsage } = await generateText({
       model: google('gemini-2.5-flash'),
       system: systemPrompt,
       messages: aiMessages,
+    })
+
+    // Track refine-context token usage — fire-and-forget
+    trackTokenUsage({
+      userId: req.userId!,
+      agent: 'refine-context',
+      operation: 'refine_context',
+      inputTokens: genUsage?.inputTokens ?? 0,
+      outputTokens: genUsage?.outputTokens ?? 0,
+      totalTokens: (genUsage?.inputTokens ?? 0) + (genUsage?.outputTokens ?? 0),
     })
 
     // Extract structured summary if present

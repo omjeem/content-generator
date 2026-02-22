@@ -15,6 +15,8 @@ import type {
   IPersonaChatResponse,
   IApplyPersonaChangesRequest,
   IPersonaUpdateResponse,
+  ITokenUsageSummary,
+  ITokenUsageLog,
 } from '@repo/shared-types'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
@@ -140,6 +142,15 @@ export const suggestionsApi = {
 
   getById: (id: string) =>
     request<{ suggestion: IContentSuggestion }>(`/api/suggestions/${id}`),
+}
+
+// ── Token Usage ───────────────────────────────────────────────────────────────
+
+export const tokenApi = {
+  getUsage: () => request<ITokenUsageSummary>('/api/tokens/usage'),
+
+  getLogs: (page = 1, limit = 20) =>
+    request<IPaginatedResponse<ITokenUsageLog>>(`/api/tokens/logs?page=${page}&limit=${limit}`),
 }
 
 // ── Persona Chat ───────────────────────────────────────────────────────────────

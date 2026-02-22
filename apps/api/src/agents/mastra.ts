@@ -7,6 +7,7 @@ import { contentGeneratorAgent, generateContentIdeas } from './contentGenerator'
 import { personaChatAgent } from './personaChat'
 import { UserPersona } from '../models/UserPersona'
 import { ContentSuggestion } from '../models/ContentSuggestion'
+import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
 import type { ISuggestion, IGenerateContextOptions } from '@repo/shared-types'
 
 // ── Mastra instance ───────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ export type PipelineStatus =
   | 'interview_required'
   | 'persona_required'
   | 'scraping_blocked'
+  | 'quota_exceeded'
   | 'error'
 
 export interface PipelineResult {
@@ -51,6 +53,15 @@ export interface PipelineResult {
 
 export async function runContentPipeline(input: PipelineInput): Promise<PipelineResult> {
   const userObjectId = new mongoose.Types.ObjectId(input.userId)
+
+  // ── STEP 0: Token quota check ─────────────────────────────────────────────
+  const quota = await checkTokenQuota(input.userId)
+  if (!quota.allowed) {
+    return {
+      status: 'quota_exceeded',
+      message: `Token quota exceeded. You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
+    }
+  }
 
   // ── STEP 1: Persona Analysis (Agent 1) ──────────────────────────────────────
   try {
@@ -80,7 +91,17 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
         }
       }
 
-      const analysis = await analyzePersona(posts)
+      const { analysis, usage: personaUsage } = await analyzePersona(posts)
+
+      // Track persona analysis token usage — fire-and-forget
+      trackTokenUsage({
+        userId: input.userId,
+        agent: 'persona-analyst',
+        operation: 'persona_analysis',
+        inputTokens: personaUsage.inputTokens,
+        outputTokens: personaUsage.outputTokens,
+        totalTokens: personaUsage.inputTokens + personaUsage.outputTokens,
+      })
 
       await UserPersona.findOneAndUpdate(
         { userId: userObjectId },
@@ -133,10 +154,22 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   let trends
   try {
     console.log('[pipeline] Step 3: Researching trends...')
-    trends = await researchTrendsForUser({
+    const { result: trendResult, usage: trendUsage } = await researchTrendsForUser({
       industry: persona.industry ?? 'business',
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
     })
+    trends = trendResult
+
+    // Track trend research token usage — fire-and-forget
+    trackTokenUsage({
+      userId: input.userId,
+      agent: 'trend-research',
+      operation: 'trend_research',
+      inputTokens: trendUsage.inputTokens,
+      outputTokens: trendUsage.outputTokens,
+      totalTokens: trendUsage.inputTokens + trendUsage.outputTokens,
+    })
+
     console.log(`[pipeline] Step 3: Found ${trends.trends.length} relevant trends.`, trends)
   } catch (err) {
     console.warn('[pipeline] Step 3: Trend research failed, continuing with empty trends:', err, trends)
@@ -144,11 +177,14 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   }
 
   // ── STEP 4: Content Generation (Agent 4) ─────────────────────────────────────
-  let ideas
+  let contentIdeas
+  let contentUsage = { inputTokens: 0, outputTokens: 0 }
   try {
     console.log('[pipeline] Step 4: Generating content ideas...')
-    ideas = await generateContentIdeas({ persona, trends, context: input.context })
-    console.log(`[pipeline] Step 4: Generated ${ideas.ideas.length} content ideas.`)
+    const genResult = await generateContentIdeas({ persona, trends, context: input.context })
+    contentIdeas = genResult.ideas
+    contentUsage = genResult.usage
+    console.log(`[pipeline] Step 4: Generated ${contentIdeas.ideas.length} content ideas.`)
   } catch (err) {
     console.error('[pipeline] Step 4 error:', err)
     return {
@@ -162,7 +198,7 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
     userId: userObjectId,
     generatedAt: new Date(),
     trendsUsed: trends.rawTrends,
-    suggestions: ideas.ideas.map((idea) => ({
+    suggestions: contentIdeas.ideas.map((idea) => ({
       topic: idea.topic,
       angle: idea.angle,
       format: idea.format,
@@ -175,11 +211,22 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
     })),
   })
 
+  // Track content generation token usage — fire-and-forget (after save so we have suggestionId)
+  trackTokenUsage({
+    userId: input.userId,
+    agent: 'content-generator',
+    operation: 'content_generation',
+    inputTokens: contentUsage.inputTokens,
+    outputTokens: contentUsage.outputTokens,
+    totalTokens: contentUsage.inputTokens + contentUsage.outputTokens,
+    metadata: { suggestionId: String(saved._id) },
+  })
+
   console.log(`[pipeline] Done. Saved suggestion set: ${saved._id}`)
 
   return {
     status: 'success',
-    suggestions: ideas.ideas as ISuggestion[],
+    suggestions: contentIdeas.ideas as ISuggestion[],
     suggestionId: String(saved._id),
     trendsUsed: trends.rawTrends,
   }

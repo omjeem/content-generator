@@ -3,6 +3,7 @@ import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ChatSession } from '../models/ChatSession'
 import { UserPersona } from '../models/UserPersona'
+import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
 import mongoose from 'mongoose'
 import type { IUserPersonaDocument } from '../models/UserPersona'
 import type { IPersonaPendingChanges } from '@repo/shared-types'
@@ -87,6 +88,14 @@ export interface PersonaChatOutput {
 export async function runPersonaChat(input: PersonaChatInput): Promise<PersonaChatOutput> {
   const { userId, message } = input
 
+  // Pre-flight quota check — throws 429 if blocked
+  const quota = await checkTokenQuota(userId)
+  if (!quota.allowed) {
+    const err = new Error(`Token quota exceeded. Used ${quota.tokensUsed.toLocaleString()} of ${quota.tokenLimit.toLocaleString()} tokens.`)
+    ;(err as NodeJS.ErrnoException & { statusCode: number }).statusCode = 429
+    throw err
+  }
+
   // Load current persona for context
   const persona = await UserPersona.findOne({ userId: new mongoose.Types.ObjectId(userId) })
 
@@ -131,6 +140,17 @@ Please respond to the user's latest message.`
 
   const result = await personaChatAgent.generate(prompt)
   const reply = result.text
+
+  // Track token usage — fire-and-forget
+  trackTokenUsage({
+    userId,
+    agent: 'persona-chat',
+    operation: 'persona_chat',
+    inputTokens: result.usage?.inputTokens ?? 0,
+    outputTokens: result.usage?.outputTokens ?? 0,
+    totalTokens: (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
+    metadata: { sessionId: session.sessionId },
+  })
 
   // Parse pending changes
   const pendingChanges = parsePersonaChanges(reply)

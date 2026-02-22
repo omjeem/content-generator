@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { IUserPersonaDocument } from '../models/UserPersona'
 import type { TrendResult } from './trendResearch'
 import type { IGenerateContextOptions } from '@repo/shared-types'
+import type { TrendResearchResult } from './trendResearch'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -81,13 +82,20 @@ Return ONLY a valid JSON object (no markdown, no extra text):
 }`,
 })
 
+// ── Usage tuple type ──────────────────────────────────────────────────────────
+
+export interface ContentGenerationResult {
+  ideas: ContentIdeas
+  usage: { inputTokens: number; outputTokens: number }
+}
+
 // ── Helper: generate content ideas ───────────────────────────────────────────
 
 export async function generateContentIdeas(input: {
   persona: IUserPersonaDocument
-  trends: TrendResult
+  trends: TrendResult | TrendResearchResult['result']
   context?: IGenerateContextOptions
-}): Promise<ContentIdeas> {
+}): Promise<ContentGenerationResult> {
   const { persona, trends, context } = input
 
   const trendsList = trends.trends.length
@@ -129,7 +137,13 @@ Return ONLY the JSON object with the ideas array.`
     throw new Error('Content generator did not return valid JSON')
   }
 
-  return ContentIdeasSchema.parse(JSON.parse(jsonMatch[0]))
+  return {
+    ideas: ContentIdeasSchema.parse(JSON.parse(jsonMatch[0])),
+    usage: {
+      inputTokens: result.usage?.inputTokens ?? 0,
+      outputTokens: result.usage?.outputTokens ?? 0,
+    },
+  }
 }
 
 // ── Build optional context override section ───────────────────────────────────

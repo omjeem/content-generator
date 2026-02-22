@@ -77,9 +77,21 @@ Respond with valid JSON matching this exact structure:
   tools: { scrapeLinkedIn: linkedinScrapeTool },
 })
 
+// ── Usage tuple types ─────────────────────────────────────────────────────────
+
+export interface AgentUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
+export interface PersonaAnalysisResult {
+  analysis: PersonaAnalysis
+  usage: AgentUsage
+}
+
 // ── Helper: run agent and get structured persona ──────────────────────────────
 
-export async function analyzePersona(posts: string[]): Promise<PersonaAnalysis> {
+export async function analyzePersona(posts: string[]): Promise<PersonaAnalysisResult> {
   const postsText = posts
     .map((p, i) => `--- POST ${i + 1} ---\n${p}`)
     .join('\n\n')
@@ -106,7 +118,14 @@ ${postsText}`
   if (!jsonMatch) {
     throw new Error('Persona analysis did not return valid JSON')
   }
-  return PersonaSchema.parse(JSON.parse(jsonMatch[0]))
+
+  return {
+    analysis: PersonaSchema.parse(JSON.parse(jsonMatch[0])),
+    usage: {
+      inputTokens: result.usage?.inputTokens ?? 0,
+      outputTokens: result.usage?.outputTokens ?? 0,
+    },
+  }
 }
 
 // ── Helper: resolve posts from URL or manual paste ────────────────────────────

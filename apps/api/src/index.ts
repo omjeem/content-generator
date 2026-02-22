@@ -13,6 +13,10 @@ import onboardingRoutes from './routes/onboarding'
 import trendsRoutes from './routes/trends'
 import suggestionsRoutes from './routes/suggestions'
 import personaChatRoutes from './routes/personaChat'
+import tokenUsageRoutes from './routes/tokenUsage'
+
+// Services
+import { seedDefaultTokenLimit } from './services/tokenUsage'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -42,6 +46,7 @@ app.use('/api/onboarding', onboardingRoutes)
 app.use('/api/trends', trendsRoutes)
 app.use('/api/suggestions', suggestionsRoutes)
 app.use('/api/persona-chat', personaChatRoutes)
+app.use('/api/tokens', tokenUsageRoutes)
 
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use('/api/docs', createSwaggerRouter())
@@ -57,6 +62,7 @@ app.use(errorHandler)
 // ── Start ─────────────────────────────────────────────────────────────────────
 async function start() {
   await connectDB()
+  await seedDefaultTokenLimit()
   app.listen(PORT, () => {
     console.log(`[api] Server running on  http://localhost:${PORT}`)
     console.log(`[api] Health check:      http://localhost:${PORT}/api/health`)

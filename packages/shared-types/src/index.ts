@@ -207,3 +207,44 @@ export interface IRefineContextResponse {
   reply: string
   summary: string
 }
+
+// --- Feature: Token Usage Tracking ---
+
+export type AgentName =
+  | 'persona-analyst'
+  | 'onboarding'
+  | 'trend-research'
+  | 'content-generator'
+  | 'persona-chat'
+  | 'refine-context'
+
+export type OperationType =
+  | 'persona_analysis'
+  | 'onboarding_chat'
+  | 'trend_research'
+  | 'content_generation'
+  | 'persona_chat'
+  | 'refine_context'
+
+export interface ITokenUsageLog {
+  _id: string
+  userId: string
+  agent: AgentName
+  operation: OperationType
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  metadata: {
+    suggestionId?: string
+    sessionId?: string
+  }
+  createdAt: string
+}
+
+export interface ITokenUsageSummary {
+  tokensUsed: number
+  tokenLimit: number
+  percentUsed: number
+  tokensRemaining: number
+  allowed: boolean
+}

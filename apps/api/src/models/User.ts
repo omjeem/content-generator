@@ -5,6 +5,8 @@ export interface IUserDocument extends Document {
   email: string
   password: string
   name: string
+  tokensUsed: number
+  tokenLimit: number | null
   createdAt: Date
   updatedAt: Date
   comparePassword(candidatePassword: string): Promise<boolean>
@@ -30,6 +32,15 @@ const userSchema = new Schema<IUserDocument>(
       required: [true, 'Name is required'],
       trim: true,
       maxlength: [100, 'Name too long'],
+    },
+    tokensUsed: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    tokenLimit: {
+      type: Number,
+      default: null,
     },
   },
   {

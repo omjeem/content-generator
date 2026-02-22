@@ -3,6 +3,7 @@ import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { ChatSession } from '../models/ChatSession'
 import { UserPersona } from '../models/UserPersona'
+import { trackTokenUsage } from '../services/tokenUsage'
 import mongoose from 'mongoose'
 
 // ── Interview questions the agent must cover ──────────────────────────────────
@@ -122,6 +123,17 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
   )
 
   const reply = result.text
+
+  // Track token usage — fire-and-forget
+  trackTokenUsage({
+    userId,
+    agent: 'onboarding',
+    operation: 'onboarding_chat',
+    inputTokens: result.usage?.inputTokens ?? 0,
+    outputTokens: result.usage?.outputTokens ?? 0,
+    totalTokens: (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
+    metadata: { sessionId: session.sessionId },
+  })
 
   // Persist new messages to MongoDB
   session.messages.push({ role: 'user', content: message, timestamp: new Date() })

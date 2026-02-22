@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { resolvePostsFromInput, analyzePersona } from '../agents/personaAnalyst'
+import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
 import { UserPersona } from '../models/UserPersona'
 import mongoose from 'mongoose'
 
@@ -81,7 +82,29 @@ router.post('/analyze', async (req: AuthRequest, res: Response, next: NextFuncti
       return
     }
 
-    const analysis = await analyzePersona(posts)
+    // Pre-flight quota check
+    const quota = await checkTokenQuota(req.userId!)
+    if (!quota.allowed) {
+      res.status(429).json({
+        error: 'Token quota exceeded',
+        message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
+        tokensUsed: quota.tokensUsed,
+        tokenLimit: quota.tokenLimit,
+      })
+      return
+    }
+
+    const { analysis, usage } = await analyzePersona(posts)
+
+    // Track persona analysis token usage — fire-and-forget
+    trackTokenUsage({
+      userId: req.userId!,
+      agent: 'persona-analyst',
+      operation: 'persona_analysis',
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.inputTokens + usage.outputTokens,
+    })
 
     const persona = await UserPersona.findOneAndUpdate(
       { userId },
