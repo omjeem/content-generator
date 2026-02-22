@@ -4,7 +4,7 @@ version: '3.9'
 # Production override — pulls images from Docker Hub instead of building locally
 #
 # Usage:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 #
 # This override replaces the 'build' directive with pre-built Docker Hub images.
 # Set DOCKERHUB_USERNAME in your environment or .env file.
@@ -12,9 +12,9 @@ version: '3.9'
 
 services:
   api:
-    image: ${DOCKERHUB_USERNAME:-your-dockerhub-username}/content-generator-api:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME:-omjeem}/content-generator-api:${IMAGE_TAG:-latest}
     build: !reset null
 
   web:
-    image: ${DOCKERHUB_USERNAME:-your-dockerhub-username}/content-generator-web:${IMAGE_TAG:-latest}
+    image: ${DOCKERHUB_USERNAME:-omjeem}/content-generator-web:${IMAGE_TAG:-latest}
     build: !reset null

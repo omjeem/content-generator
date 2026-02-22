@@ -9,7 +9,7 @@ version: '3.9'
 #   3. docker compose up --build
 #
 # Usage (pull from Docker Hub — no build needed):
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
@@ -19,7 +19,7 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    image: content-generator-api:local
+    image: content-generator-api
     container_name: content-generator-api
     ports:
       - "3001:3001"
@@ -52,7 +52,7 @@ services:
         #   https://api.yourdomain.com
         # This value is baked into the Next.js bundle at build time.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
-    image: content-generator-web:local
+    image: content-generator-web
     container_name: content-generator-web
     ports:
       - "3000:3000"

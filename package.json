@@ -10,7 +10,8 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "clean": "turbo run clean",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "docker:build": "docker buildx build --platform linux/amd64,linux/arm64 -t omjeem/s-tech:latest --push ."
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
