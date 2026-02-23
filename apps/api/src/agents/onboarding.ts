@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { ChatSession } from '../models/ChatSession'
 import { UserPersona } from '../models/UserPersona'
 import { trackTokenUsage } from '../services/tokenUsage'
+import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
 import mongoose from 'mongoose'
 
 // ── Interview questions the agent must cover ──────────────────────────────────
@@ -104,19 +105,18 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
     })
   }
 
-  // Build conversation history for Mastra
-  const history = session.messages.map((m) => ({
+  // Build conversation history for Mastra — apply sliding window to cap token usage
+  const fullHistory = session.messages.map((m) => ({
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }))
 
-  // Add the new user message
-  history.push({ role: 'user', content: message })
+  // Add the new user message to history
+  fullHistory.push({ role: 'user', content: message })
 
-  // Run the agent with full history as context
-  const historyText = history
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-    .join('\n\n')
+  // Apply sliding window: keep last 10 verbatim, summarize older messages
+  const windowedHistory = applyHistorySlidingWindow(fullHistory)
+  const historyText = historyToText(windowedHistory)
 
   const result = await onboardingAgent.generate(
     `Here is the conversation so far:\n\n${historyText}\n\nPlease respond to the user's latest message.`
@@ -142,6 +142,26 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
 
   // Parse the hidden data block from the agent's response
   const extractedData = parseInterviewData(reply)
+
+  // ── Deterministic escape hatch (P0 #4) ────────────────────────────────────
+  // After ≥12 messages, if the LLM hasn't set interviewComplete but all fields
+  // are present in the extracted data, force-complete the interview.
+  // This prevents users from getting permanently stuck in the interview loop.
+  const totalMessages = session.messages.length + 2 // includes the 2 we're about to push
+  if (!extractedData.interviewComplete && totalMessages >= 12) {
+    const hasAllFields =
+      !!extractedData.goals &&
+      !!extractedData.targetAudience &&
+      !!extractedData.industry &&
+      (extractedData.contentPillars?.length ?? 0) > 0 &&
+      !!extractedData.postingFrequency
+
+    if (hasAllFields) {
+      console.log('[onboarding] Deterministic escape hatch triggered — forcing interviewComplete=true')
+      extractedData.interviewComplete = true
+      extractedData.questionsAnswered = 5
+    }
+  }
 
   // If interview is complete, update UserPersona
   if (extractedData.interviewComplete) {

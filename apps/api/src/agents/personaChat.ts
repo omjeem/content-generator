@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { ChatSession } from '../models/ChatSession'
 import { UserPersona } from '../models/UserPersona'
 import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
+import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
 import mongoose from 'mongoose'
 import type { IUserPersonaDocument } from '../models/UserPersona'
 import type { IPersonaPendingChanges } from '@repo/shared-types'
@@ -114,21 +115,21 @@ export async function runPersonaChat(input: PersonaChatInput): Promise<PersonaCh
     })
   }
 
-  // Build conversation history
-  const history = session.messages.map((m) => ({
+  // Build conversation history — apply sliding window to cap token usage
+  const fullHistory = session.messages.map((m) => ({
     role: m.role as 'user' | 'assistant',
     content: m.content,
   }))
 
   // Add user message
-  history.push({ role: 'user', content: message })
+  fullHistory.push({ role: 'user', content: message })
+
+  // Apply sliding window: keep last 10 verbatim, summarize older messages
+  const windowedHistory = applyHistorySlidingWindow(fullHistory)
 
   // Build persona context for the agent
   const personaContext = persona ? buildPersonaContext(persona) : 'No persona on file yet.'
-
-  const historyText = history
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-    .join('\n\n')
+  const historyText = historyToText(windowedHistory)
 
   const prompt = `## CURRENT PERSONA
 ${personaContext}

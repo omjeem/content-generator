@@ -1,11 +1,30 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { z } from 'zod'
+import rateLimit from 'express-rate-limit'
 import { User } from '../models/User'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { env } from '../config/env'
 
 const router = Router()
+
+// ── Per-endpoint Rate Limiters ────────────────────────────────────────────────
+
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,        // 1 minute
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please wait a minute and try again.' },
+})
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,  // 1 hour
+  max: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many registration attempts. Please try again later.' },
+})
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -58,7 +77,7 @@ const loginSchema = z.object({
  *       409:
  *         description: Email already registered
  */
-router.post('/register', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/register', registerLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = registerSchema.parse(req.body)
 
@@ -106,7 +125,7 @@ router.post('/register', async (req: Request, res: Response, next: NextFunction)
  *       401:
  *         description: Invalid credentials
  */
-router.post('/login', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/login', loginLimiter, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const body = loginSchema.parse(req.body)
 

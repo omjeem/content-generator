@@ -6,8 +6,8 @@ import { Navbar } from '@/components/layout/Navbar'
 import { ChatInterface } from '@/components/chat/ChatInterface'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { PostInputCards } from '@/components/persona/PostInputCards'
 import { personaApi, onboardingApi, authApi, ApiError } from '@/lib/api'
 import type { IMessage } from '@repo/shared-types'
 
@@ -26,7 +26,6 @@ export default function OnboardingPage() {
 
   // Profile input
   const [linkedinUrl, setLinkedinUrl] = useState('')
-  const [manualPosts, setManualPosts] = useState('')
   const [analyzeLoading, setAnalyzeLoading] = useState(false)
   const [analyzeError, setAnalyzeError] = useState('')
   const [scrapingBlocked, setScrapingBlocked] = useState(false)
@@ -66,17 +65,22 @@ export default function OnboardingPage() {
     init()
   }, [router])
 
-  // Step 1: Analyze LinkedIn profile
-  async function handleAnalyze() {
+  // Step 1: Analyze LinkedIn profile (URL mode)
+  async function handleAnalyzeUrl() {
+    await runAnalyze({ linkedinUrl })
+  }
+
+  // Step 1: Analyze from PostInputCards (paste mode)
+  async function handleAnalyzePosts(postsArray: string[]) {
+    await runAnalyze({ postsArray })
+  }
+
+  async function runAnalyze(body: { linkedinUrl?: string; postsArray?: string[] }) {
     setAnalyzeError('')
     setScrapingBlocked(false)
     setAnalyzeLoading(true)
 
     try {
-      const body = tab === 'url'
-        ? { linkedinUrl }
-        : { manualPosts }
-
       await personaApi.analyze(body)
       setStep('interview')
 
@@ -196,43 +200,50 @@ export default function OnboardingPage() {
                   <p className="text-xs text-gray-500">
                     Note: LinkedIn may block automated scraping. If it fails, use the &quot;Paste Posts&quot; tab.
                   </p>
+
+                  {scrapingBlocked && (
+                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                      LinkedIn blocked our scraper. Please paste your posts manually in the &quot;Paste Posts&quot; tab.
+                    </div>
+                  )}
+
+                  {analyzeError && !scrapingBlocked && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                      {analyzeError}
+                    </div>
+                  )}
+
+                  <Button
+                    onClick={handleAnalyzeUrl}
+                    loading={analyzeLoading}
+                    className="w-full"
+                    size="lg"
+                    disabled={!linkedinUrl || analyzeLoading}
+                  >
+                    {analyzeLoading ? 'Analysing your content...' : 'Analyse My Profile →'}
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <Textarea
-                    label="Paste Your LinkedIn Posts"
-                    placeholder={`Paste 3–20 of your recent LinkedIn posts here.\n\nSeparate each post with a blank line or "---"\n\nExample:\nAI is changing how we work...\n\n---\n\n5 lessons I learned from launching my startup...`}
-                    value={manualPosts}
-                    onChange={(e) => setManualPosts(e.target.value)}
-                    rows={10}
-                  />
                   <p className="text-xs text-gray-500">
-                    The more posts you provide, the more accurately we can match your voice.
+                    Add 3–20 of your recent LinkedIn posts. The more you provide, the better we can match your voice.
                   </p>
+
+                  {analyzeError && (
+                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                      {analyzeError}
+                    </div>
+                  )}
+
+                  <PostInputCards
+                    onSubmit={handleAnalyzePosts}
+                    loading={analyzeLoading}
+                    submitLabel="Analyse My Posts"
+                    maxPosts={20}
+                    minCharsPerPost={30}
+                  />
                 </div>
               )}
-
-              {scrapingBlocked && (
-                <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-                  LinkedIn blocked our scraper. Please paste your posts manually in the &quot;Paste Posts&quot; tab.
-                </div>
-              )}
-
-              {analyzeError && !scrapingBlocked && (
-                <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                  {analyzeError}
-                </div>
-              )}
-
-              <Button
-                onClick={handleAnalyze}
-                loading={analyzeLoading}
-                className="mt-6 w-full"
-                size="lg"
-                disabled={tab === 'url' ? !linkedinUrl : !manualPosts}
-              >
-                {analyzeLoading ? 'Analysing your content...' : 'Analyse My Profile →'}
-              </Button>
             </CardContent>
           </Card>
         )}

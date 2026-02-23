@@ -3,7 +3,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { PendingChangesCard } from '@/components/persona/PendingChangesCard'
-import { personaChatApi, ApiError } from '@/lib/api'
+import { PostInputCards } from '@/components/persona/PostInputCards'
+import { personaChatApi, personaApi, ApiError } from '@/lib/api'
 import type { IUserPersona, IPersonaPendingChanges, IMessage } from '@repo/shared-types'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -77,6 +78,12 @@ export default function ProfilePage() {
   const [pendingChanges, setPendingChanges] = useState<IPersonaPendingChanges | null>(null)
   const [applying, setApplying] = useState(false)
   const [applySuccess, setApplySuccess] = useState('')
+
+  // Add More Posts section
+  const [showAddPosts, setShowAddPosts] = useState(false)
+  const [addPostsLoading, setAddPostsLoading] = useState(false)
+  const [addPostsResult, setAddPostsResult] = useState<{ message: string; postsAdded: number; duplicatesSkipped: number } | null>(null)
+  const [addPostsError, setAddPostsError] = useState('')
 
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -154,6 +161,22 @@ export default function ProfilePage() {
     }
   }
 
+  const handleAddPosts = async (postsArray: string[]) => {
+    setAddPostsError('')
+    setAddPostsResult(null)
+    setAddPostsLoading(true)
+    try {
+      const res = await personaApi.addPosts({ postsArray, mode: 'incremental', source: 'add-posts' })
+      setPersona(res.persona)
+      setAddPostsResult({ message: res.message, postsAdded: res.postsAdded, duplicatesSkipped: res.duplicatesSkipped })
+      setShowAddPosts(false)
+    } catch (err) {
+      setAddPostsError(err instanceof ApiError ? err.message : 'Failed to add posts. Please try again.')
+    } finally {
+      setAddPostsLoading(false)
+    }
+  }
+
   const isReady = !historyLoading && !personaLoading
 
   return (
@@ -195,6 +218,67 @@ export default function ProfilePage() {
                   <PersonaField label="Writing Style" value={persona.writingStyle} />
                   <PersonaField label="Posting Frequency" value={persona.postingFrequency} />
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Add More Posts */}
+          <Card>
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                    <span>📝</span> Add More Posts
+                  </h2>
+                  {persona && (
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {persona.totalPostsAnalyzed ?? persona.scrapedPosts?.length ?? 0} posts analyzed · v{persona.personaVersion ?? 1}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setShowAddPosts((s) => !s)
+                    setAddPostsError('')
+                    setAddPostsResult(null)
+                  }}
+                  className="text-xs text-linkedin hover:underline font-medium"
+                >
+                  {showAddPosts ? 'Cancel' : '+ Add posts'}
+                </button>
+              </div>
+
+              {addPostsResult && (
+                <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700 mb-3">
+                  {addPostsResult.message}
+                  {addPostsResult.duplicatesSkipped > 0 && (
+                    <span className="ml-1 text-xs text-green-600">
+                      ({addPostsResult.duplicatesSkipped} duplicate{addPostsResult.duplicatesSkipped !== 1 ? 's' : ''} skipped)
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {addPostsError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 mb-3">
+                  {addPostsError}
+                </div>
+              )}
+
+              {showAddPosts && (
+                <PostInputCards
+                  onSubmit={handleAddPosts}
+                  loading={addPostsLoading}
+                  submitLabel="Add Posts to Persona"
+                  maxPosts={20}
+                  minCharsPerPost={30}
+                />
+              )}
+
+              {!showAddPosts && !addPostsResult && (
+                <p className="text-xs text-gray-400">
+                  Adding more posts improves accuracy. Duplicates are automatically skipped.
+                </p>
               )}
             </CardContent>
           </Card>

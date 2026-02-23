@@ -2,6 +2,7 @@ import './config/env' // Validate env vars — .env loaded via nodemon --require
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import rateLimit from 'express-rate-limit'
 import { connectDB } from './config/db'
 import { errorHandler } from './middleware/errorHandler'
 import { createSwaggerRouter } from './swagger/setup'
@@ -21,11 +22,38 @@ import { seedDefaultTokenLimit } from './services/tokenUsage'
 const app = express()
 const PORT = process.env.PORT || 3001
 
-// ── Middleware ───────────────────────────────────────────────────────────────
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// Explicit allowlist — never reflect arbitrary request origins (CSRF risk)
+const ALLOWED_ORIGINS = [
+  process.env.FRONTEND_URL,
+  'http://localhost:3000',
+].filter(Boolean) as string[]
+
 app.use(cors({
-  origin: true,   // reflect request origin — allows any origin in dev
+  origin: (origin, callback) => {
+    // Allow server-to-server / curl (no Origin header) in non-production
+    if (!origin) {
+      return callback(null, process.env.NODE_ENV !== 'production')
+    }
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true)
+    }
+    callback(new Error(`CORS: origin '${origin}' not allowed`))
+  },
   credentials: true,
 }))
+
+// ── Rate Limiting ─────────────────────────────────────────────────────────────
+// Auth-specific limiters live in routes/auth.ts (per endpoint).
+// General API limiter covers all /api/* routes.
+const generalApiLimiter = rateLimit({
+  windowMs: 60 * 1000,       // 1 minute
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+  skip: (req) => req.path.startsWith('/docs'), // skip Swagger UI
+})
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
@@ -40,6 +68,10 @@ app.get('/api/health', (_req, res) => {
 })
 
 // ── API Routes ────────────────────────────────────────────────────────────────
+// General limiter applied first (covers all /api/* routes)
+app.use('/api', generalApiLimiter)
+
+// Auth routes with per-endpoint limiters applied in auth.ts (mounted here)
 app.use('/api/auth', authRoutes)
 app.use('/api/persona', personaRoutes)
 app.use('/api/onboarding', onboardingRoutes)

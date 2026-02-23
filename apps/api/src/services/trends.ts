@@ -251,10 +251,49 @@ async function fetchFromRSSFeeds(
   return allItems
 }
 
+// ── 30-minute in-memory trend cache ──────────────────────────────────────────
+// Avoids hammering HN/RSS/Tavily on every content generation request.
+// Cache key = sorted keywords + industry + geo → deterministic hash.
+// TTL = 30 minutes (30 * 60 * 1000 ms).
+
+const TREND_CACHE_TTL_MS = 30 * 60 * 1000
+
+interface TrendCacheEntry {
+  items: RawTrendItem[]
+  cachedAt: number   // Date.now() timestamp
+}
+
+const trendCache = new Map<string, TrendCacheEntry>()
+
+function buildCacheKey(keywords: string[], industry: string, geo: string): string {
+  const sortedKeywords = [...keywords].sort().join(',').toLowerCase()
+  return `${sortedKeywords}|${industry.toLowerCase()}|${geo.toLowerCase()}`
+}
+
+function getCachedTrends(key: string): RawTrendItem[] | null {
+  const entry = trendCache.get(key)
+  if (!entry) return null
+  if (Date.now() - entry.cachedAt > TREND_CACHE_TTL_MS) {
+    trendCache.delete(key)
+    return null
+  }
+  return entry.items
+}
+
+function setCachedTrends(key: string, items: RawTrendItem[]): void {
+  trendCache.set(key, { items, cachedAt: Date.now() })
+  // Evict entries older than 2x TTL to prevent unbounded growth
+  for (const [k, v] of trendCache.entries()) {
+    if (Date.now() - v.cachedAt > TREND_CACHE_TTL_MS * 2) {
+      trendCache.delete(k)
+    }
+  }
+}
+
 // ── Main export: fetch real trending content ──────────────────────────────────
 /**
  * Fetches real trending content from live sources, personalised to the user's
- * industry and content keywords.
+ * industry and content keywords. Results are cached for 30 minutes.
  *
  * @param keywords  e.g. ['AI', 'product management', 'SaaS'] from user persona
  * @param industry  e.g. 'technology', 'healthcare', 'marketing'
@@ -266,11 +305,20 @@ export async function fetchRealTrendingContent(
   industry: string,
   geo = 'US',
 ): Promise<RawTrendItem[]> {
+  // Check cache first
+  const cacheKey = buildCacheKey(keywords, industry, geo)
+  const cached = getCachedTrends(cacheKey)
+  if (cached) {
+    console.log(`[trends] Cache HIT for key="${cacheKey}" (${cached.length} items)`)
+    return cached
+  }
   const hasTavily = !!process.env.TAVILY_API_KEY
 
   console.log(
-    `[trends] Fetching real trends | industry="${industry}" keywords=[${keywords.join(', ')}] geo=${geo} tavily=${hasTavily}`
+    `[trends] Cache MISS — fetching | industry="${industry}" keywords=[${keywords.join(', ')}] geo=${geo} tavily=${hasTavily}`
   )
+
+  let results: RawTrendItem[]
 
   if (hasTavily) {
     // Tier 1: Tavily — best quality, targeted, recency-filtered
@@ -280,15 +328,19 @@ export async function fetchRealTrendingContent(
       fetchFromRSSFeeds(keywords),
     ])
     // Tavily first (highest relevance), then HN + RSS for breadth
-    return deduplicateAndRank([...tavilyItems, ...hnItems, ...rssItems])
+    results = deduplicateAndRank([...tavilyItems, ...hnItems, ...rssItems])
   } else {
     // Tier 2: HN + RSS — always-on, no keys required
     const [hnItems, rssItems] = await Promise.all([
       fetchFromHackerNews(keywords, industry),
       fetchFromRSSFeeds(keywords),
     ])
-    return deduplicateAndRank([...hnItems, ...rssItems])
+    results = deduplicateAndRank([...hnItems, ...rssItems])
   }
+
+  // Cache results (even empty arrays — avoids hammering APIs on repeated failures)
+  setCachedTrends(cacheKey, results)
+  return results
 }
 
 // ── Kept for backward compatibility with trendResearch.ts ─────────────────────

@@ -1,5 +1,7 @@
 import mongoose, { Schema, Document, Model } from 'mongoose'
-import type { PostFormat } from '@repo/shared-types'
+import type { PostFormat, IGenerateContextOptions } from '@repo/shared-types'
+
+export type GenerationMode = 'profile' | 'topic-focus' | 'chat-refined'
 
 export interface ISuggestionItem {
   topic: string
@@ -19,6 +21,9 @@ export interface IContentSuggestionDocument extends Document {
   generatedAt: Date
   trendsUsed: string[]
   suggestions: ISuggestionItem[]
+  // Generation metadata (#17)
+  generationMode: GenerationMode
+  contextOptions?: IGenerateContextOptions
   createdAt: Date
 }
 
@@ -55,6 +60,13 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
     },
     trendsUsed: { type: [String], default: [] },
     suggestions: { type: [suggestionItemSchema], required: true },
+    // Generation metadata (#17) — defaults to 'profile' for backward-compat
+    generationMode: {
+      type: String,
+      enum: ['profile', 'topic-focus', 'chat-refined'],
+      default: 'profile',
+    },
+    contextOptions: { type: Schema.Types.Mixed },
   },
   { timestamps: true }
 )

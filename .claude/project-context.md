@@ -17,7 +17,7 @@
 ```
 content-generator/          ← ROOT (Turborepo workspace)
 ├── apps/
-│   ├── api/                ← Hono + TypeScript backend (Node.js)
+│   ├── api/                ← Express + TypeScript backend (Node.js)
 │   └── web/                ← Next.js 14 App Router frontend
 ├── packages/
 │   ├── shared-types/       ← Shared TypeScript interfaces used by both apps
@@ -38,7 +38,7 @@ content-generator/          ← ROOT (Turborepo workspace)
 | Layer | Technology | Why |
 |---|---|---|
 | Monorepo | Turborepo | Fast build caching, simple workspace, industry standard |
-| Backend | Hono + TypeScript | Lightweight, TypeScript-first, faster than Express |
+| Backend | Express + TypeScript | Battle-tested, rich middleware ecosystem, widely supported |
 | AI Framework | Mastra AI | Native multi-agent, built-in working memory, tool use support |
 | LLM | Gemini API (google/gemini-2.5-flash) | Free tier, generous limits, strong reasoning |
 | LinkedIn Scraping | Puppeteer | No API key needed, most reliable headless scraper |
@@ -47,7 +47,7 @@ content-generator/          ← ROOT (Turborepo workspace)
 | Auth | JWT (jsonwebtoken + bcrypt) | Stateless, simple cross-monorepo auth |
 | Frontend | Next.js 14 App Router | Modern React, SSR, easy API routes |
 | Styling | Tailwind CSS + shadcn/ui | Fast UI, accessible components |
-| API Docs | swagger-ui-express | Industry standard, integrates with Hono |
+| API Docs | swagger-ui-express | Industry standard, integrates with Express |
 
 ---
 
@@ -255,7 +255,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 2. **Never hardcode API keys** — always use `process.env.VAR_NAME`
 3. **Always update CLAUDE.md** checkbox when a phase completes
 4. **Always update phase notes** in `.claude/phase-notes/phase-N.md`
-5. **Hono not Express** — we chose Hono for the backend
+5. **Express not Hono** — switched to Express on 2026-02-20 for richer middleware support
 6. **Gemini not OpenAI** — the LLM is Gemini via Mastra
 7. **Puppeteer for LinkedIn** — with fallback to manual paste
 8. **MongoDB collection names**: `users`, `user_personas`, `chat_sessions`, `content_suggestions`

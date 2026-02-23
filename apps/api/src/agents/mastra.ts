@@ -198,6 +198,9 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
     userId: userObjectId,
     generatedAt: new Date(),
     trendsUsed: trends.rawTrends,
+    // Store generation mode + context for history/analytics (#17)
+    generationMode: input.context?.mode ?? 'profile',
+    contextOptions: input.context,
     suggestions: contentIdeas.ideas.map((idea) => ({
       topic: idea.topic,
       angle: idea.angle,

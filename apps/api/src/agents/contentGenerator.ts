@@ -5,6 +5,7 @@ import type { IUserPersonaDocument } from '../models/UserPersona'
 import type { TrendResult } from './trendResearch'
 import type { IGenerateContextOptions } from '@repo/shared-types'
 import type { TrendResearchResult } from './trendResearch'
+import { extractJSON } from '../utils/extractJSON'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -129,21 +130,61 @@ ${trendsList}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`
 
-  const result = await contentGeneratorAgent.generate(prompt)
+  // ── LLM call with granular retry (#16) ──────────────────────────────────────
+  // Retry only the LLM call (not the whole pipeline). On retry, simplify the
+  // prompt to reduce token count and improve parsing reliability.
+  const MAX_ATTEMPTS = 2
+  let lastError: unknown
 
-  const text = result.text ?? ''
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    throw new Error('Content generator did not return valid JSON')
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const promptToUse = attempt === 1 ? prompt : buildSimplifiedPrompt(persona, trends)
+
+    try {
+      const result = await contentGeneratorAgent.generate(promptToUse)
+      const text = result.text ?? ''
+      const raw = extractJSON<unknown>(text, `content generator (attempt ${attempt})`)
+      const ideas = ContentIdeasSchema.parse(raw)
+
+      if (attempt > 1) {
+        console.log(`[contentGenerator] ✓ Succeeded on retry attempt ${attempt}`)
+      }
+
+      return {
+        ideas,
+        usage: {
+          inputTokens: result.usage?.inputTokens ?? 0,
+          outputTokens: result.usage?.outputTokens ?? 0,
+        },
+      }
+    } catch (err) {
+      lastError = err
+      console.warn(`[contentGenerator] Attempt ${attempt} failed:`, (err as Error).message)
+      if (attempt < MAX_ATTEMPTS) {
+        console.log('[contentGenerator] Retrying with simplified prompt...')
+      }
+    }
   }
 
-  return {
-    ideas: ContentIdeasSchema.parse(JSON.parse(jsonMatch[0])),
-    usage: {
-      inputTokens: result.usage?.inputTokens ?? 0,
-      outputTokens: result.usage?.outputTokens ?? 0,
-    },
-  }
+  throw lastError
+}
+
+// ── Simplified retry prompt ────────────────────────────────────────────────────
+// Used on retry to reduce token count and improve JSON parsing reliability.
+
+function buildSimplifiedPrompt(
+  persona: IUserPersonaDocument,
+  trends: TrendResult | TrendResearchResult['result']
+): string {
+  const topTopics = ((persona.topics ?? []).slice(0, 3).join(', ') || persona.industry) ?? 'business'
+  const topTrends = trends.trends
+    .slice(0, 3)
+    .map((t) => t.topic)
+    .join(', ')
+
+  return `Generate 5 LinkedIn post ideas for a ${persona.industry ?? 'business'} professional.
+Topics: ${topTopics}. Recent trends: ${topTrends || 'general industry trends'}.
+Return ONLY a JSON object:
+{"ideas":[{"topic":"...","angle":"...","format":"text-post","hook":"...","whyItFits":"...","seoKeywords":["#tag"],"clickbaitHooks":["...","..."],"postPointers":["...","...","...","..."],"callToAction":"..."}]}`
 }
 
 // ── Build optional context override section ───────────────────────────────────

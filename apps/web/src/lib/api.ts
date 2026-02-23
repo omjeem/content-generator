@@ -4,6 +4,7 @@ import type {
   IRegisterRequest,
   IUserPersona,
   IPersonaAnalysisInput,
+  IAddPostsRequest,
   IOnboardingMessage,
   IOnboardingResponse,
   IChatSession,
@@ -17,6 +18,7 @@ import type {
   IPersonaUpdateResponse,
   ITokenUsageSummary,
   ITokenUsageLog,
+  IPersonaPostsResponse,
 } from '@repo/shared-types'
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
@@ -86,6 +88,20 @@ export const personaApi = {
     }),
 
   get: () => request<{ persona: IUserPersona }>('/api/persona'),
+
+  addPosts: (body: IAddPostsRequest) =>
+    request<{
+      message: string
+      postsAdded: number
+      duplicatesSkipped: number
+      persona: IUserPersona
+      batchId: string
+    }>('/api/persona/add-posts', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getPosts: () => request<IPersonaPostsResponse>('/api/persona/posts'),
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────────────

@@ -27,11 +27,36 @@ export type ContentMixPreference =
   | 'more-polls'
   | 'balanced'
 
+// Post batch metadata — one entry per analysis batch (incremental post addition)
+export interface IPostBatchMetadata {
+  batchId: string
+  addedAt: string
+  postCount: number
+  source: 'manual' | 'linkedin-scrape' | 'add-posts'
+}
+
+// Persona snapshot — saved before each incremental update for diff/history
+export interface IPersonaSnapshot {
+  snapshotAt: string
+  personaVersion: number
+  writingStyle?: string
+  tone?: string
+  topics: string[]
+  postFormats: string[]
+  summary?: string
+}
+
 export interface IUserPersona {
   _id: string
   userId: string
   linkedinUrl?: string
   scrapedPosts: string[]
+  // Post tracking
+  postMetadata: IPostBatchMetadata[]
+  totalPostsAnalyzed: number
+  lastPostAddedAt?: string
+  personaVersion: number
+  analysisHistory: IPersonaSnapshot[]
   // Derived from scraping + Gemini analysis
   writingStyle?: string
   tone?: string
@@ -43,7 +68,7 @@ export interface IUserPersona {
   industry?: string
   contentPillars: string[]
   postingFrequency?: string
-  platformGoal?: PlatformGoal     // ← new: user's primary LinkedIn objective
+  platformGoal?: PlatformGoal
   interviewComplete: boolean
   createdAt: string
   updatedAt: string
@@ -122,6 +147,26 @@ export interface IAuthResponse {
 export interface IPersonaAnalysisInput {
   linkedinUrl?: string
   manualPosts?: string
+  postsArray?: string[]    // structured array of posts (preferred over manualPosts raw string)
+}
+
+// Add-posts request — for incremental post addition to an existing persona
+export interface IAddPostsRequest {
+  postsArray: string[]                // new posts to merge into persona
+  mode?: 'incremental' | 'full'       // default: incremental
+  source?: 'manual' | 'linkedin-scrape' | 'add-posts'
+}
+
+// Response from GET /api/persona/posts
+export interface IPersonaPostsResponse {
+  batches: Array<{
+    batchId: string
+    addedAt: string
+    postCount: number
+    source: string
+    posts: string[]
+  }>
+  totalPostsAnalyzed: number
 }
 
 export interface IOnboardingMessage {

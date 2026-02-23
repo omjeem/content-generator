@@ -3,6 +3,7 @@ import { createTool } from '@mastra/core/tools'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { scrapeLinkedInProfile, parseManualPosts, ScrapingBlockedError } from '../services/linkedin'
+import { extractJSON } from '../utils/extractJSON'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -112,15 +113,12 @@ ${postsText}`
 
   const result = await personaAnalystAgent.generate(prompt)
 
-  // Parse JSON from the model's text response
+  // Robustly extract JSON from the model's text response
   const text = result.text ?? ''
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) {
-    throw new Error('Persona analysis did not return valid JSON')
-  }
+  const raw = extractJSON<unknown>(text, 'persona analyst')
 
   return {
-    analysis: PersonaSchema.parse(JSON.parse(jsonMatch[0])),
+    analysis: PersonaSchema.parse(raw),
     usage: {
       inputTokens: result.usage?.inputTokens ?? 0,
       outputTokens: result.usage?.outputTokens ?? 0,

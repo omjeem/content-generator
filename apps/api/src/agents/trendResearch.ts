@@ -3,6 +3,7 @@ import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { fetchRealTrendingContent, getTrendingTopics, getDailyTrends } from '../services/trends'
 import type { RawTrendItem } from '../services/trends'
+import { extractJSON } from '../utils/extractJSON'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -139,13 +140,15 @@ Return ONLY the JSON object.`
       outputTokens: agentResult.usage?.outputTokens ?? 0,
     }
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
+    let rawJson: unknown
+    try {
+      rawJson = extractJSON(text, 'trend research agent')
+    } catch {
       console.warn('[trendResearch] No JSON in agent response — using fallback with raw titles')
       return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage }
     }
 
-    const parsed = TrendResultSchema.safeParse(JSON.parse(jsonMatch[0]))
+    const parsed = TrendResultSchema.safeParse(rawJson)
     if (!parsed.success) {
       console.warn('[trendResearch] Schema validation failed:', parsed.error.message)
       return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage }
