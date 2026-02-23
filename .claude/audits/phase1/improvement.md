@@ -16,7 +16,9 @@
 5. [Efficiency & Optimization](#5-efficiency--optimization)
 6. [Fallback & Resilience Design](#6-fallback--resilience-design)
 7. [Security Audit](#7-security-audit)
-8. [Prioritized Action Plan](#8-prioritized-action-plan)
+8. [Feature: Incremental Post Addition & Persona Evolution](#8-feature-incremental-post-addition--persona-evolution)
+9. [Feature: Multi-Post Input UX (Individual Post Cards)](#9-feature-multi-post-input-ux-individual-post-cards)
+10. [Prioritized Action Plan](#10-prioritized-action-plan)
 
 ---
 
@@ -711,51 +713,1046 @@ A malicious user could inject instructions like: "Ignore all previous instructio
 
 ---
 
-## 8. Prioritized Action Plan
+## 8. Feature: Incremental Post Addition & Persona Evolution
+
+### 8.1 The Problem
+
+The current system treats persona analysis as a **one-shot** operation. Users paste posts (or provide a URL) once during onboarding, the persona is analyzed, and that's it. There is no way to:
+
+1. Add more LinkedIn posts later to deepen the persona analysis
+2. Refine the persona as the user's writing evolves over time
+3. See which posts were used to build the persona
+4. Remove poor-quality posts that skew the analysis
+
+**Current code evidence — the persona is overwritten, not enriched:**
+
+In `routes/persona.ts:109-122`, the `POST /api/persona/analyze` endpoint uses `$set` which **replaces** the entire `scrapedPosts` array and all derived fields:
+```typescript
+await UserPersona.findOneAndUpdate(
+  { userId },
+  {
+    $set: {
+      scrapedPosts: posts,        // ← REPLACES entire array
+      writingStyle: analysis.writingStyle,
+      tone: analysis.tone,
+      topics: analysis.topics,
+      postFormats: analysis.postFormats,
+    },
+  },
+  { upsert: true, new: true }
+)
+```
+
+This means if a user re-analyzes, they lose their previous posts entirely. The persona is rebuilt from scratch every time instead of being incrementally refined.
+
+Similarly in `mastra.ts:106-119`, the pipeline's Step 1 does the same `$set` overwrite.
+
+### 8.2 Architectural Design: Incremental Post Enrichment
+
+#### 8.2.1 Core Concept
+
+Instead of replacing `scrapedPosts`, the system should **append** new posts and **re-derive** the persona from the combined corpus. This creates a living persona that gets more accurate with every post addition.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                    PERSONA EVOLUTION ARCHITECTURE                       │
+├────────────────────────────────────────────────────────────────────────┤
+│                                                                        │
+│  ONBOARDING (first time):                                              │
+│    Posts [1..5] ──→ analyzePersona() ──→ Persona v1                    │
+│                                                                        │
+│  LATER (from profile page or dashboard):                               │
+│    Posts [6..10] ──→ appendPosts()                                      │
+│                          ↓                                             │
+│                    scrapedPosts = [1..10]  (merged, deduped)            │
+│                          ↓                                             │
+│                    analyzePersona([1..10]) ──→ Persona v2              │
+│                          ↓                                             │
+│                    Diff v1 → v2 shown to user for approval             │
+│                                                                        │
+│  OR (lightweight — no re-analysis):                                    │
+│    Posts [6..10] ──→ mergeAnalysis()                                    │
+│                          ↓                                             │
+│                    analyzePersona([6..10]) ──→ delta analysis           │
+│                          ↓                                             │
+│                    Merge delta into existing Persona v1                 │
+│                          ↓                                             │
+│                    topics = union(v1.topics, delta.topics)              │
+│                    tone = weighted average(v1.tone, delta.tone)         │
+│                                                                        │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 8.2.2 Database Schema Changes
+
+**UserPersona model — new fields:**
+
+```typescript
+// In apps/api/src/models/UserPersona.ts — add these fields:
+
+export interface IUserPersonaDocument extends Document {
+  // ... existing fields ...
+
+  // NEW: Post management
+  scrapedPosts: string[]              // stays — the master corpus
+  postMetadata: IPostMetadata[]       // NEW: metadata for each post
+  totalPostsAnalyzed: number          // NEW: running count
+  lastPostAddedAt: Date               // NEW: when posts were last added
+  personaVersion: number              // NEW: incremented on each re-analysis
+  analysisHistory: IAnalysisSnapshot[] // NEW: previous persona snapshots for diffing
+}
+
+interface IPostMetadata {
+  content: string           // the post text (or hash for dedup)
+  addedAt: Date             // when this post was added
+  source: 'scraped' | 'manual' | 'incremental'  // how it arrived
+  batchId: string           // groups posts from the same submission
+}
+
+interface IAnalysisSnapshot {
+  version: number
+  analyzedAt: Date
+  postCount: number
+  writingStyle: string
+  tone: string
+  topics: string[]
+  postFormats: string[]
+}
+```
+
+**Mongoose schema addition:**
+
+```typescript
+const postMetadataSchema = new Schema({
+  content: { type: String, required: true },
+  addedAt: { type: Date, default: Date.now },
+  source: {
+    type: String,
+    enum: ['scraped', 'manual', 'incremental'],
+    default: 'manual',
+  },
+  batchId: { type: String, required: true },
+}, { _id: false })
+
+const analysisSnapshotSchema = new Schema({
+  version: { type: Number, required: true },
+  analyzedAt: { type: Date, default: Date.now },
+  postCount: { type: Number, required: true },
+  writingStyle: { type: String },
+  tone: { type: String },
+  topics: { type: [String], default: [] },
+  postFormats: { type: [String], default: [] },
+}, { _id: false })
+
+// Add to userPersonaSchema:
+postMetadata: { type: [postMetadataSchema], default: [] },
+totalPostsAnalyzed: { type: Number, default: 0 },
+lastPostAddedAt: { type: Date },
+personaVersion: { type: Number, default: 1 },
+analysisHistory: { type: [analysisSnapshotSchema], default: [] },
+```
+
+#### 8.2.3 New API Endpoint: `POST /api/persona/add-posts`
+
+This endpoint accepts new posts and triggers incremental persona re-analysis.
+
+```typescript
+// In apps/api/src/routes/persona.ts — new endpoint
+
+const addPostsSchema = z.object({
+  posts: z.array(
+    z.string().min(30, 'Each post must be at least 30 characters')
+  ).min(1, 'Provide at least one post').max(20, 'Maximum 20 posts per batch'),
+  reanalyze: z.boolean().optional().default(true),
+  // 'full' = re-analyze entire corpus (slower, more accurate)
+  // 'incremental' = analyze only new posts and merge (faster, cheaper)
+  analysisMode: z.enum(['full', 'incremental']).optional().default('incremental'),
+})
+
+/**
+ * POST /api/persona/add-posts
+ *
+ * Adds new LinkedIn posts to the user's existing corpus and optionally
+ * triggers re-analysis to update the persona.
+ *
+ * Flow:
+ *   1. Validate & deduplicate against existing posts
+ *   2. Append new posts to scrapedPosts[] + postMetadata[]
+ *   3. If reanalyze=true:
+ *      a. mode='full'        → run analyzePersona() on ALL posts
+ *      b. mode='incremental' → run analyzePersona() on NEW posts only,
+ *                               then merge with existing persona
+ *   4. Snapshot previous persona into analysisHistory[]
+ *   5. Return updated persona + diff showing what changed
+ */
+router.post('/add-posts', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { posts: rawPosts, reanalyze, analysisMode } = addPostsSchema.parse(req.body)
+    const userId = new mongoose.Types.ObjectId(req.userId!)
+
+    // 1. Load existing persona
+    const existing = await UserPersona.findOne({ userId })
+    if (!existing) {
+      res.status(400).json({
+        error: 'No persona found. Complete initial onboarding first.',
+        action: 'POST /api/persona/analyze',
+      })
+      return
+    }
+
+    // 2. Deduplicate: reject posts that are already in the corpus
+    const existingTexts = new Set(
+      existing.scrapedPosts.map(p => normalizeForDedup(p))
+    )
+    const newPosts = rawPosts.filter(p => {
+      const normalized = normalizeForDedup(p)
+      return normalized.length > 0 && !existingTexts.has(normalized)
+    })
+
+    if (newPosts.length === 0) {
+      res.status(400).json({
+        error: 'All provided posts are duplicates of existing posts.',
+        existingPostCount: existing.scrapedPosts.length,
+      })
+      return
+    }
+
+    // 3. Quota check before LLM call
+    if (reanalyze) {
+      const quota = await checkTokenQuota(req.userId!)
+      if (!quota.allowed) {
+        res.status(429).json({ error: 'Token quota exceeded' })
+        return
+      }
+    }
+
+    // 4. Generate batch ID for this submission
+    const batchId = `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+    // 5. Build post metadata for new posts
+    const newMetadata = newPosts.map(content => ({
+      content,
+      addedAt: new Date(),
+      source: 'incremental' as const,
+      batchId,
+    }))
+
+    // 6. Snapshot current persona BEFORE changes
+    const snapshot = {
+      version: existing.personaVersion,
+      analyzedAt: new Date(),
+      postCount: existing.scrapedPosts.length,
+      writingStyle: existing.writingStyle ?? '',
+      tone: existing.tone ?? '',
+      topics: [...existing.topics],
+      postFormats: [...existing.postFormats],
+    }
+
+    // 7. Merge posts into corpus
+    const mergedPosts = [...existing.scrapedPosts, ...newPosts]
+
+    // 8. Re-analyze if requested
+    let updatedAnalysis = null
+    let diff = null
+
+    if (reanalyze) {
+      if (analysisMode === 'full') {
+        // Full re-analysis: analyze the ENTIRE corpus (most accurate)
+        const { analysis, usage } = await analyzePersona(mergedPosts)
+        updatedAnalysis = analysis
+
+        trackTokenUsage({
+          userId: req.userId!,
+          agent: 'persona-analyst',
+          operation: 'persona_analysis',
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          totalTokens: usage.inputTokens + usage.outputTokens,
+          metadata: { sessionId: batchId },
+        })
+      } else {
+        // Incremental: analyze only NEW posts, then merge
+        const { analysis: deltaAnalysis, usage } = await analyzePersona(newPosts)
+        updatedAnalysis = mergePersonaAnalysis(existing, deltaAnalysis, {
+          existingPostCount: existing.scrapedPosts.length,
+          newPostCount: newPosts.length,
+        })
+
+        trackTokenUsage({
+          userId: req.userId!,
+          agent: 'persona-analyst',
+          operation: 'persona_analysis',
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          totalTokens: usage.inputTokens + usage.outputTokens,
+          metadata: { sessionId: batchId },
+        })
+      }
+
+      // Compute diff for user visibility
+      diff = computePersonaDiff(snapshot, updatedAnalysis)
+    }
+
+    // 9. Persist everything atomically
+    const updatePayload: Record<string, unknown> = {
+      scrapedPosts: mergedPosts,
+      totalPostsAnalyzed: mergedPosts.length,
+      lastPostAddedAt: new Date(),
+      personaVersion: existing.personaVersion + 1,
+    }
+
+    if (updatedAnalysis) {
+      updatePayload.writingStyle = updatedAnalysis.writingStyle
+      updatePayload.tone = updatedAnalysis.tone
+      updatePayload.topics = updatedAnalysis.topics
+      updatePayload.postFormats = updatedAnalysis.postFormats
+    }
+
+    const updated = await UserPersona.findOneAndUpdate(
+      { userId },
+      {
+        $set: updatePayload,
+        $push: {
+          postMetadata: { $each: newMetadata },
+          analysisHistory: snapshot,
+        },
+      },
+      { new: true }
+    )
+
+    res.json({
+      message: `${newPosts.length} new post(s) added successfully.`,
+      persona: updated,
+      postsAdded: newPosts.length,
+      totalPosts: mergedPosts.length,
+      duplicatesSkipped: rawPosts.length - newPosts.length,
+      reanalyzed: reanalyze,
+      analysisMode: reanalyze ? analysisMode : null,
+      diff,  // null if reanalyze=false
+      personaVersion: (existing.personaVersion ?? 1) + 1,
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+```
+
+#### 8.2.4 Incremental Merge Strategy
+
+When `analysisMode = 'incremental'`, the system analyzes only the new posts and merges the delta into the existing persona. This is faster and cheaper (fewer tokens) but slightly less accurate than a full re-analysis.
+
+```typescript
+// New file: apps/api/src/services/personaMerge.ts
+
+import type { PersonaAnalysis } from '../agents/personaAnalyst'
+import type { IUserPersonaDocument } from '../models/UserPersona'
+
+interface MergeWeights {
+  existingPostCount: number
+  newPostCount: number
+}
+
+/**
+ * Merges a delta analysis (from new posts only) into an existing persona.
+ *
+ * Strategy:
+ *   - Topics / PostFormats: UNION (new topics are added, none removed)
+ *   - WritingStyle / Tone: Weighted blend — existing style dominates
+ *     but new signals shift the description proportionally
+ *   - The weight ratio is based on post count:
+ *     If 20 existing posts + 5 new → existing gets 80% weight, new gets 20%
+ */
+export function mergePersonaAnalysis(
+  existing: IUserPersonaDocument,
+  delta: PersonaAnalysis,
+  weights: MergeWeights
+): PersonaAnalysis {
+  const total = weights.existingPostCount + weights.newPostCount
+  const existingWeight = weights.existingPostCount / total
+  const newWeight = weights.newPostCount / total
+
+  return {
+    // Union of topics — deduplicated, existing first
+    topics: deduplicateStrings([
+      ...existing.topics,
+      ...delta.topics,
+    ]),
+
+    // Union of formats
+    postFormats: deduplicateStrings([
+      ...existing.postFormats,
+      ...delta.postFormats,
+    ]),
+
+    // Weighted blend for text fields: use the new description if
+    // the new batch is large enough to shift the balance (>30% of total)
+    writingStyle: newWeight > 0.3
+      ? `${existing.writingStyle ?? ''} — with emerging ${delta.writingStyle} tendencies`
+      : existing.writingStyle ?? delta.writingStyle,
+
+    tone: newWeight > 0.3
+      ? `${existing.tone ?? ''} — evolving toward ${delta.tone}`
+      : existing.tone ?? delta.tone,
+
+    // Take the newer frequency estimate if the new batch is significant
+    estimatedPostFrequency: newWeight > 0.4
+      ? delta.estimatedPostFrequency
+      : existing.postingFrequency ?? delta.estimatedPostFrequency,
+
+    engagementPatterns: delta.engagementPatterns,
+
+    summary: `Based on ${total} posts. ${delta.summary}`,
+  }
+}
+
+/**
+ * Computes a human-readable diff between old and new persona states.
+ */
+export function computePersonaDiff(
+  old: { writingStyle: string; tone: string; topics: string[]; postFormats: string[] },
+  updated: PersonaAnalysis
+): Record<string, { before: string | string[]; after: string | string[] }> {
+  const diff: Record<string, { before: string | string[]; after: string | string[] }> = {}
+
+  if (old.writingStyle !== updated.writingStyle) {
+    diff.writingStyle = { before: old.writingStyle, after: updated.writingStyle }
+  }
+  if (old.tone !== updated.tone) {
+    diff.tone = { before: old.tone, after: updated.tone }
+  }
+
+  const addedTopics = updated.topics.filter(t => !old.topics.includes(t))
+  if (addedTopics.length > 0) {
+    diff.topics = { before: old.topics, after: updated.topics }
+  }
+
+  const addedFormats = updated.postFormats.filter(f => !old.postFormats.includes(f))
+  if (addedFormats.length > 0) {
+    diff.postFormats = { before: old.postFormats, after: updated.postFormats }
+  }
+
+  return diff
+}
+
+function deduplicateStrings(arr: string[]): string[] {
+  const seen = new Set<string>()
+  return arr.filter(item => {
+    const lower = item.toLowerCase().trim()
+    if (seen.has(lower)) return false
+    seen.add(lower)
+    return true
+  })
+}
+
+function normalizeForDedup(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200)  // compare first 200 chars to handle minor edits
+}
+```
+
+#### 8.2.5 New Shared Types
+
+```typescript
+// In packages/shared-types/src/index.ts — add:
+
+export interface IAddPostsRequest {
+  posts: string[]
+  reanalyze?: boolean
+  analysisMode?: 'full' | 'incremental'
+}
+
+export interface IAddPostsResponse {
+  message: string
+  persona: IUserPersona
+  postsAdded: number
+  totalPosts: number
+  duplicatesSkipped: number
+  reanalyzed: boolean
+  analysisMode: 'full' | 'incremental' | null
+  diff: Record<string, { before: string | string[]; after: string | string[] }> | null
+  personaVersion: number
+}
+
+export interface IPostMetadata {
+  content: string
+  addedAt: string
+  source: 'scraped' | 'manual' | 'incremental'
+  batchId: string
+}
+```
+
+#### 8.2.6 Frontend API Client Addition
+
+```typescript
+// In apps/web/src/lib/api.ts — add to personaApi:
+
+export const personaApi = {
+  // ... existing methods ...
+
+  addPosts: (body: IAddPostsRequest) =>
+    request<IAddPostsResponse>('/api/persona/add-posts', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  getPosts: () =>
+    request<{ posts: IPostMetadata[]; totalPosts: number }>('/api/persona/posts'),
+}
+```
+
+#### 8.2.7 Frontend: Add Posts Section on Profile Page
+
+The profile page (`/dashboard/profile`) should include a section where users can add more posts at any time:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  /dashboard/profile                                               │
+├────────────────────────────┬─────────────────────────────────────┤
+│  👤 Current Persona        │  💬 AI Strategy Coach (existing)    │
+│  ───────────────────────   │                                     │
+│  [existing persona fields] │  [existing chat UI]                 │
+│                            │                                     │
+│  ───────────────────────   │                                     │
+│  📝 LinkedIn Posts (23)    │                                     │
+│  ───────────────────────   │                                     │
+│  [+ Add More Posts]        │                                     │
+│                            │                                     │
+│  Batch 1 (onboarding)     │                                     │
+│    5 posts · Jan 20        │                                     │
+│  Batch 2 (incremental)    │                                     │
+│    3 posts · Feb 15        │                                     │
+│                            │                                     │
+│  ⚡ Re-analyze All Posts   │                                     │
+│                            │                                     │
+│  Persona v3 · Updated Feb 15                                    │
+└────────────────────────────┴─────────────────────────────────────┘
+```
+
+#### 8.2.8 Pipeline Impact
+
+When posts are added incrementally, the content generation pipeline automatically benefits because it reads from the same `UserPersona` document. The updated `writingStyle`, `tone`, `topics`, and `postFormats` flow into the content generator's prompt without any pipeline changes.
+
+**Key architectural principle**: The persona is the single source of truth. Adding posts → re-analyzing → updating persona → pipeline reads updated persona. No pipeline code needs to change.
+
+#### 8.2.9 Files to Create / Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `apps/api/src/services/personaMerge.ts` | **CREATE** | Merge strategy, diff computation, deduplication |
+| `apps/api/src/routes/persona.ts` | **MODIFY** | Add `POST /add-posts` and `GET /posts` endpoints |
+| `apps/api/src/models/UserPersona.ts` | **MODIFY** | Add `postMetadata`, `totalPostsAnalyzed`, `lastPostAddedAt`, `personaVersion`, `analysisHistory` fields |
+| `packages/shared-types/src/index.ts` | **MODIFY** | Add `IAddPostsRequest`, `IAddPostsResponse`, `IPostMetadata` |
+| `apps/web/src/lib/api.ts` | **MODIFY** | Add `personaApi.addPosts()` and `personaApi.getPosts()` |
+| `apps/web/src/app/dashboard/profile/page.tsx` | **MODIFY** | Add "LinkedIn Posts" section with add/view UI |
+| `apps/web/src/components/persona/AddPostsPanel.tsx` | **CREATE** | Multi-post input UI component (see Section 9) |
+| `apps/web/src/components/persona/PostBatchHistory.tsx` | **CREATE** | Shows batch history and per-batch post counts |
+
+---
+
+## 9. Feature: Multi-Post Input UX (Individual Post Cards)
+
+### 9.1 The Problem
+
+The current manual post input in `onboarding/page.tsx:201-212` uses a **single `<Textarea>`** where users must paste all their posts separated by `---` or blank lines:
+
+```tsx
+<Textarea
+  placeholder={`Paste 3–20 of your recent LinkedIn posts here.\n\nSeparate each post with a blank line or "---"...`}
+  value={manualPosts}
+  onChange={(e) => setManualPosts(e.target.value)}
+  rows={10}
+/>
+```
+
+**Problems with this approach:**
+
+1. **Treats everything as a single post**: If a user pastes one post, the backend's `parseManualPosts()` function (`linkedin.ts:90-97`) tries to split by `---` or double newlines. A single well-formatted LinkedIn post often contains double newlines internally (paragraph breaks), causing it to be split into fragments that are too short (filtered by the `p.length > 30` check) or misidentified as separate posts.
+
+2. **No visual feedback**: The user cannot see how many posts were detected or which segments the system identified. They paste a wall of text and hope for the best.
+
+3. **No individual post management**: Users cannot remove a single bad post, reorder posts, or see character counts per post.
+
+4. **Hostile UX for adding posts later**: When using the proposed `POST /api/persona/add-posts` endpoint from Section 8, the same textarea pattern would be confusing — users should add posts one at a time or in clear batches.
+
+### 9.2 Architectural Design: Post Card Input System
+
+Replace the single `<Textarea>` with a dynamic list of individual post cards, each with its own textarea. Users add posts one-by-one using a `+` button.
+
+#### 9.2.1 Component Design
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  📝 Add Your LinkedIn Posts                                         │
+│  Paste each post individually. The more posts you add, the         │
+│  better we can match your voice.                                   │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ Post 1                                             [✕ Remove] │   │
+│  │ ┌──────────────────────────────────────────────────────────┐ │   │
+│  │ │ AI is changing how mid-size companies operate.          │ │   │
+│  │ │ Here are 5 things I learned deploying LLMs at scale...  │ │   │
+│  │ │                                                          │ │   │
+│  │ └──────────────────────────────────────────────────────────┘ │   │
+│  │ 187 characters                                     ✓ Valid   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ Post 2                                             [✕ Remove] │   │
+│  │ ┌──────────────────────────────────────────────────────────┐ │   │
+│  │ │ I used to think leadership was about having answers.    │ │   │
+│  │ │ Then I realized it's about asking better questions...   │ │   │
+│  │ │                                                          │ │   │
+│  │ └──────────────────────────────────────────────────────────┘ │   │
+│  │ 142 characters                                     ✓ Valid   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  ┌ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐   │
+│  │                                                              │   │
+│  │              [+  Add Another Post]                           │   │
+│  │                                                              │   │
+│  └ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘   │
+│                                                                     │
+│  ────────────────────────────────────────────────────────────────   │
+│  3 posts ready    │   [Bulk Paste Mode]   │   [Analyse 3 Posts →]  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 9.2.2 New Component: `PostInputCards.tsx`
+
+```typescript
+// New file: apps/web/src/components/persona/PostInputCards.tsx
+
+'use client'
+
+import { useState, useCallback } from 'react'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Card, CardContent } from '@/components/ui/card'
+
+interface PostEntry {
+  id: string        // unique key for React
+  content: string   // the post text
+}
+
+interface PostInputCardsProps {
+  /** Called when user clicks "Analyse N Posts" or "Add N Posts" */
+  onSubmit: (posts: string[]) => void
+  /** Button label — changes based on context */
+  submitLabel?: string
+  /** Whether submission is in progress */
+  loading?: boolean
+  /** Whether to show the bulk paste toggle */
+  showBulkPaste?: boolean
+  /** Max posts allowed */
+  maxPosts?: number
+  /** Min posts required */
+  minPosts?: number
+}
+
+const MIN_POST_LENGTH = 30  // characters — matches backend validation
+const MAX_POSTS_DEFAULT = 20
+
+function generateId(): string {
+  return `post-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+export function PostInputCards({
+  onSubmit,
+  submitLabel = 'Analyse Posts →',
+  loading = false,
+  showBulkPaste = true,
+  maxPosts = MAX_POSTS_DEFAULT,
+  minPosts = 1,
+}: PostInputCardsProps) {
+  const [posts, setPosts] = useState<PostEntry[]>([
+    { id: generateId(), content: '' },
+  ])
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkText, setBulkText] = useState('')
+
+  // ── Individual post management ─────────────────────────────────
+
+  const addPost = useCallback(() => {
+    if (posts.length >= maxPosts) return
+    setPosts(prev => [...prev, { id: generateId(), content: '' }])
+  }, [posts.length, maxPosts])
+
+  const removePost = useCallback((id: string) => {
+    setPosts(prev => {
+      if (prev.length <= 1) return prev  // always keep at least one
+      return prev.filter(p => p.id !== id)
+    })
+  }, [])
+
+  const updatePost = useCallback((id: string, content: string) => {
+    setPosts(prev =>
+      prev.map(p => p.id === id ? { ...p, content } : p)
+    )
+  }, [])
+
+  // ── Validation ─────────────────────────────────────────────────
+
+  const validPosts = posts.filter(p => p.content.trim().length >= MIN_POST_LENGTH)
+  const canSubmit = validPosts.length >= minPosts && !loading
+
+  // ── Bulk paste → split into individual cards ───────────────────
+
+  const handleBulkParse = useCallback(() => {
+    const separators = /\n\s*---+\s*\n|\n\s*===+\s*\n|\n{3,}/g
+    const parsed = bulkText
+      .split(separators)
+      .map(p => p.trim())
+      .filter(p => p.length >= MIN_POST_LENGTH)
+      .slice(0, maxPosts)
+
+    if (parsed.length === 0) return
+
+    setPosts(parsed.map(content => ({ id: generateId(), content })))
+    setBulkMode(false)
+    setBulkText('')
+  }, [bulkText, maxPosts])
+
+  // ── Submit ─────────────────────────────────────────────────────
+
+  const handleSubmit = useCallback(() => {
+    const validContents = posts
+      .map(p => p.content.trim())
+      .filter(p => p.length >= MIN_POST_LENGTH)
+    if (validContents.length >= minPosts) {
+      onSubmit(validContents)
+    }
+  }, [posts, minPosts, onSubmit])
+
+  // ── Bulk paste mode ────────────────────────────────────────────
+
+  if (bulkMode) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-900">Bulk Paste Mode</h3>
+          <button
+            onClick={() => setBulkMode(false)}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            ← Switch to individual posts
+          </button>
+        </div>
+        <Textarea
+          placeholder={`Paste multiple posts separated by "---" or triple newlines:\n\nPost 1 text here...\n\n---\n\nPost 2 text here...\n\n---\n\nPost 3 text here...`}
+          value={bulkText}
+          onChange={(e) => setBulkText(e.target.value)}
+          rows={12}
+        />
+        <Button onClick={handleBulkParse} disabled={!bulkText.trim()}>
+          Parse into Individual Posts →
+        </Button>
+      </div>
+    )
+  }
+
+  // ── Individual card mode (default) ─────────────────────────────
+
+  return (
+    <div className="space-y-4">
+      {/* Post cards */}
+      {posts.map((post, index) => (
+        <Card key={post.id} className="border-gray-200">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-gray-500">
+                Post {index + 1}
+              </span>
+              {posts.length > 1 && (
+                <button
+                  onClick={() => removePost(post.id)}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  ✕ Remove
+                </button>
+              )}
+            </div>
+            <textarea
+              value={post.content}
+              onChange={(e) => updatePost(post.id, e.target.value)}
+              placeholder="Paste one LinkedIn post here..."
+              className="w-full rounded-lg border border-gray-200 px-3 py-2.5 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-linkedin
+                         focus:border-transparent resize-y min-h-[80px]"
+              rows={4}
+            />
+            <div className="flex items-center justify-between mt-1.5">
+              <span className="text-xs text-gray-400">
+                {post.content.trim().length} characters
+              </span>
+              {post.content.trim().length > 0 && (
+                <span className={`text-xs font-medium ${
+                  post.content.trim().length >= MIN_POST_LENGTH
+                    ? 'text-green-600' : 'text-amber-500'
+                }`}>
+                  {post.content.trim().length >= MIN_POST_LENGTH ? '✓ Valid' : '⚠ Too short'}
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Add another post button */}
+      {posts.length < maxPosts && (
+        <button
+          onClick={addPost}
+          className="w-full rounded-xl border-2 border-dashed border-gray-200
+                     py-4 text-sm text-gray-400 font-medium
+                     hover:border-linkedin hover:text-linkedin
+                     transition-colors cursor-pointer"
+        >
+          + Add Another Post
+        </button>
+      )}
+
+      {/* Footer */}
+      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-gray-600 font-medium">
+            {validPosts.length} post{validPosts.length !== 1 ? 's' : ''} ready
+          </span>
+          {showBulkPaste && (
+            <button
+              onClick={() => setBulkMode(true)}
+              className="text-xs text-gray-400 hover:text-gray-600 underline"
+            >
+              Bulk Paste Mode
+            </button>
+          )}
+        </div>
+        <Button
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          loading={loading}
+        >
+          {loading ? 'Processing...' : submitLabel.replace('N', String(validPosts.length))}
+        </Button>
+      </div>
+    </div>
+  )
+}
+```
+
+#### 9.2.3 Integration Points
+
+**1. Onboarding Page (initial setup):**
+
+Replace the current single `<Textarea>` in `onboarding/page.tsx:201-212` with:
+
+```tsx
+// In the 'paste' tab of the onboarding page
+import { PostInputCards } from '@/components/persona/PostInputCards'
+
+{tab === 'paste' && (
+  <PostInputCards
+    onSubmit={(posts) => {
+      // Join posts for the existing API which expects a single string
+      // OR call the new array-based endpoint
+      handleAnalyzeWithPosts(posts)
+    }}
+    submitLabel="Analyse Posts →"
+    loading={analyzeLoading}
+    showBulkPaste={true}
+    minPosts={3}
+    maxPosts={20}
+  />
+)}
+```
+
+**2. Profile Page (add more posts later):**
+
+Add a collapsible section in `dashboard/profile/page.tsx`:
+
+```tsx
+import { PostInputCards } from '@/components/persona/PostInputCards'
+
+// Inside the left column, below the persona display:
+<Card>
+  <CardContent className="p-5">
+    <div className="flex items-center justify-between mb-3">
+      <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+        <span>📝</span> Add More Posts
+      </h2>
+      <span className="text-xs text-gray-400">
+        {persona?.totalPostsAnalyzed ?? 0} posts analyzed
+      </span>
+    </div>
+    <p className="text-xs text-gray-500 mb-4">
+      Add new LinkedIn posts to refine your persona. Your writing style,
+      tone, and topics will be updated based on the combined corpus.
+    </p>
+    <PostInputCards
+      onSubmit={handleAddPosts}
+      submitLabel="Add & Re-analyze →"
+      loading={addingPosts}
+      showBulkPaste={true}
+      minPosts={1}
+      maxPosts={10}
+    />
+  </CardContent>
+</Card>
+```
+
+#### 9.2.4 Backend API Change: Accept Array Instead of String
+
+The current `POST /api/persona/analyze` accepts `manualPosts` as a single string which is then split by `parseManualPosts()`. To support the new card-based UI, add an alternative field that accepts a pre-split array:
+
+```typescript
+// In routes/persona.ts — update analyzeSchema:
+
+const analyzeSchema = z.object({
+  linkedinUrl: z.string().url('Must be a valid URL').optional(),
+  manualPosts: z.string().min(30, 'Please provide at least one post').optional(),
+  // NEW: Array-based input from the PostInputCards component
+  postsArray: z.array(
+    z.string().min(30, 'Each post must be at least 30 characters')
+  ).min(1).max(30).optional(),
+}).refine((d) => d.linkedinUrl ?? d.manualPosts ?? d.postsArray, {
+  message: 'Provide linkedinUrl, manualPosts, or postsArray',
+})
+
+// In the route handler — update post resolution:
+const { posts, scrapingBlocked, errorMessage } = body.postsArray
+  ? { posts: body.postsArray, scrapingBlocked: false, errorMessage: undefined }
+  : await resolvePostsFromInput(body)
+```
+
+#### 9.2.5 Updated Shared Types
+
+```typescript
+// In packages/shared-types/src/index.ts — update:
+
+export interface IPersonaAnalysisInput {
+  linkedinUrl?: string
+  manualPosts?: string
+  postsArray?: string[]   // NEW: array-based input from PostInputCards
+}
+```
+
+#### 9.2.6 Files to Create / Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `apps/web/src/components/persona/PostInputCards.tsx` | **CREATE** | The multi-post card input component with +/- buttons |
+| `apps/web/src/app/onboarding/page.tsx` | **MODIFY** | Replace `<Textarea>` in paste tab with `<PostInputCards>` |
+| `apps/web/src/app/dashboard/profile/page.tsx` | **MODIFY** | Add "Add More Posts" section using `<PostInputCards>` |
+| `apps/api/src/routes/persona.ts` | **MODIFY** | Add `postsArray` field to analyze schema |
+| `packages/shared-types/src/index.ts` | **MODIFY** | Add `postsArray` to `IPersonaAnalysisInput` |
+| `apps/web/src/lib/api.ts` | **MODIFY** | Update `personaApi.analyze` to accept `postsArray` |
+
+---
+
+## 10. Prioritized Action Plan
+
+> **Updated** to include the new features from Sections 8 & 9 alongside the original audit findings.
+> Items marked with 🆕 are from the new feature architectures.
 
 ### P0 — Critical (Do Before Production)
 
-| # | Action | Files | Effort |
-|---|--------|-------|--------|
-| 1 | Fix CORS to use explicit origin allowlist | `index.ts` | 5 min |
-| 2 | Add rate limiting on auth endpoints | `index.ts`, `routes/auth.ts` | 30 min |
-| 3 | Replace greedy JSON regex with robust extractor | `personaAnalyst.ts`, `trendResearch.ts`, `contentGenerator.ts` | 1 hour |
-| 4 | Add deterministic interview completeness check | `onboarding.ts`, `mastra.ts` | 1 hour |
-| 5 | Fix project-context.md Hono references | `.claude/project-context.md` | 10 min |
+| # | Action | Section | Files | Effort |
+|---|--------|---------|-------|--------|
+| 1 | Fix CORS to use explicit origin allowlist | §7 | `index.ts` | 5 min |
+| 2 | Add rate limiting on auth endpoints | §7 | `index.ts`, `routes/auth.ts` | 30 min |
+| 3 | Replace greedy JSON regex with robust extractor | §3 | `personaAnalyst.ts`, `trendResearch.ts`, `contentGenerator.ts` | 1 hour |
+| 4 | Add deterministic interview completeness check | §3 | `onboarding.ts`, `mastra.ts` | 1 hour |
+| 5 | Fix project-context.md Hono references | §2 | `.claude/project-context.md` | 10 min |
 
 ### P1 — High Impact (Do This Sprint)
 
-| # | Action | Files | Effort |
-|---|--------|-------|--------|
-| 6 | Add trend response cache (30-min TTL) | `trends.ts` or new `cache.ts` | 2 hours |
-| 7 | Implement chat history sliding window | `onboarding.ts`, `personaChat.ts` | 3 hours |
-| 8 | Add trend-persona relevance scoring | New `scoring.ts` + `trendResearch.ts` | 4 hours |
-| 9 | Granular retry on content generator (not whole pipeline) | `mastra.ts`, `contentGenerator.ts` | 2 hours |
-| 10 | Store generation mode + context in ContentSuggestion | `ContentSuggestion.ts`, `mastra.ts` | 1 hour |
+| # | Action | Section | Files | Effort |
+|---|--------|---------|-------|--------|
+| 6 | 🆕 Build `PostInputCards.tsx` component (multi-post card UI with + button) | §9 | `components/persona/PostInputCards.tsx` (CREATE) | 3 hours |
+| 7 | 🆕 Replace single `<Textarea>` in onboarding with `PostInputCards` | §9 | `onboarding/page.tsx` | 1 hour |
+| 8 | 🆕 Add `postsArray` field to `POST /api/persona/analyze` schema | §9 | `routes/persona.ts`, `shared-types/index.ts` | 1 hour |
+| 9 | 🆕 Add `POST /api/persona/add-posts` endpoint (incremental post addition) | §8 | `routes/persona.ts` | 3 hours |
+| 10 | 🆕 Create `personaMerge.ts` service (merge strategy, diff, dedup) | §8 | `services/personaMerge.ts` (CREATE) | 3 hours |
+| 11 | 🆕 Extend `UserPersona` schema with `postMetadata`, `personaVersion`, `analysisHistory` | §8 | `models/UserPersona.ts`, `shared-types/index.ts` | 2 hours |
+| 12 | 🆕 Add "Add More Posts" section to profile page | §8, §9 | `dashboard/profile/page.tsx`, `components/persona/PostBatchHistory.tsx` (CREATE) | 3 hours |
+| 13 | Add trend response cache (30-min TTL) | §5 | `trends.ts` or new `cache.ts` | 2 hours |
+| 14 | Implement chat history sliding window | §3 | `onboarding.ts`, `personaChat.ts` | 3 hours |
+| 15 | Add trend-persona relevance scoring | §4 | New `scoring.ts` + `trendResearch.ts` | 4 hours |
+| 16 | Granular retry on content generator (not whole pipeline) | §6 | `mastra.ts`, `contentGenerator.ts` | 2 hours |
+| 17 | Store generation mode + context in ContentSuggestion | §3 | `ContentSuggestion.ts`, `mastra.ts` | 1 hour |
 
 ### P2 — Medium Impact (Next Sprint)
 
-| # | Action | Files | Effort |
-|---|--------|-------|--------|
-| 11 | Pillar-balanced trend selection | New `scoring.ts` | 3 hours |
-| 12 | Post-generation diversity validation | `contentGenerator.ts` | 2 hours |
-| 13 | Compress persona to summary for prompt | `contentGenerator.ts` | 1 hour |
-| 14 | Add degradation tracking / health endpoint | `services/healthCheck.ts`, `index.ts` | 3 hours |
-| 15 | Extract ChatSessionService and PersonaService | New service files, refactor agents | 4 hours |
-| 16 | Cache SystemConfig token limit in-memory | `tokenUsage.ts` | 30 min |
+| # | Action | Section | Files | Effort |
+|---|--------|---------|-------|--------|
+| 18 | 🆕 Add `GET /api/persona/posts` endpoint (view post history by batch) | §8 | `routes/persona.ts` | 1 hour |
+| 19 | 🆕 Update `personaApi` client with `addPosts()` and `getPosts()` methods | §8 | `apps/web/src/lib/api.ts` | 30 min |
+| 20 | 🆕 Build `PostBatchHistory.tsx` component (batch timeline view) | §8 | `components/persona/PostBatchHistory.tsx` (CREATE) | 2 hours |
+| 21 | Pillar-balanced trend selection | §4 | New `scoring.ts` | 3 hours |
+| 22 | Post-generation diversity validation | §3 | `contentGenerator.ts` | 2 hours |
+| 23 | Compress persona to summary for prompt | §5 | `contentGenerator.ts` | 1 hour |
+| 24 | Add degradation tracking / health endpoint | §6 | `services/healthCheck.ts`, `index.ts` | 3 hours |
+| 25 | Extract ChatSessionService and PersonaService | §2 | New service files, refactor agents | 4 hours |
+| 26 | Cache SystemConfig token limit in-memory | §5 | `tokenUsage.ts` | 30 min |
 
 ### P3 — Polish (Backlog)
 
-| # | Action | Files | Effort |
-|---|--------|-------|--------|
-| 17 | Add unique compound index on ChatSession(userId, agentType) | `ChatSession.ts` | 15 min |
-| 18 | Parallelize persona fetch + trend fetch for returning users | `mastra.ts` | 2 hours |
-| 19 | Make trend research LLM call optional (heuristic-only mode) | `trendResearch.ts` | 4 hours |
-| 20 | Implement refresh token mechanism | `auth.ts`, new model | 4 hours |
-| 21 | Add `trendSource` indicator to frontend | `mastra.ts`, frontend components | 1 hour |
-| 22 | Remove dead `linkedinScrapeTool` from persona analyst agent registration | `personaAnalyst.ts` | 5 min |
-| 23 | Fix HN query construction to limit term count | `trends.ts` | 30 min |
-| 24 | Replace RSS keyword matching with word-boundary check | `trends.ts` | 30 min |
+| # | Action | Section | Files | Effort |
+|---|--------|---------|-------|--------|
+| 27 | 🆕 Add persona version display to profile page (`Persona v3 · Updated Feb 15`) | §8 | `dashboard/profile/page.tsx` | 30 min |
+| 28 | 🆕 Add persona diff visualization on post addition (before/after card) | §8 | `components/persona/PersonaDiffCard.tsx` (CREATE) | 2 hours |
+| 29 | 🆕 Add bulk paste → individual cards auto-split preview | §9 | `PostInputCards.tsx` | 1 hour |
+| 30 | Add unique compound index on ChatSession(userId, agentType) | §2 | `ChatSession.ts` | 15 min |
+| 31 | Parallelize persona fetch + trend fetch for returning users | §5 | `mastra.ts` | 2 hours |
+| 32 | Make trend research LLM call optional (heuristic-only mode) | §3 | `trendResearch.ts` | 4 hours |
+| 33 | Implement refresh token mechanism | §7 | `auth.ts`, new model | 4 hours |
+| 34 | Add `trendSource` indicator to frontend | §6 | `mastra.ts`, frontend components | 1 hour |
+| 35 | Remove dead `linkedinScrapeTool` from persona analyst agent registration | §3 | `personaAnalyst.ts` | 5 min |
+| 36 | Fix HN query construction to limit term count | §3 | `trends.ts` | 30 min |
+| 37 | Replace RSS keyword matching with word-boundary check | §3 | `trends.ts` | 30 min |
+
+### Implementation Dependency Graph (New Features)
+
+The new features from Sections 8 & 9 have interdependencies. This is the recommended implementation order:
+
+```
+Phase A — Foundation (must come first):
+  ┌──────────────────────────────────────────────────────────────┐
+  │  #11  Extend UserPersona schema (postMetadata, version...)  │
+  │  #8   Add postsArray to analyze schema                      │
+  │  #10  Create personaMerge.ts service                        │
+  └────────────────────────┬─────────────────────────────────────┘
+                           ↓
+Phase B — Backend Endpoints:
+  ┌──────────────────────────────────────────────────────────────┐
+  │  #9   POST /api/persona/add-posts endpoint                  │
+  │  #18  GET /api/persona/posts endpoint                       │
+  │  #19  Update personaApi client                              │
+  └────────────────────────┬─────────────────────────────────────┘
+                           ↓
+Phase C — Frontend Components:
+  ┌──────────────────────────────────────────────────────────────┐
+  │  #6   Build PostInputCards.tsx                               │
+  │  #20  Build PostBatchHistory.tsx                             │
+  └────────────────────────┬─────────────────────────────────────┘
+                           ↓
+Phase D — Integration:
+  ┌──────────────────────────────────────────────────────────────┐
+  │  #7   Replace <Textarea> in onboarding with PostInputCards  │
+  │  #12  Add "Add More Posts" to profile page                  │
+  └────────────────────────┬─────────────────────────────────────┘
+                           ↓
+Phase E — Polish:
+  ┌──────────────────────────────────────────────────────────────┐
+  │  #27  Persona version display                               │
+  │  #28  Persona diff visualization                            │
+  │  #29  Bulk paste preview                                    │
+  └──────────────────────────────────────────────────────────────┘
+```
+
+**Total estimated effort for Sections 8 & 9**: ~22.5 hours across 13 action items.
 
 ---
 
