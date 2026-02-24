@@ -1,5 +1,5 @@
 import { env } from "./config/env"; // Validate env vars — .env loaded via nodemon --require ../../load-env.cjs
-import express from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
@@ -59,6 +59,36 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// ── Request timeout middleware ────────────────────────────────────────────────
+// Prevents the Next.js rewrite proxy (or any upstream load balancer) from killing
+// long-running AI requests mid-flight by ensuring Express always sends a response
+// before the proxy's own timeout fires.
+//
+// AI pipeline (steps 3+4: trend research + content generation) can take 30–90s.
+// Without an explicit timeout the connection is held open until the proxy's
+// default timeout (~60s on most platforms) drops it — producing a 500 "Internal
+// Server Error" on the browser even though the backend finished successfully.
+//
+// Timeout values (conservative — AI generation can be slow):
+//   AI endpoints  (/generate, /persona/analyze, /onboarding/chat, /persona-chat/chat): 180 s
+//   Everything else: 30 s
+function requestTimeout(ms: number) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const timer = setTimeout(() => {
+      if (!res.headersSent) {
+        res.status(503).json({
+          error: "Request timed out. The AI pipeline took too long. Please try again.",
+        });
+      }
+    }, ms);
+
+    // Clear the timer once the response is finished (success or error)
+    res.on("finish", () => clearTimeout(timer));
+    res.on("close", () => clearTimeout(timer));
+    next();
+  };
+}
+
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 // Auth-specific limiters live in routes/auth.ts (per endpoint).
 // General API limiter covers all /api/* routes.
@@ -91,6 +121,18 @@ app.get("/api/health", async (_req, res) => {
 // ── API Routes ────────────────────────────────────────────────────────────────
 // General limiter applied first (covers all /api/* routes)
 app.use("/api", generalApiLimiter);
+
+// Long timeout (180 s) for AI-heavy endpoints that run multi-step LLM pipelines.
+// Must be registered BEFORE the route handlers so it fires first.
+const AI_TIMEOUT_MS = 180_000; // 3 minutes — well beyond any LLM pipeline duration
+const DEFAULT_TIMEOUT_MS = 180_000; // 30 s for all other routes
+
+app.use("/api/suggestions/generate", requestTimeout(AI_TIMEOUT_MS));
+app.use("/api/persona/analyze", requestTimeout(AI_TIMEOUT_MS));
+app.use("/api/onboarding/chat", requestTimeout(AI_TIMEOUT_MS));
+app.use("/api/persona-chat/chat", requestTimeout(AI_TIMEOUT_MS));
+// All other routes get the short timeout
+app.use("/api", requestTimeout(DEFAULT_TIMEOUT_MS));
 
 // Auth routes with per-endpoint limiters applied in auth.ts (mounted here)
 app.use("/api/auth", authRoutes);

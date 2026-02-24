@@ -32,6 +32,21 @@ import type {
 // next.config.mjs to configure the rewrite destination.
 const BASE_URL = "";
 
+// For long-running AI endpoints (30–90 s) we bypass the Next.js rewrite proxy
+// and call the Express API directly from the browser. The proxy has a platform
+// default timeout (~60 s on most hosts) that drops long connections before the
+// AI pipeline finishes — producing a spurious 500 on the client even though the
+// backend completed successfully. Direct calls avoid the proxy entirely.
+//
+// NEXT_PUBLIC_API_URL must be set to the publicly accessible API base
+// (e.g. https://api.yourdomain.com). Falls back to relative path in dev when
+// the env var is absent (Next.js dev server has no proxy timeout).
+const DIRECT_API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
+
+// Timeout for long-running AI requests (3 min — matches Express middleware)
+const AI_TIMEOUT_MS = 180_000;
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -47,6 +62,35 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+  const data = await res.json().catch(() => ({ error: "Request failed" }));
+
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      (data as { error?: string }).error || `HTTP ${res.status}`,
+      (data as { details?: string }).details,
+    );
+  }
+
+  return data as T;
+}
+
+// Like `request` but goes directly to the Express API (no Next.js proxy) and
+// uses an AbortSignal timeout so the browser does not give up prematurely.
+async function requestDirect<T>(
+  path: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const res = await fetch(`${DIRECT_API_URL}${path}`, {
+    ...options,
+    credentials: "include",
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       ...options.headers,
@@ -90,8 +134,9 @@ export const authApi = {
 // ── Persona ───────────────────────────────────────────────────────────────────
 
 export const personaApi = {
+  // Direct call — persona analysis runs a full LLM pipeline (30–60 s)
   analyze: (body: IPersonaAnalysisInput) =>
-    request<{ persona: IUserPersona; postsAnalyzed: number }>(
+    requestDirect<{ persona: IUserPersona; postsAnalyzed: number }>(
       "/api/persona/analyze",
       {
         method: "POST",
@@ -113,8 +158,9 @@ export const personaApi = {
 // ── Onboarding ────────────────────────────────────────────────────────────────
 
 export const onboardingApi = {
+  // Direct call — onboarding chat runs an LLM agent (can take 30–60 s)
   chat: (body: IOnboardingMessage) =>
-    request<IOnboardingResponse>("/api/onboarding/chat", {
+    requestDirect<IOnboardingResponse>("/api/onboarding/chat", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -136,13 +182,15 @@ export const onboardingApi = {
 // ── Suggestions ───────────────────────────────────────────────────────────────
 
 export const suggestionsApi = {
+  // Uses requestDirect (bypasses Next.js proxy) + AbortSignal.timeout(180s)
+  // to avoid the ~60 s proxy timeout that causes spurious 500s for long AI runs.
   generate: (body?: {
     linkedinUrl?: string;
     manualPosts?: string;
     forceReanalyze?: boolean;
     context?: IGenerateContextOptions;
   }) =>
-    request<ISuggestionsGenerateResponse>("/api/suggestions/generate", {
+    requestDirect<ISuggestionsGenerateResponse>("/api/suggestions/generate", {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
@@ -195,8 +243,9 @@ export const tokenApi = {
 // ── Persona Chat ───────────────────────────────────────────────────────────────
 
 export const personaChatApi = {
+  // Direct call — persona chat runs an LLM agent (can take 30–60 s)
   chat: (body: IPersonaChatMessage) =>
-    request<IPersonaChatResponse>("/api/persona-chat/chat", {
+    requestDirect<IPersonaChatResponse>("/api/persona-chat/chat", {
       method: "POST",
       body: JSON.stringify(body),
     }),
