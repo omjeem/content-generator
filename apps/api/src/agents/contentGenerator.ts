@@ -31,12 +31,12 @@ export const SuggestionSchema = z.object({
   clickbaitHooks: z
     .array(z.string())
     .min(2)
-    .max(3)
+    .max(5)
     .describe("2-3 bolder, punchier alternative hook variants"),
   postPointers: z
     .array(z.string())
     .min(4)
-    .max(6)
+    .max(10)
     .describe(
       "4-6 bullet points outlining exactly what to write in the post body",
     ),
@@ -48,7 +48,7 @@ export const SuggestionSchema = z.object({
 });
 
 export const ContentIdeasSchema = z.object({
-  ideas: z.array(SuggestionSchema).min(5).max(10),
+  ideas: z.array(SuggestionSchema).min(5).max(20),
 });
 
 export type ContentIdeas = z.infer<typeof ContentIdeasSchema>;

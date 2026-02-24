@@ -9,7 +9,8 @@
  *
  *  Tier 2 — Hacker News Algolia + RSS Feeds (always-on, zero API keys)
  *    ├─ HN Algolia: real trending tech/AI/startup stories (no key, no limit)
- *    └─ RSS Feeds: TechCrunch, HBR, VentureBeat, Fast Company (no key)
+ *    └─ RSS Feeds: TechCrunch, Entrepreneur, VentureBeat, Fast Company,
+ *                  MIT Technology Review, Inc. Magazine, NYT Technology (no key)
  *
  *  Tier 3 — Evergreen fallback (no network call)
  *    └─ Returns content-pillar-based fallback topics if all APIs fail
@@ -42,8 +43,10 @@ const RSS_FEEDS: { name: string; url: string; topics: string[] }[] = [
     topics: ["tech", "ai", "startup", "saas", "software", "engineering"],
   },
   {
-    name: "HBR",
-    url: "https://feeds.hbr.org/harvardbusiness",
+    // HBR feeds.hbr.org is dead (TLS failure). Replaced with Entrepreneur for
+    // leadership/management/business content coverage.
+    name: "Entrepreneur",
+    url: "https://www.entrepreneur.com/latest.rss",
     topics: [
       "leadership",
       "management",
@@ -51,11 +54,14 @@ const RSS_FEEDS: { name: string; url: string; topics: string[] }[] = [
       "business",
       "career",
       "hr",
+      "entrepreneurship",
+      "startup",
     ],
   },
   {
+    // feeds.feedburner.com/venturebeat/SZYF still works but direct URL is more reliable
     name: "VentureBeat",
-    url: "https://feeds.feedburner.com/venturebeat/SZYF",
+    url: "https://venturebeat.com/feed/",
     topics: ["ai", "ml", "enterprise", "tech", "startup", "data"],
   },
   {
@@ -78,6 +84,11 @@ const RSS_FEEDS: { name: string; url: string; topics: string[] }[] = [
       "management",
       "marketing",
     ],
+  },
+  {
+    name: "NYT Technology",
+    url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+    topics: ["tech", "ai", "software", "computing", "science", "data"],
   },
 ];
 
@@ -186,43 +197,65 @@ async function fetchFromHackerNews(
     const fallbackTerms = keywords.slice(0, 3).join(" ") || industry;
     const query = firstMappedExpansion ?? fallbackTerms;
 
-    const url = new URL("https://hn.algolia.com/api/v1/search_by_date");
-    url.searchParams.set("query", query);
-    url.searchParams.set("tags", "story");
-    url.searchParams.set("numericFilters", "points>10"); // only quality posts
-    url.searchParams.set("hitsPerPage", "20");
-
     console.log(`[trends:hn] Searching HN for: "${query}"`);
 
-    const res = await fetch(url.toString(), {
-      headers: { "User-Agent": "ContentGeneratorApp/1.0" },
-      signal: AbortSignal.timeout(8000),
-    });
+    // Helper to run a single HN Algolia fetch
+    const fetchHN = async (
+      endpoint: "search_by_date" | "search",
+      pointsMin: number,
+    ) => {
+      const url = new URL(`https://hn.algolia.com/api/v1/${endpoint}`);
+      url.searchParams.set("query", query);
+      url.searchParams.set("tags", "story");
+      url.searchParams.set("numericFilters", `points>${pointsMin}`);
+      url.searchParams.set("hitsPerPage", "20");
 
-    if (!res.ok) {
-      console.warn(`[trends:hn] HTTP ${res.status}`);
-      return [];
-    }
+      const res = await fetch(url.toString(), {
+        headers: { "User-Agent": "ContentGeneratorApp/1.0" },
+        signal: AbortSignal.timeout(8000),
+      });
 
-    const data = (await res.json()) as {
-      hits: {
-        title: string;
-        url?: string;
-        story_url?: string;
-        points: number;
-        created_at: string;
-      }[];
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = (await res.json()) as {
+        hits: {
+          title: string;
+          url?: string;
+          story_url?: string;
+          points: number;
+          created_at: string;
+        }[];
+      };
+
+      return (data.hits ?? [])
+        .filter((h) => h.title && h.title.length > 10)
+        .map(
+          (h): RawTrendItem => ({
+            title: h.title,
+            url: h.url ?? h.story_url,
+            source: "hackernews",
+            score: h.points,
+            publishedAt: h.created_at,
+          }),
+        );
     };
 
-    const items: RawTrendItem[] = (data.hits ?? [])
-      .filter((h) => h.title && h.title.length > 10)
-      .map((h) => ({
-        title: h.title,
-        url: h.url ?? h.story_url,
-        source: "hackernews",
-        score: h.points,
-        publishedAt: h.created_at,
-      }));
+    // Attempt 1: recent stories with points > 5 (lower threshold than original 10,
+    // so niche topics like leadership/management still return results)
+    let items = await fetchHN("search_by_date", 5);
+
+    // Attempt 2: if still sparse, fall back to the ranked "search" endpoint which
+    // surfaces all-time popular stories relevant to the query (not just recent ones)
+    if (items.length < 5) {
+      console.log(
+        `[trends:hn] Only ${items.length} recent stories — trying ranked search`,
+      );
+      const ranked = await fetchHN("search", 5);
+      // Merge: prefer recent stories, top up with ranked ones
+      const existingUrls = new Set(items.map((i) => i.url));
+      const newRanked = ranked.filter((r) => !existingUrls.has(r.url));
+      items = [...items, ...newRanked].slice(0, 20);
+    }
 
     console.log(`[trends:hn] ✓ ${items.length} stories`);
     return items;
@@ -235,20 +268,42 @@ async function fetchFromHackerNews(
 // ── Source 2b: RSS Feeds — business/leadership/tech publications ──────────────
 // Completely free, no keys. Fetches from 2-4 curated feeds relevant to
 // the user's keywords, then filters items by keyword match.
+//
+// Fixes applied vs original:
+//  • HBR feeds.hbr.org dead (TLS failure) → replaced with Entrepreneur
+//  • VentureBeat FeedBurner URL → switched to direct venturebeat.com/feed/
+//  • Added NYT Technology as a reliable 7th source
+//  • Richer User-Agent + Accept headers so sites don't reject the request
+//  • Per-feed timeout raised to 12 s (some feeds are slow to respond)
+//  • Keyword filter now uses a broadened fallback: if a feed returns 0
+//    relevant items we include ALL items from that feed (up to 10) rather
+//    than silently discarding them — this ensures the agent always has
+//    material to work with even when persona keywords are very niche.
 
 async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
+  // rss-parser uses the underlying http/https module; set browser-like headers
+  // so publication servers don't block the request as a headless scraper.
   const parser = new Parser({
-    timeout: 8000,
-    headers: { "User-Agent": "ContentGeneratorApp/1.0" },
+    timeout: 12000,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (compatible; ContentGeneratorBot/1.0; +https://github.com/contentgenerator)",
+      Accept:
+        "application/rss+xml, application/xml, text/xml, application/atom+xml, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+    },
   });
 
-  // Select 3 feeds whose topic tags match the user's keywords
-  const selectedFeeds = RSS_FEEDS.map((feed) => ({
+  // Select 3 feeds whose topic tags best match the user's keywords.
+  // If all scores are 0 (very niche persona), just take the top 3 by
+  // their natural order (TechCrunch, Entrepreneur, VentureBeat) so we
+  // always fetch *something* rather than falling completely silent.
+  const scoredFeeds = RSS_FEEDS.map((feed) => ({
     ...feed,
     matchScore: feed.topics.filter((t) => isRelevant(t, keywords)).length,
-  }))
-    .sort((a, b) => b.matchScore - a.matchScore)
-    .slice(0, 3); // top 3 most relevant feeds
+  })).sort((a, b) => b.matchScore - a.matchScore);
+
+  const selectedFeeds = scoredFeeds.slice(0, 3);
 
   console.log(
     `[trends:rss] Fetching from: ${selectedFeeds.map((f) => f.name).join(", ")}`,
@@ -261,11 +316,12 @@ async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
       try {
         const parsed = await parser.parseURL(feed.url);
 
-        const items = (parsed.items ?? [])
-          .slice(0, 15) // latest 15 items per feed
+        const rawItems = (parsed.items ?? []).slice(0, 20); // latest 20 items
+
+        // First pass: keyword-relevant items
+        let items = rawItems
           .filter((item) => {
             const text = `${item.title ?? ""} ${item.contentSnippet ?? ""}`;
-            // Accept if item is keyword-relevant OR if no keywords to filter by
             return keywords.length === 0 || isRelevant(text, keywords);
           })
           .map(
@@ -277,6 +333,25 @@ async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
             }),
           )
           .filter((item) => item.title.length > 0);
+
+        // Fallback: if keyword filter wiped everything out, include the latest
+        // 10 items anyway — the AI agent will judge relevance downstream.
+        if (items.length === 0 && rawItems.length > 0) {
+          console.log(
+            `[trends:rss] No keyword match in ${feed.name} — including latest items as fallback`,
+          );
+          items = rawItems
+            .slice(0, 10)
+            .map(
+              (item): RawTrendItem => ({
+                title: item.title ?? "",
+                url: item.link,
+                source: `rss:${feed.name}`,
+                publishedAt: item.isoDate ?? item.pubDate,
+              }),
+            )
+            .filter((item) => item.title.length > 0);
+        }
 
         allItems.push(...items);
         console.log(`[trends:rss] ✓ ${items.length} items from ${feed.name}`);

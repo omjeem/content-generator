@@ -33,7 +33,7 @@ export const TrendResultSchema = z.object({
       }),
     )
     .min(1)
-    .max(10),
+    .max(15),
   rawTrends: z.array(z.string()),
 });
 
