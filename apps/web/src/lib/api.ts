@@ -20,6 +20,7 @@ import type {
   ITokenUsageSummary,
   ITokenUsageLog,
   IPersonaPostsResponse,
+  ITokenRequest,
 } from "@repo/shared-types";
 
 // In production, Next.js rewrites /api/* → the Express backend (same domain).
@@ -178,6 +179,17 @@ export const tokenApi = {
     request<IPaginatedResponse<ITokenUsageLog>>(
       `/api/tokens/logs?page=${page}&limit=${limit}`,
     ),
+
+  // Submit a request for a token limit increase (optional message)
+  requestIncrease: (message?: string) =>
+    request<{ message: string; request: ITokenRequest }>(
+      "/api/tokens/request-increase",
+      { method: "POST", body: JSON.stringify({ message }) },
+    ),
+
+  // Get the current user's own token increase requests
+  getMyRequests: () =>
+    request<{ requests: ITokenRequest[] }>("/api/tokens/my-requests"),
 };
 
 // ── Persona Chat ───────────────────────────────────────────────────────────────

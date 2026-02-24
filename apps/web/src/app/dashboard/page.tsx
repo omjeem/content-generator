@@ -6,11 +6,12 @@ import { SuggestionCard } from "@/components/suggestions/SuggestionCard";
 import { GenerateOptionsPanel } from "@/components/suggestions/GenerateOptionsPanel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { personaApi, suggestionsApi, ApiError } from "@/lib/api";
+import { personaApi, suggestionsApi, tokenApi, ApiError } from "@/lib/api";
 import type {
   ISuggestion,
   IUserPersona,
   IGenerateContextOptions,
+  ITokenUsageSummary,
 } from "@repo/shared-types";
 
 type GenerateState = "idle" | "choosing" | "loading" | "done" | "error";
@@ -36,14 +37,22 @@ export default function DashboardPage() {
     null,
   );
   const [generateError, setGenerateError] = useState("");
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<ITokenUsageSummary | null>(null);
 
-  // Load persona on mount
+  // Load persona + token quota on mount
   useEffect(() => {
     personaApi
       .get()
       .then(({ persona }) => setPersona(persona))
       .catch(() => setPersona(null))
       .finally(() => setPersonaLoading(false));
+
+    // Check quota upfront so the UI can block generation before even trying
+    tokenApi.getUsage().then((usage) => {
+      setTokenUsage(usage);
+      if (!usage.allowed) setQuotaExceeded(true);
+    }).catch(() => {}); // non-fatal — only blocks UX if we have data
   }, []);
 
   // Cycle through loading step messages while generating
@@ -68,10 +77,18 @@ export default function DashboardPage() {
         setTrendsUsed(result.trendsUsed);
         setTrendSource(result.trendSource ?? "live");
         setGenerateState("done");
+        // Refresh quota after a successful generation
+        tokenApi.getUsage().then((u) => { setTokenUsage(u); if (!u.allowed) setQuotaExceeded(true); }).catch(() => {});
       } catch (err) {
         if (err instanceof ApiError && err.status === 400) {
           // Interview not complete — redirect to onboarding
           router.push("/onboarding");
+          return;
+        }
+        // Token quota exhausted — show the quota-exceeded banner
+        if (err instanceof ApiError && err.status === 429) {
+          setQuotaExceeded(true);
+          setGenerateState("idle");
           return;
         }
         setGenerateError(
@@ -150,6 +167,35 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* ── Token quota exhausted banner ──────────────────────────────────── */}
+      {quotaExceeded && (
+        <div className="mb-6 flex items-start gap-4 rounded-xl border border-red-200 bg-red-50 p-5">
+          <span className="text-2xl leading-none">⚠️</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-red-800">Token quota exhausted</p>
+            <p className="text-sm text-red-700 mt-1">
+              You have used{" "}
+              <span className="font-medium">
+                {tokenUsage
+                  ? `${tokenUsage.tokensUsed.toLocaleString()} / ${tokenUsage.tokenLimit.toLocaleString()}`
+                  : "all available"}
+              </span>{" "}
+              tokens. AI operations are blocked until your limit is increased.
+            </p>
+            <p className="text-sm text-red-600 mt-2">
+              Go to{" "}
+              <Link
+                href="/dashboard/usage"
+                className="font-medium underline underline-offset-2"
+              >
+                Token Usage
+              </Link>{" "}
+              to request a limit increase.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Generate section */}
       {generateState !== "done" && (
         <div className="mb-8">
@@ -172,7 +218,7 @@ export default function DashboardPage() {
                 <Button
                   size="lg"
                   onClick={() => setGenerateState("choosing")}
-                  disabled={!interviewComplete || personaLoading}
+                  disabled={!interviewComplete || personaLoading || quotaExceeded}
                   className="min-w-[220px]"
                 >
                   Generate Content Ideas →

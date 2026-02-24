@@ -13,7 +13,7 @@ import { SystemConfig, CONFIG_KEYS } from "../models/SystemConfig";
 const GRACE_MULTIPLIER = 1.1;
 
 /** Hard-coded fallback if SystemConfig row is somehow missing */
-const FALLBACK_DEFAULT_LIMIT = 100_000;
+const FALLBACK_DEFAULT_LIMIT = 300_000;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,6 +47,7 @@ export interface TrackTokenUsageParams {
  */
 export async function seedDefaultTokenLimit(): Promise<void> {
   try {
+    // First attempt: insert if the key doesn't exist yet
     await SystemConfig.updateOne(
       { key: CONFIG_KEYS.DEFAULT_TOKEN_LIMIT },
       {
@@ -58,6 +59,14 @@ export async function seedDefaultTokenLimit(): Promise<void> {
       },
       { upsert: true },
     );
+
+    // Migration: if the stored value is still the old 100K default, bump it to 300K.
+    // This runs safely on existing deployments without overwriting intentional admin edits.
+    await SystemConfig.updateOne(
+      { key: CONFIG_KEYS.DEFAULT_TOKEN_LIMIT, value: 100_000 },
+      { $set: { value: FALLBACK_DEFAULT_LIMIT } },
+    );
+
     console.log(
       "[tokenUsage] SystemConfig seeded: default_token_limit =",
       FALLBACK_DEFAULT_LIMIT,

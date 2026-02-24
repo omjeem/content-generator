@@ -319,3 +319,32 @@ export interface ITokenUsageSummary {
   tokensRemaining: number;
   allowed: boolean;
 }
+
+// --- Feature: Token Increase Requests ---
+
+export type TokenRequestStatus = "pending" | "approved" | "rejected";
+
+export interface ITokenRequest {
+  _id: string;
+  /** userId is a string on user-facing endpoints; populated object on admin list */
+  userId:
+    | string
+    | {
+        _id: string;
+        email: string;
+        name: string;
+        tokensUsed: number;
+        tokenLimit: number | null;
+      };
+  message?: string;
+  status: TokenRequestStatus;
+  /** Usage snapshot captured at time of request */
+  tokensUsed: number;
+  tokenLimit: number;
+  /** New limit set by admin when approving */
+  newLimit?: number;
+  adminNote?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
