@@ -26,24 +26,30 @@ const app = express();
 // To change the allowed frontend origin → edit FRONTEND_URL in .env
 const PORT = env.PORT;
 
-// ── CORS ─────────────────────────────────────────────────────────────────────
-// IMPORTANT: credentials:true + wildcard origin (*) is rejected by all browsers.
-// We must echo back the exact requesting origin when it is on our allowlist.
-// To add more allowed origins, extend FRONTEND_URL or add them to ALLOWED_ORIGINS.
-const ALLOWED_ORIGINS = [env.FRONTEND_URL].filter(Boolean) as string[];
+// ── Trust Proxy ───────────────────────────────────────────────────────────────
+// REQUIRED when the server runs behind a reverse proxy (Nginx, AWS ALB, Railway,
+// Render, Fly.io, etc.) that sets the X-Forwarded-For header.
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// and cannot determine the real client IP.
+// '1' means trust the first hop (the immediate proxy) — correct for most setups.
+app.set("trust proxy", 1);
 
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// credentials:true + wildcard '*' is rejected by all browsers — we must echo
+// back the exact requesting origin instead. This allows any origin while still
+// supporting cookies/Authorization headers from the browser.
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow server-to-server / curl requests (no Origin header)
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      // Allow ALL origins
+      if (!origin) return callback(null, true);
+      // Echo back whatever origin the browser sent — allows all origins
+      // while staying compatible with credentials:true
       return callback(null, origin);
     },
     credentials: true,
+    // Expose headers needed by the frontend
+    exposedHeaders: ["Set-Cookie"],
   })
 );
 

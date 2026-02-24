@@ -22,7 +22,14 @@ import type {
   IPersonaPostsResponse,
 } from "@repo/shared-types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+// In production, Next.js rewrites /api/* → the Express backend (same domain).
+// This means cookies are set on the frontend's domain and the middleware can
+// read them — fixing the cross-origin cookie redirect bug.
+//
+// We use a relative base URL so all API calls go through the Next.js rewrite
+// proxy in both local dev and production. NEXT_PUBLIC_API_URL is only used by
+// next.config.mjs to configure the rewrite destination.
+const BASE_URL = "";
 
 export class ApiError extends Error {
   constructor(

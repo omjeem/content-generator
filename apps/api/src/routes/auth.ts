@@ -49,17 +49,27 @@ const ACCESS_TOKEN_TTL = "15m";
 const REFRESH_TOKEN_TTL_DAYS = 30;
 const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
 
+// ── Cookie SameSite strategy ──────────────────────────────────────────────────
+// The frontend proxies all /api/* calls through Next.js rewrites, so the browser
+// sends requests to its own domain (same-origin). The cookie is therefore set and
+// read on that same domain — no cross-origin issue.
+//
+// We use sameSite:"none" + secure:true in production so the cookie is also
+// forwarded correctly when Next.js makes the server-side proxy request to the
+// Express API (which may be on a different internal host).
+const isProduction = process.env.NODE_ENV === "production";
+
 const ACCESS_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  secure: isProduction,
+  sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
   maxAge: 15 * 60 * 1000, // 15 minutes
 };
 
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
+  secure: isProduction,
+  sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
   maxAge: REFRESH_TOKEN_TTL_MS,
   path: "/api/auth", // only sent to auth routes (reduces exposure surface)
 };
