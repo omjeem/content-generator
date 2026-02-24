@@ -1,12 +1,11 @@
 import { Agent } from '@mastra/core/agent'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
-import { ChatSession } from '../models/ChatSession'
-import { UserPersona } from '../models/UserPersona'
 import { trackTokenUsage } from '../services/tokenUsage'
+import { findOrCreateSession, persistMessages } from '../services/chatSessionService'
+import { saveInterviewAnswers } from '../services/userPersonaService'
 import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
 import { sanitizeMessage } from '../utils/sanitizeInput'
-import mongoose from 'mongoose'
 
 // ── Interview questions the agent must cover ──────────────────────────────────
 
@@ -94,19 +93,7 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
   const message = sanitizeMessage(input.message)
 
   // Load or create the chat session for this user
-  let session = await ChatSession.findOne({
-    userId: new mongoose.Types.ObjectId(userId),
-    agentType: 'onboarding',
-  })
-
-  if (!session) {
-    session = await ChatSession.create({
-      userId: new mongoose.Types.ObjectId(userId),
-      sessionId: `onboarding-${userId}`,
-      agentType: 'onboarding',
-      messages: [],
-    })
-  }
+  const session = await findOrCreateSession(userId, 'onboarding')
 
   // Build conversation history for Mastra — apply sliding window to cap token usage
   const fullHistory = session.messages.map((m) => ({
@@ -139,9 +126,7 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
   })
 
   // Persist new messages to MongoDB
-  session.messages.push({ role: 'user', content: message, timestamp: new Date() })
-  session.messages.push({ role: 'assistant', content: reply, timestamp: new Date() })
-  await session.save()
+  await persistMessages(session, message, reply)
 
   // Parse the hidden data block from the agent's response
   const extractedData = parseInterviewData(reply)
@@ -166,22 +151,15 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
     }
   }
 
-  // If interview is complete, update UserPersona
+  // If interview is complete, persist interview answers to UserPersona
   if (extractedData.interviewComplete) {
-    await UserPersona.findOneAndUpdate(
-      { userId: new mongoose.Types.ObjectId(userId) },
-      {
-        $set: {
-          goals: extractedData.goals,
-          targetAudience: extractedData.targetAudience,
-          industry: extractedData.industry,
-          contentPillars: extractedData.contentPillars ?? [],
-          postingFrequency: extractedData.postingFrequency,
-          interviewComplete: true,
-        },
-      },
-      { upsert: true, new: true }
-    )
+    await saveInterviewAnswers(userId, {
+      goals: extractedData.goals,
+      targetAudience: extractedData.targetAudience,
+      industry: extractedData.industry,
+      contentPillars: extractedData.contentPillars,
+      postingFrequency: extractedData.postingFrequency,
+    })
   }
 
   return {
@@ -209,29 +187,7 @@ function stripInterviewDataBlock(text: string): string {
   return text.replace(/<!--INTERVIEW_DATA[\s\S]*?INTERVIEW_DATA-->/g, '').trim()
 }
 
-// ── Check interview status ────────────────────────────────────────────────────
+// ── Check interview status (delegated to UserPersonaService) ─────────────────
+// Re-exported for backwards compatibility with routes/onboarding.ts
 
-export async function getInterviewStatus(userId: string): Promise<{
-  complete: boolean
-  missingFields: string[]
-}> {
-  const persona = await UserPersona.findOne({
-    userId: new mongoose.Types.ObjectId(userId),
-  })
-
-  if (!persona) {
-    return { complete: false, missingFields: INTERVIEW_QUESTIONS.slice() }
-  }
-
-  const missingFields: string[] = []
-  if (!persona.goals) missingFields.push('goals')
-  if (!persona.targetAudience) missingFields.push('targetAudience')
-  if (!persona.industry) missingFields.push('industry')
-  if (!persona.contentPillars?.length) missingFields.push('contentPillars')
-  if (!persona.postingFrequency) missingFields.push('postingFrequency')
-
-  return {
-    complete: persona.interviewComplete,
-    missingFields,
-  }
-}
+export { getInterviewStatus } from '../services/userPersonaService'

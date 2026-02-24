@@ -1,12 +1,14 @@
 import { Agent } from '@mastra/core/agent'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
-import { ChatSession } from '../models/ChatSession'
-import { UserPersona } from '../models/UserPersona'
 import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
+import { findOrCreateSession, persistMessages } from '../services/chatSessionService'
+import {
+  findPersonaByUserId,
+  applyPersonaChanges as applyPersonaChangesService,
+} from '../services/userPersonaService'
 import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
 import { sanitizeMessage } from '../utils/sanitizeInput'
-import mongoose from 'mongoose'
 import type { IUserPersonaDocument } from '../models/UserPersona'
 import type { IPersonaPendingChanges } from '@repo/shared-types'
 
@@ -100,23 +102,11 @@ export async function runPersonaChat(input: PersonaChatInput): Promise<PersonaCh
     throw err
   }
 
-  // Load current persona for context
-  const persona = await UserPersona.findOne({ userId: new mongoose.Types.ObjectId(userId) })
-
-  // Load or create the persona-chat session
-  let session = await ChatSession.findOne({
-    userId: new mongoose.Types.ObjectId(userId),
-    agentType: 'persona-chat',
-  })
-
-  if (!session) {
-    session = await ChatSession.create({
-      userId: new mongoose.Types.ObjectId(userId),
-      sessionId: `persona-chat-${userId}`,
-      agentType: 'persona-chat',
-      messages: [],
-    })
-  }
+  // Load current persona for context and chat session in parallel
+  const [persona, session] = await Promise.all([
+    findPersonaByUserId(userId),
+    findOrCreateSession(userId, 'persona-chat'),
+  ])
 
   // Build conversation history — apply sliding window to cap token usage
   const fullHistory = session.messages.map((m) => ({
@@ -160,9 +150,7 @@ Please respond to the user's latest message.`
   const pendingChanges = parsePersonaChanges(reply)
 
   // Persist messages
-  session.messages.push({ role: 'user', content: message, timestamp: new Date() })
-  session.messages.push({ role: 'assistant', content: reply, timestamp: new Date() })
-  await session.save()
+  await persistMessages(session, message, reply)
 
   return {
     reply: stripPersonaChangesBlock(reply),
@@ -174,34 +162,12 @@ Please respond to the user's latest message.`
 
 // ── Apply changes ──────────────────────────────────────────────────────────────
 
+/** Delegate to UserPersonaService — kept here for backwards compatibility with routes/personaChat.ts. */
 export async function applyPersonaChanges(
   userId: string,
   changes: IPersonaPendingChanges
 ): Promise<IUserPersonaDocument> {
-  // Build only the fields that are actually changing
-  const updateSet: Record<string, unknown> = {}
-
-  if (changes.goals !== undefined) updateSet['goals'] = changes.goals
-  if (changes.targetAudience !== undefined) updateSet['targetAudience'] = changes.targetAudience
-  if (changes.industry !== undefined) updateSet['industry'] = changes.industry
-  if (changes.contentPillars !== undefined) updateSet['contentPillars'] = changes.contentPillars
-  if (changes.postingFrequency !== undefined) updateSet['postingFrequency'] = changes.postingFrequency
-  if (changes.topics !== undefined) updateSet['topics'] = changes.topics
-  if (changes.tone !== undefined) updateSet['tone'] = changes.tone
-  if (changes.writingStyle !== undefined) updateSet['writingStyle'] = changes.writingStyle
-  if (changes.platformGoal !== undefined) updateSet['platformGoal'] = changes.platformGoal
-
-  const updated = await UserPersona.findOneAndUpdate(
-    { userId: new mongoose.Types.ObjectId(userId) },
-    { $set: updateSet },
-    { new: true, upsert: true }
-  )
-
-  if (!updated) {
-    throw new Error('Failed to update persona')
-  }
-
-  return updated
+  return applyPersonaChangesService(userId, changes)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

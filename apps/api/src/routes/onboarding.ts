@@ -3,8 +3,7 @@ import { z } from 'zod'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { runOnboardingChat, getInterviewStatus } from '../agents/onboarding'
 import { checkTokenQuota } from '../services/tokenUsage'
-import { ChatSession } from '../models/ChatSession'
-import mongoose from 'mongoose'
+import { findSession } from '../services/chatSessionService'
 
 const router = Router()
 router.use(authenticate)
@@ -125,10 +124,7 @@ router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction)
  */
 router.get('/session', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const session = await ChatSession.findOne({
-      userId: new mongoose.Types.ObjectId(req.userId!),
-      agentType: 'onboarding',
-    })
+    const session = await findSession(req.userId!, 'onboarding')
 
     if (!session) {
       res.json({

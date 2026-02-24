@@ -51,7 +51,7 @@ If context runs out, come back here and:
 - [x] **#22 — Post-generation diversity validation** (`contentGenerator.ts`): Check ≥3 formats, no topic repeated >2x. Logs warnings. ✅ DONE
 - [x] **#23 — Compress persona prompt** (`contentGenerator.ts`): `buildPersonaSummary()` generates 5-bullet summary (~150 token savings/call). ✅ DONE
 - [x] **#24 — Degradation tracking / health endpoint**: `services/healthCheck.ts` with 5-min rolling error window per service + `GET /api/health` returns structured status. ✅ DONE
-- [ ] **#25 — Extract ChatSessionService + PersonaService**: Refactor agents. ⏳ PENDING (architectural, low urgency)
+- [x] **#25 — Extract ChatSessionService + PersonaService**: Created `services/chatSessionService.ts` (`findOrCreateSession`, `persistMessages`, `getSessionHistory`, `findSession`) and `services/userPersonaService.ts` (`findPersonaByUserId`, `findPersonaByUserIdLean`, `updatePersonaFields`, `applyPersonaChanges`, `saveInterviewAnswers`, `getInterviewStatus`). Agents now import from services; routes no longer import Mongoose models directly. Persona + session fetches in `personaChat.ts` parallelised via `Promise.all`. ✅ DONE
 - [x] **#26 — Cache SystemConfig token limit in-memory**: 5-min cache in `services/tokenUsage.ts`. ✅ DONE
 
 ---
@@ -100,12 +100,14 @@ If context runs out, come back here and:
 - `apps/api/src/utils/extractJSON.ts` — robust JSON extraction utility
 - `apps/api/src/utils/chatHistory.ts` — sliding window for chat history
 - `apps/api/src/utils/scoring.ts` — trend-persona relevance scoring
-- `apps/api/src/utils/sanitizeInput.ts` — LLM prompt injection sanitization ✅ NEW
+- `apps/api/src/utils/sanitizeInput.ts` — LLM prompt injection sanitization
 - `apps/api/src/services/personaMerge.ts` — merge strategy, diff, dedup
 - `apps/api/src/services/healthCheck.ts` — rolling error window + health report
+- `apps/api/src/services/chatSessionService.ts` — ChatSession DB operations ✅ NEW (#25)
+- `apps/api/src/services/userPersonaService.ts` — UserPersona DB operations ✅ NEW (#25)
 - `apps/api/src/models/TokenUsageLog.ts` — per-operation token log
 - `apps/api/src/models/SystemConfig.ts` — key-value config store
-- `apps/api/src/models/RefreshToken.ts` — 30-day opaque refresh token store ✅ NEW
+- `apps/api/src/models/RefreshToken.ts` — 30-day opaque refresh token store
 - `apps/api/src/routes/tokenUsage.ts` — token usage endpoints
 - `apps/api/src/services/tokenUsage.ts` — quota check + tracking service
 - `apps/web/src/components/persona/PostInputCards.tsx` — multi-post card input UI
@@ -118,13 +120,15 @@ If context runs out, come back here and:
 - `apps/api/src/agents/personaAnalyst.ts` — extractJSON + removed dead linkedinScrapeTool + sanitizePosts
 - `apps/api/src/agents/trendResearch.ts` — extractJSON + scoring + `isLive` field + heuristic fast path (#32)
 - `apps/api/src/agents/contentGenerator.ts` — extractJSON + retry + diversity + compressed prompt
-- `apps/api/src/agents/onboarding.ts` — escape hatch + sliding window + token tracking + sanitizeMessage
-- `apps/api/src/agents/personaChat.ts` — sliding window + quota check + token tracking + sanitizeMessage
+- `apps/api/src/agents/onboarding.ts` — escape hatch + sliding window + token tracking + sanitizeMessage + ChatSessionService + UserPersonaService (#25)
+- `apps/api/src/agents/personaChat.ts` — sliding window + quota check + token tracking + sanitizeMessage + ChatSessionService + UserPersonaService + parallel DB fetch (#25)
 - `apps/api/src/agents/mastra.ts` — contentPillars + generationMode + trendIsLive + trendSource + DB re-fetch fix + trendsUsed accuracy fix
 - `apps/api/src/models/UserPersona.ts` — new fields (postMetadata, personaVersion, etc.)
 - `apps/api/src/models/ContentSuggestion.ts` — generationMode + contextOptions
 - `apps/api/src/models/User.ts` — tokensUsed, tokenLimit
 - `apps/api/src/routes/persona.ts` — postsArray + add-posts + get-posts + diff response
+- `apps/api/src/routes/onboarding.ts` — ChatSessionService for GET /session (#25)
+- `apps/api/src/routes/personaChat.ts` — ChatSessionService + UserPersonaService for GET handlers (#25)
 - `apps/api/src/routes/suggestions.ts` — trendSource in response + quota check + sanitizeMessage on refine-context
 - `apps/api/src/routes/auth.ts` — rate limiters + refresh token (login/register/logout/refresh endpoints) (#33)
 - `apps/api/src/services/trends.ts` — 30-min cache + word-boundary RSS matching + HN query fix
@@ -138,15 +142,16 @@ If context runs out, come back here and:
 
 ## Remaining Low-Priority Items
 
-- [ ] **#25** — Extract ChatSessionService + PersonaService (refactoring, no new functionality)
-
-**All other items are complete. ✅**
+**All items are complete. ✅ The audit is fully implemented.**
 
 ---
 
 ## Key Notes for Next Session
 
-- All TypeScript checks pass (both `apps/api` and `apps/web`) as of 2026-02-25
+- All TypeScript checks pass (both `apps/api` and `apps/web`) as of 2026-02-25 (after #25)
+- **#25 service layer**: `ChatSessionService.findOrCreateSession(userId, agentType)` — `persistMessages(session, user, asst)` — `getSessionHistory(userId, agentType)` — `findSession(userId, agentType)`
+- **#25 UserPersonaService**: `findPersonaByUserId(userId)` / `findPersonaByUserIdLean(userId)` — `applyPersonaChanges(userId, changes)` — `saveInterviewAnswers(userId, answers)` — `getInterviewStatus(userId)`
+- `personaChat.ts` now fetches persona + session in parallel via `Promise.all([findPersonaByUserId, findOrCreateSession])`
 - **#32 heuristic mode**: `relevanceScore >= 3` threshold, min 4 items → skips LLM; `buildHeuristicResult()` in `trendResearch.ts`
 - **#33 refresh tokens**: `POST /api/auth/refresh` — hash lookup → delete (rotation) → new pair issued; `refreshLimiter` 30/15min; cookies: `token` (15min, /) + `refreshToken` (30d, path=/api/auth)
 - **Prompt injection**: `sanitizeInput.ts` — 11 pattern list, XML delimiters (`wrapPostContent`), applied to 4 call sites

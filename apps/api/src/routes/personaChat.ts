@@ -2,9 +2,8 @@ import { Router, Response, NextFunction } from 'express'
 import { z } from 'zod'
 import { authenticate, AuthRequest } from '../middleware/auth'
 import { runPersonaChat, applyPersonaChanges } from '../agents/personaChat'
-import { ChatSession } from '../models/ChatSession'
-import { UserPersona } from '../models/UserPersona'
-import mongoose from 'mongoose'
+import { getSessionHistory } from '../services/chatSessionService'
+import { findPersonaByUserIdLean } from '../services/userPersonaService'
 
 const router = Router()
 router.use(authenticate)
@@ -139,15 +138,8 @@ router.post('/apply-changes', async (req: AuthRequest, res: Response, next: Next
  */
 router.get('/history', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const session = await ChatSession.findOne({
-      userId: new mongoose.Types.ObjectId(req.userId!),
-      agentType: 'persona-chat',
-    }).lean()
-
-    res.json({
-      messages: session?.messages ?? [],
-      sessionId: session?.sessionId ?? null,
-    })
+    const history = await getSessionHistory(req.userId!, 'persona-chat')
+    res.json({ messages: history.messages, sessionId: history.sessionId })
   } catch (err) {
     next(err)
   }
@@ -169,9 +161,7 @@ router.get('/history', async (req: AuthRequest, res: Response, next: NextFunctio
  */
 router.get('/persona', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const persona = await UserPersona.findOne({
-      userId: new mongoose.Types.ObjectId(req.userId!),
-    }).lean()
+    const persona = await findPersonaByUserIdLean(req.userId!)
 
     if (!persona) {
       res.status(404).json({ error: 'Persona not found. Complete onboarding first.' })
