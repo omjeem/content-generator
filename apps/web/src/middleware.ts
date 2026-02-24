@@ -17,9 +17,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect authenticated users away from auth pages
+  // Redirect authenticated users away from auth pages and the landing page
   const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route));
-  if (isAuthRoute && token) {
+  if ((isAuthRoute || pathname === "/") && token) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

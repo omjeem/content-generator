@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Navbar } from "@/components/layout/Navbar";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -18,7 +17,6 @@ import { personaApi, onboardingApi, authApi, ApiError } from "@/lib/api";
 import type { IMessage } from "@repo/shared-types";
 
 type Step = "profile-input" | "interview" | "complete";
-type InputTab = "url" | "paste";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -28,13 +26,10 @@ export default function OnboardingPage() {
 
   // Step management
   const [step, setStep] = useState<Step>("profile-input");
-  const [tab, setTab] = useState<InputTab>("url");
 
-  // Profile input
-  const [linkedinUrl, setLinkedinUrl] = useState("");
+  // Analyse state
   const [analyzeLoading, setAnalyzeLoading] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
-  const [scrapingBlocked, setScrapingBlocked] = useState(false);
 
   // Interview chat
   const [messages, setMessages] = useState<IMessage[]>([]);
@@ -71,29 +66,16 @@ export default function OnboardingPage() {
     init();
   }, [router]);
 
-  // Step 1: Analyze LinkedIn profile (URL mode)
-  async function handleAnalyzeUrl() {
-    await runAnalyze({ linkedinUrl });
-  }
-
-  // Step 1: Analyze from PostInputCards (paste mode)
+  // Step 1: Analyze from pasted posts
   async function handleAnalyzePosts(postsArray: string[]) {
-    await runAnalyze({ postsArray });
-  }
-
-  async function runAnalyze(body: {
-    linkedinUrl?: string;
-    postsArray?: string[];
-  }) {
     setAnalyzeError("");
-    setScrapingBlocked(false);
     setAnalyzeLoading(true);
 
     try {
-      await personaApi.analyze(body);
+      await personaApi.analyze({ postsArray });
       setStep("interview");
 
-      // Send the first message to start the interview
+      // Send the first message to kick off the interview
       setChatLoading(true);
       const reply = await onboardingApi.chat({
         message: "Hi! I'm ready to set up my content strategy.",
@@ -113,19 +95,11 @@ export default function OnboardingPage() {
       setQuestionsAnswered(reply.questionsAnswered);
       setChatLoading(false);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 422) {
-        setScrapingBlocked(true);
-        setTab("paste");
-        setAnalyzeError(
-          "LinkedIn scraping was blocked. Please paste your posts manually below.",
-        );
-      } else {
-        setAnalyzeError(
-          err instanceof ApiError
-            ? err.message
-            : "Analysis failed. Please try again.",
-        );
-      }
+      setAnalyzeError(
+        err instanceof ApiError
+          ? err.message
+          : "Analysis failed. Please try again.",
+      );
     } finally {
       setAnalyzeLoading(false);
     }
@@ -170,149 +144,111 @@ export default function OnboardingPage() {
     }
   }, []);
 
+  // ── Step labels ──────────────────────────────────────────────────────────────
+  const stepLabels: Record<Step, string> = {
+    "profile-input": "Paste Your Posts",
+    interview: "Interview",
+    complete: "Complete",
+  };
+  const stepKeys: Step[] = ["profile-input", "interview", "complete"];
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <Navbar userName={userName} />
 
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-8">
-        {/* Progress indicator */}
+        {/* ── Progress indicator ─────────────────────────────────────────── */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
-            {(["profile-input", "interview", "complete"] as Step[]).map(
-              (s, i) => (
-                <div key={s} className="flex items-center gap-3">
-                  <div
-                    className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
-                  ${step === s ? "bg-linkedin text-white" : s < step || (s === "complete" && interviewComplete) ? "bg-green-500 text-white" : "bg-gray-200 text-gray-500"}`}
-                  >
-                    {s < step || (s === "complete" && interviewComplete)
-                      ? "✓"
-                      : i + 1}
-                  </div>
-                  {i < 2 && (
-                    <div
-                      className={`h-0.5 w-12 ${step !== "profile-input" && i === 0 ? "bg-green-500" : "bg-gray-200"}`}
-                    />
-                  )}
+            {stepKeys.map((s, i) => (
+              <div key={s} className="flex items-center gap-3">
+                <div
+                  className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
+                  ${
+                    step === s
+                      ? "bg-linkedin text-white"
+                      : s < step ||
+                          (s === "complete" && interviewComplete)
+                        ? "bg-green-500 text-white"
+                        : "bg-gray-200 text-gray-500"
+                  }`}
+                >
+                  {s < step || (s === "complete" && interviewComplete)
+                    ? "✓"
+                    : i + 1}
                 </div>
-              ),
-            )}
+                {i < 2 && (
+                  <div
+                    className={`h-0.5 w-12 ${
+                      step !== "profile-input" && i === 0
+                        ? "bg-green-500"
+                        : "bg-gray-200"
+                    }`}
+                  />
+                )}
+              </div>
+            ))}
           </div>
           <div className="flex gap-8 text-xs text-gray-500 ml-1">
-            <span
-              className={
-                step === "profile-input" ? "text-linkedin font-medium" : ""
-              }
-            >
-              Profile Analysis
-            </span>
-            <span
-              className={
-                step === "interview" ? "text-linkedin font-medium" : ""
-              }
-            >
-              Interview
-            </span>
-            <span
-              className={
-                step === "complete" ? "text-green-600 font-medium" : ""
-              }
-            >
-              Complete
-            </span>
+            {stepKeys.map((s) => (
+              <span
+                key={s}
+                className={
+                  step === s
+                    ? s === "complete"
+                      ? "text-green-600 font-medium"
+                      : "text-linkedin font-medium"
+                    : ""
+                }
+              >
+                {stepLabels[s]}
+              </span>
+            ))}
           </div>
         </div>
 
-        {/* ── STEP 1: Profile Input ──────────────────────────────────────── */}
+        {/* ── STEP 1: Paste Posts ───────────────────────────────────────── */}
         {step === "profile-input" && (
           <Card>
             <CardHeader>
-              <CardTitle>Step 1: Analyse Your LinkedIn Profile</CardTitle>
+              <CardTitle>Step 1: Paste Your LinkedIn Posts</CardTitle>
               <CardDescription>
-                We&apos;ll analyse your writing style, tone, and topics to
-                generate content that sounds authentically like you.
+                Copy and paste{" "}
+                <span className="font-semibold text-gray-700">
+                  at least 5–6 of your own posts
+                </span>{" "}
+                so the AI can understand your writing style, tone, and topics.
+                The more you share, the more it sounds like you.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Tab switcher */}
-              <div className="flex rounded-lg bg-gray-100 p-1 mb-6 w-fit">
-                {/* <button
-                  onClick={() => setTab("url")}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors
-                    ${tab === "url" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  LinkedIn URL
-                </button> */}
-                <button
-                  onClick={() => setTab("paste")}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors
-                    ${tab === "paste" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-                >
-                  Paste Posts
-                </button>
+              {/* tip banner */}
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5">
+                <span className="text-lg mt-0.5">💡</span>
+                <p className="text-sm text-amber-800 leading-relaxed">
+                  <span className="font-semibold">Tip:</span> Paste posts you
+                  have already published{" "}
+                  <span className="font-medium">or</span> posts you wish you
+                  had written — either works. The AI learns your preferred
+                  style, not just what you&apos;ve done before. Minimum{" "}
+                  <span className="font-semibold">5–6 posts</span> for best
+                  results.
+                </p>
               </div>
 
-              {tab === "url" ? (
-                <div className="space-y-4">
-                  <Input
-                    label="Your LinkedIn Profile URL"
-                    type="url"
-                    placeholder="https://www.linkedin.com/in/yourprofile/"
-                    value={linkedinUrl}
-                    onChange={(e) => setLinkedinUrl(e.target.value)}
-                  />
-                  <p className="text-xs text-gray-500">
-                    Note: LinkedIn may block automated scraping. If it fails,
-                    use the &quot;Paste Posts&quot; tab.
-                  </p>
-
-                  {scrapingBlocked && (
-                    <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
-                      LinkedIn blocked our scraper. Please paste your posts
-                      manually in the &quot;Paste Posts&quot; tab.
-                    </div>
-                  )}
-
-                  {analyzeError && !scrapingBlocked && (
-                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                      {analyzeError}
-                    </div>
-                  )}
-
-                  <Button
-                    onClick={handleAnalyzeUrl}
-                    loading={analyzeLoading}
-                    className="w-full"
-                    size="lg"
-                    disabled={!linkedinUrl || analyzeLoading}
-                  >
-                    {analyzeLoading
-                      ? "Analysing your content..."
-                      : "Analyse My Profile →"}
-                  </Button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <p className="text-xs text-gray-500">
-                    Add 3–20 of your recent LinkedIn posts. The more you
-                    provide, the better we can match your voice.
-                  </p>
-
-                  {analyzeError && (
-                    <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                      {analyzeError}
-                    </div>
-                  )}
-
-                  <PostInputCards
-                    onSubmit={handleAnalyzePosts}
-                    loading={analyzeLoading}
-                    submitLabel="Analyse My Posts"
-                    maxPosts={20}
-                    minCharsPerPost={30}
-                  />
+              {analyzeError && (
+                <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+                  {analyzeError}
                 </div>
               )}
+
+              <PostInputCards
+                onSubmit={handleAnalyzePosts}
+                loading={analyzeLoading}
+                submitLabel="Analyse My Posts & Build My Persona →"
+                maxPosts={20}
+                minCharsPerPost={30}
+              />
             </CardContent>
           </Card>
         )}
@@ -369,16 +305,16 @@ export default function OnboardingPage() {
                 You&apos;re all set!
               </h2>
               <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                We&apos;ve analysed your LinkedIn presence and gathered your
-                content strategy. Head to your dashboard to generate your first
-                batch of personalised content ideas.
+                We&apos;ve built your AI persona from your posts and gathered
+                your content strategy. Head to your dashboard to generate your
+                first batch of personalised content ideas.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button size="lg" onClick={() => router.push("/dashboard")}>
                   Generate Content Ideas →
                 </Button>
                 <Button variant="outline" size="lg" asChild>
-                  <Link href="/onboarding">Update Profile</Link>
+                  <Link href="/onboarding">Update Posts</Link>
                 </Button>
               </div>
             </CardContent>
