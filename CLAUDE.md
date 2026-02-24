@@ -1,9 +1,11 @@
 # LinkedIn AI Content Suggestion Agent
+
 # Source of Truth — Read this on every session resume
 
 ---
 
 ## Project Overview
+
 A full-stack Applied AI application that analyzes a user's LinkedIn presence and
 generates personalized content ideas using a 4-agent Mastra AI pipeline.
 

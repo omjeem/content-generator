@@ -1,11 +1,11 @@
-import { Router, Response, NextFunction } from 'express'
-import { authenticate, AuthRequest } from '../middleware/auth'
-import { checkTokenQuota } from '../services/tokenUsage'
-import { TokenUsageLog } from '../models/TokenUsageLog'
-import mongoose from 'mongoose'
+import { Router, Response, NextFunction } from "express";
+import { authenticate, AuthRequest } from "../middleware/auth";
+import { checkTokenQuota } from "../services/tokenUsage";
+import { TokenUsageLog } from "../models/TokenUsageLog";
+import mongoose from "mongoose";
 
-const router = Router()
-router.use(authenticate)
+const router = Router();
+router.use(authenticate);
 
 // ── GET /api/tokens/usage ─────────────────────────────────────────────────────
 /**
@@ -36,14 +36,17 @@ router.use(authenticate)
  *                 allowed:
  *                   type: boolean
  */
-router.get('/usage', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const summary = await checkTokenQuota(req.userId!)
-    res.json(summary)
-  } catch (err) {
-    next(err)
-  }
-})
+router.get(
+  "/usage",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const summary = await checkTokenQuota(req.userId!);
+      res.json(summary);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── GET /api/tokens/logs ──────────────────────────────────────────────────────
 /**
@@ -106,34 +109,40 @@ router.get('/usage', async (req: AuthRequest, res: Response, next: NextFunction)
  *                 totalPages:
  *                   type: integer
  */
-router.get('/logs', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const page = Math.max(1, parseInt(req.query['page'] as string) || 1)
-    const limit = Math.min(100, Math.max(1, parseInt(req.query['limit'] as string) || 20))
-    const skip = (page - 1) * limit
+router.get(
+  "/logs",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const page = Math.max(1, parseInt(req.query["page"] as string) || 1);
+      const limit = Math.min(
+        100,
+        Math.max(1, parseInt(req.query["limit"] as string) || 20),
+      );
+      const skip = (page - 1) * limit;
 
-    const userId = new mongoose.Types.ObjectId(req.userId!)
+      const userId = new mongoose.Types.ObjectId(req.userId!);
 
-    const [data, total] = await Promise.all([
-      TokenUsageLog.find({ userId })
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select('-userId -__v')
-        .lean(),
-      TokenUsageLog.countDocuments({ userId }),
-    ])
+      const [data, total] = await Promise.all([
+        TokenUsageLog.find({ userId })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select("-userId -__v")
+          .lean(),
+        TokenUsageLog.countDocuments({ userId }),
+      ]);
 
-    res.json({
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    })
-  } catch (err) {
-    next(err)
-  }
-})
+      res.json({
+        data,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-export default router
+export default router;

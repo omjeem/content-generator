@@ -42,18 +42,18 @@ const INJECTION_PATTERNS: RegExp[] = [
   /\bDAN\b|\bdo\s+anything\s+now\b/gi,
   // "</system>" or "</instructions>" injection attempts
   /<\/?(system|instructions?|prompt|context)\s*>/gi,
-]
+];
 
 // ── Length limits ──────────────────────────────────────────────────────────
 
 /** Maximum characters for a single post / free-text field before truncation. */
-export const MAX_POST_LENGTH = 3_000
+export const MAX_POST_LENGTH = 3_000;
 
 /** Maximum characters for a single chat message. */
-export const MAX_MESSAGE_LENGTH = 2_000
+export const MAX_MESSAGE_LENGTH = 2_000;
 
 /** Maximum characters for a short field like topicFocus or industry. */
-export const MAX_SHORT_FIELD_LENGTH = 200
+export const MAX_SHORT_FIELD_LENGTH = 200;
 
 // ── Core sanitizer ────────────────────────────────────────────────────────
 
@@ -65,47 +65,53 @@ export const MAX_SHORT_FIELD_LENGTH = 200
  * @returns           Cleaned text safe to embed in an LLM prompt.
  */
 export function sanitizeText(text: string, maxLength?: number): string {
-  if (!text || typeof text !== 'string') return ''
+  if (!text || typeof text !== "string") return "";
 
-  let cleaned = text
+  let cleaned = text;
 
   // 1. Strip injection patterns — replace with a neutral placeholder
   for (const pattern of INJECTION_PATTERNS) {
-    cleaned = cleaned.replace(pattern, '[content removed]')
+    cleaned = cleaned.replace(pattern, "[content removed]");
   }
 
   // 2. Collapse sequences of [content removed] placeholders
-  cleaned = cleaned.replace(/(\[content removed\]\s*){2,}/gi, '[content removed] ')
+  cleaned = cleaned.replace(
+    /(\[content removed\]\s*){2,}/gi,
+    "[content removed] ",
+  );
 
   // 3. Enforce length limit (truncate gracefully at a word boundary if possible)
   if (maxLength && cleaned.length > maxLength) {
-    const truncated = cleaned.slice(0, maxLength)
-    const lastSpace = truncated.lastIndexOf(' ')
-    cleaned = (lastSpace > maxLength * 0.8 ? truncated.slice(0, lastSpace) : truncated) + '…'
+    const truncated = cleaned.slice(0, maxLength);
+    const lastSpace = truncated.lastIndexOf(" ");
+    cleaned =
+      (lastSpace > maxLength * 0.8
+        ? truncated.slice(0, lastSpace)
+        : truncated) + "…";
   }
 
-  return cleaned.trim()
+  return cleaned.trim();
 }
 
 /**
  * Sanitize an array of post strings (for persona analysis input).
  */
 export function sanitizePosts(posts: string[]): string[] {
-  return posts.map((p) => sanitizeText(p, MAX_POST_LENGTH))
+  return posts.map((p) => sanitizeText(p, MAX_POST_LENGTH));
 }
 
 /**
  * Sanitize a chat message (onboarding / persona chat).
  */
 export function sanitizeMessage(message: string): string {
-  return sanitizeText(message, MAX_MESSAGE_LENGTH)
+  return sanitizeText(message, MAX_MESSAGE_LENGTH);
 }
 
 /**
  * Sanitize a short user-controlled field (topic, industry, keyword, etc.).
  */
 export function sanitizeShortField(value: string): string {
-  return sanitizeText(value, MAX_SHORT_FIELD_LENGTH)
+  return sanitizeText(value, MAX_SHORT_FIELD_LENGTH);
 }
 
 /**
@@ -118,5 +124,5 @@ export function sanitizeShortField(value: string): string {
  *   </user_post>
  */
 export function wrapPostContent(post: string, index: number): string {
-  return `<user_post index="${index}">\n${post}\n</user_post>`
+  return `<user_post index="${index}">\n${post}\n</user_post>`;
 }

@@ -12,11 +12,11 @@
  */
 
 export interface HistoryMessage {
-  role: 'user' | 'assistant'
-  content: string
+  role: "user" | "assistant";
+  content: string;
 }
 
-const MAX_VERBATIM = 10  // keep last 10 messages verbatim
+const MAX_VERBATIM = 10; // keep last 10 messages verbatim
 
 /**
  * Apply a sliding window to the conversation history.
@@ -28,33 +28,35 @@ const MAX_VERBATIM = 10  // keep last 10 messages verbatim
  */
 export function applyHistorySlidingWindow(
   messages: HistoryMessage[],
-  maxVerbatim = MAX_VERBATIM
+  maxVerbatim = MAX_VERBATIM,
 ): HistoryMessage[] {
-  if (messages.length <= maxVerbatim) return messages
+  if (messages.length <= maxVerbatim) return messages;
 
-  const olderMessages = messages.slice(0, messages.length - maxVerbatim)
-  const recentMessages = messages.slice(messages.length - maxVerbatim)
+  const olderMessages = messages.slice(0, messages.length - maxVerbatim);
+  const recentMessages = messages.slice(messages.length - maxVerbatim);
 
   const summaryLines: string[] = [
     `[Context summary: ${olderMessages.length} earlier messages]`,
-  ]
+  ];
 
   // Extract key facts from older messages:
   // - User messages that look like answers (contain useful data)
   // - Assistant messages that asked questions or confirmed something
   for (const msg of olderMessages) {
-    const preview = msg.content.slice(0, 120).replace(/\n+/g, ' ').trim()
+    const preview = msg.content.slice(0, 120).replace(/\n+/g, " ").trim();
     if (preview) {
-      summaryLines.push(`${msg.role === 'user' ? 'User said' : 'Assistant said'}: "${preview}${msg.content.length > 120 ? '…' : ''}"`)
+      summaryLines.push(
+        `${msg.role === "user" ? "User said" : "Assistant said"}: "${preview}${msg.content.length > 120 ? "…" : ""}"`,
+      );
     }
   }
 
   const summaryMessage: HistoryMessage = {
-    role: 'assistant',
-    content: summaryLines.join('\n'),
-  }
+    role: "assistant",
+    content: summaryLines.join("\n"),
+  };
 
-  return [summaryMessage, ...recentMessages]
+  return [summaryMessage, ...recentMessages];
 }
 
 /**
@@ -62,6 +64,6 @@ export function applyHistorySlidingWindow(
  */
 export function historyToText(messages: HistoryMessage[]): string {
   return messages
-    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-    .join('\n\n')
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n\n");
 }

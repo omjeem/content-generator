@@ -1,18 +1,26 @@
 # Phase 4: All Backend API Routes + Swagger/OpenAPI Documentation
+
 # Status: COMPLETE ✓ (2026-02-20)
+
 # Notes:
+
 # - 13 endpoints documented in OpenAPI spec (verified with swagger-jsdoc)
+
 # - Swagger UI at GET /api/docs, raw spec at GET /api/docs/openapi.json
+
 # - Server only starts after MongoDB connects (by design — await connectDB())
+
 # - req.params keys use bracket notation (req.params['id']) due to noUncheckedIndexedAccess
 
 ---
 
 ## Goal
+
 Wire all agents to REST endpoints and set up Swagger UI so the API is
 fully documented and testable without a frontend.
 
 ## Checklist
+
 - [ ] apps/api/src/routes/persona.ts
 - [ ] apps/api/src/routes/onboarding.ts
 - [ ] apps/api/src/routes/trends.ts
@@ -25,6 +33,7 @@ fully documented and testable without a frontend.
 ## Route Specifications
 
 ### POST /api/persona/analyze
+
 ```
 Auth: Required (JWT)
 Body: { linkedinUrl?: string, manualPosts?: string }
@@ -40,6 +49,7 @@ Response 422: { error: "LinkedIn scraping failed", fallback: "Please paste posts
 ```
 
 ### GET /api/persona
+
 ```
 Auth: Required (JWT)
 Logic: Find UserPersona by userId
@@ -48,6 +58,7 @@ Response 404: { error: "No persona found. Run /persona/analyze first." }
 ```
 
 ### POST /api/onboarding/chat
+
 ```
 Auth: Required (JWT)
 Body: { message: string, sessionId?: string }
@@ -66,6 +77,7 @@ Response 200: {
 ```
 
 ### GET /api/onboarding/session
+
 ```
 Auth: Required (JWT)
 Logic: Get ChatSession messages for userId + agentType=onboarding
@@ -73,6 +85,7 @@ Response 200: { messages: IMessage[], interviewComplete: boolean }
 ```
 
 ### GET /api/onboarding/status
+
 ```
 Auth: Required (JWT)
 Logic: Check UserPersona.interviewComplete
@@ -80,6 +93,7 @@ Response 200: { complete: boolean, missingFields: string[] }
 ```
 
 ### GET /api/trends
+
 ```
 Auth: Required (JWT)
 Query: ?geo=US (optional, default US)
@@ -92,6 +106,7 @@ Response 400: { error: "Complete persona analysis first" }
 ```
 
 ### POST /api/suggestions/generate
+
 ```
 Auth: Required (JWT)
 Body: {} (empty — uses stored persona)
@@ -106,6 +121,7 @@ Response 503: { error: "AI generation failed", details: string }
 ```
 
 ### GET /api/suggestions
+
 ```
 Auth: Required (JWT)
 Query: ?page=1&limit=10 (pagination)
@@ -114,6 +130,7 @@ Response 200: { suggestions: IContentSuggestion[], total: number, page: number }
 ```
 
 ### GET /api/suggestions/:id
+
 ```
 Auth: Required (JWT)
 Logic: Find ContentSuggestion by _id, verify userId matches
@@ -124,6 +141,7 @@ Response 404: { error: "Suggestion set not found" }
 ## Swagger Setup
 
 ### apps/api/src/swagger/setup.ts
+
 ```typescript
 // Use @hono/swagger-ui and @hono/zod-openapi
 // Register OpenAPI spec with:
@@ -136,7 +154,9 @@ Response 404: { error: "Suggestion set not found" }
 ```
 
 ## Error Response Standard
+
 All errors follow this format:
+
 ```json
 {
   "error": "Human-readable message",
@@ -146,6 +166,7 @@ All errors follow this format:
 ```
 
 ## Completion Criteria
+
 - All 11 routes return correct responses
 - Swagger UI loads at http://localhost:3001/api/docs
 - Can test auth flow entirely from Swagger UI

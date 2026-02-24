@@ -1,44 +1,60 @@
-import { Agent } from '@mastra/core/agent'
-import { google } from '@ai-sdk/google'
-import { z } from 'zod'
-import { trackTokenUsage } from '../services/tokenUsage'
-import { findOrCreateSession, persistMessages } from '../services/chatSessionService'
-import { saveInterviewAnswers } from '../services/userPersonaService'
-import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
-import { sanitizeMessage } from '../utils/sanitizeInput'
+import { Agent } from "@mastra/core/agent";
+import { google } from "@ai-sdk/google";
+import { z } from "zod";
+import { trackTokenUsage } from "../services/tokenUsage";
+import {
+  findOrCreateSession,
+  persistMessages,
+} from "../services/chatSessionService";
+import { saveInterviewAnswers } from "../services/userPersonaService";
+import { applyHistorySlidingWindow, historyToText } from "../utils/chatHistory";
+import { sanitizeMessage } from "../utils/sanitizeInput";
 
 // ── Interview questions the agent must cover ──────────────────────────────────
 
 const INTERVIEW_QUESTIONS = [
-  'goals',
-  'targetAudience',
-  'industry',
-  'contentPillars',
-  'postingFrequency',
-] as const
+  "goals",
+  "targetAudience",
+  "industry",
+  "contentPillars",
+  "postingFrequency",
+] as const;
 
-export type InterviewField = (typeof INTERVIEW_QUESTIONS)[number]
+export type InterviewField = (typeof INTERVIEW_QUESTIONS)[number];
 
 // ── Output schema for extracted interview answers ─────────────────────────────
 
 export const InterviewAnswersSchema = z.object({
-  goals: z.string().optional().describe('Professional goals for LinkedIn content'),
-  targetAudience: z.string().optional().describe('Target audience description'),
-  industry: z.string().optional().describe('Industry or niche'),
-  contentPillars: z.array(z.string()).optional().describe('3 main content themes'),
-  postingFrequency: z.string().optional().describe('How often they want to post'),
-  interviewComplete: z.boolean().describe('True when all 5 questions have been answered'),
-  questionsAnswered: z.number().describe('Number of questions answered so far (0-5)'),
-})
+  goals: z
+    .string()
+    .optional()
+    .describe("Professional goals for LinkedIn content"),
+  targetAudience: z.string().optional().describe("Target audience description"),
+  industry: z.string().optional().describe("Industry or niche"),
+  contentPillars: z
+    .array(z.string())
+    .optional()
+    .describe("3 main content themes"),
+  postingFrequency: z
+    .string()
+    .optional()
+    .describe("How often they want to post"),
+  interviewComplete: z
+    .boolean()
+    .describe("True when all 5 questions have been answered"),
+  questionsAnswered: z
+    .number()
+    .describe("Number of questions answered so far (0-5)"),
+});
 
-export type InterviewAnswers = z.infer<typeof InterviewAnswersSchema>
+export type InterviewAnswers = z.infer<typeof InterviewAnswersSchema>;
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
 
 export const onboardingAgent = new Agent({
-  id: 'onboarding-interview',
-  name: 'onboarding-interview',
-  model: google('gemini-2.5-flash'),
+  id: "onboarding-interview",
+  name: "onboarding-interview",
+  model: google("gemini-2.5-flash"),
   instructions: `You are a friendly LinkedIn content strategist conducting an onboarding interview.
 
 Your job is to gather information about the user's LinkedIn content strategy by asking targeted questions ONE AT A TIME.
@@ -70,84 +86,89 @@ At the END of each response, include a JSON block like this (hidden in your resp
   "interviewComplete": false
 }
 INTERVIEW_DATA-->`,
-})
+});
 
 // ── Chat with working memory from MongoDB ─────────────────────────────────────
 
 export interface OnboardingChatInput {
-  userId: string
-  message: string
+  userId: string;
+  message: string;
 }
 
 export interface OnboardingChatOutput {
-  reply: string
-  sessionId: string
-  interviewComplete: boolean
-  questionsAnswered: number
-  extractedData: Partial<InterviewAnswers>
+  reply: string;
+  sessionId: string;
+  interviewComplete: boolean;
+  questionsAnswered: number;
+  extractedData: Partial<InterviewAnswers>;
 }
 
-export async function runOnboardingChat(input: OnboardingChatInput): Promise<OnboardingChatOutput> {
-  const { userId } = input
+export async function runOnboardingChat(
+  input: OnboardingChatInput,
+): Promise<OnboardingChatOutput> {
+  const { userId } = input;
   // Sanitize user message before embedding in LLM prompt
-  const message = sanitizeMessage(input.message)
+  const message = sanitizeMessage(input.message);
 
   // Load or create the chat session for this user
-  const session = await findOrCreateSession(userId, 'onboarding')
+  const session = await findOrCreateSession(userId, "onboarding");
 
   // Build conversation history for Mastra — apply sliding window to cap token usage
   const fullHistory = session.messages.map((m) => ({
-    role: m.role as 'user' | 'assistant',
+    role: m.role as "user" | "assistant",
     content: m.content,
-  }))
+  }));
 
   // Add the new user message to history
-  fullHistory.push({ role: 'user', content: message })
+  fullHistory.push({ role: "user", content: message });
 
   // Apply sliding window: keep last 10 verbatim, summarize older messages
-  const windowedHistory = applyHistorySlidingWindow(fullHistory)
-  const historyText = historyToText(windowedHistory)
+  const windowedHistory = applyHistorySlidingWindow(fullHistory);
+  const historyText = historyToText(windowedHistory);
 
   const result = await onboardingAgent.generate(
-    `Here is the conversation so far:\n\n${historyText}\n\nPlease respond to the user's latest message.`
-  )
+    `Here is the conversation so far:\n\n${historyText}\n\nPlease respond to the user's latest message.`,
+  );
 
-  const reply = result.text
+  const reply = result.text;
 
   // Track token usage — fire-and-forget
   trackTokenUsage({
     userId,
-    agent: 'onboarding',
-    operation: 'onboarding_chat',
+    agent: "onboarding",
+    operation: "onboarding_chat",
     inputTokens: result.usage?.inputTokens ?? 0,
     outputTokens: result.usage?.outputTokens ?? 0,
-    totalTokens: (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
+    totalTokens:
+      (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
     metadata: { sessionId: session.sessionId },
-  })
+  });
 
   // Persist new messages to MongoDB
-  await persistMessages(session, message, reply)
+  await persistMessages(session, message, reply);
 
   // Parse the hidden data block from the agent's response
-  const extractedData = parseInterviewData(reply)
+  const extractedData = parseInterviewData(reply);
 
   // ── Deterministic escape hatch (P0 #4) ────────────────────────────────────
   // After ≥12 messages, if the LLM hasn't set interviewComplete but all fields
   // are present in the extracted data, force-complete the interview.
   // This prevents users from getting permanently stuck in the interview loop.
-  const totalMessages = session.messages.length + 2 // includes the 2 we're about to push
+  const totalMessages = session.messages.length + 2; // includes the 2 we're about to push
   if (!extractedData.interviewComplete && totalMessages >= 12) {
     const hasAllFields =
       !!extractedData.goals &&
       !!extractedData.targetAudience &&
       !!extractedData.industry &&
       (extractedData.contentPillars?.length ?? 0) > 0 &&
-      !!extractedData.postingFrequency
+      !!extractedData.postingFrequency;
 
     if (hasAllFields) {
-      console.log('[onboarding] Deterministic escape hatch triggered — forcing interviewComplete=true')
-      extractedData.interviewComplete = true
-      extractedData.questionsAnswered = 5
+      console.log(
+        "[onboarding] Deterministic escape hatch triggered — forcing interviewComplete=true",
+      );
+      extractedData.interviewComplete = true;
+      extractedData.questionsAnswered = 5;
     }
   }
 
@@ -159,7 +180,7 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
       industry: extractedData.industry,
       contentPillars: extractedData.contentPillars,
       postingFrequency: extractedData.postingFrequency,
-    })
+    });
   }
 
   return {
@@ -168,26 +189,30 @@ export async function runOnboardingChat(input: OnboardingChatInput): Promise<Onb
     interviewComplete: extractedData.interviewComplete ?? false,
     questionsAnswered: extractedData.questionsAnswered ?? 0,
     extractedData,
-  }
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseInterviewData(text: string): Partial<InterviewAnswers> {
   try {
-    const match = text.match(/<!--INTERVIEW_DATA\s*([\s\S]*?)\s*INTERVIEW_DATA-->/)
-    if (!match || !match[1]) return {}
-    return JSON.parse(match[1]) as Partial<InterviewAnswers>
+    const match = text.match(
+      /<!--INTERVIEW_DATA\s*([\s\S]*?)\s*INTERVIEW_DATA-->/,
+    );
+    if (!match || !match[1]) return {};
+    return JSON.parse(match[1]) as Partial<InterviewAnswers>;
   } catch {
-    return {}
+    return {};
   }
 }
 
 function stripInterviewDataBlock(text: string): string {
-  return text.replace(/<!--INTERVIEW_DATA[\s\S]*?INTERVIEW_DATA-->/g, '').trim()
+  return text
+    .replace(/<!--INTERVIEW_DATA[\s\S]*?INTERVIEW_DATA-->/g, "")
+    .trim();
 }
 
 // ── Check interview status (delegated to UserPersonaService) ─────────────────
 // Re-exported for backwards compatibility with routes/onboarding.ts
 
-export { getInterviewStatus } from '../services/userPersonaService'
+export { getInterviewStatus } from "../services/userPersonaService";

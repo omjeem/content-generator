@@ -1,13 +1,16 @@
 # Phase 5: Next.js Frontend
+
 # Status: COMPLETE (2026-02-20)
 
 ---
 
 ## Goal
+
 Build the complete frontend — auth pages, onboarding flow, chat UI, and
 suggestions dashboard. All pages styled with Tailwind + shadcn/ui.
 
 ## Checklist
+
 - [x] Install shadcn/ui and init (axios, lucide-react, clsx, tailwind-merge, Radix UI primitives)
 - [x] apps/web/src/lib/api.ts — API client (fetch wrapper with ApiError class)
 - [x] apps/web/src/lib/utils.ts — cn() helper
@@ -21,6 +24,7 @@ suggestions dashboard. All pages styled with Tailwind + shadcn/ui.
 - [x] Loading states and error handling throughout
 
 ## Files Created
+
 - src/lib/api.ts — Full typed API client (authApi, personaApi, onboardingApi, suggestionsApi)
 - src/lib/utils.ts — cn() helper
 - src/components/ui/{button,input,textarea,card,badge}.tsx
@@ -37,6 +41,7 @@ suggestions dashboard. All pages styled with Tailwind + shadcn/ui.
 ## Page Specifications
 
 ### /login
+
 ```
 Components: LoginForm (email + password + submit)
 Logic:
@@ -48,6 +53,7 @@ UI: Centered card, clean minimal design
 ```
 
 ### /register
+
 ```
 Components: RegisterForm (name + email + password + submit)
 Logic:
@@ -58,6 +64,7 @@ Logic:
 ```
 
 ### /onboarding
+
 ```
 Step 1: LinkedIn Profile Input
   - Form with two options (tabs):
@@ -76,6 +83,7 @@ Step 2: Interview Chat
 ```
 
 ### /dashboard
+
 ```
 Layout: Sidebar nav (Dashboard, History, Profile)
 
@@ -101,6 +109,7 @@ Main content:
 ```
 
 ### /dashboard/suggestions
+
 ```
 - Paginated list of all past suggestion sets
 - Grouped by date
@@ -112,6 +121,7 @@ Main content:
 ## Component Plan
 
 ### apps/web/src/components/chat/ChatInterface.tsx
+
 ```typescript
 // Props: onMessage(msg: string) => Promise<void>, messages: IMessage[], loading: boolean
 // UI: Scrollable messages list + fixed input bar at bottom
@@ -123,6 +133,7 @@ Main content:
 ```
 
 ### apps/web/src/components/suggestions/SuggestionCard.tsx
+
 ```typescript
 // Props: suggestion: ISuggestion
 // UI:
@@ -134,12 +145,14 @@ Main content:
 ```
 
 ### apps/web/src/components/layout/Navbar.tsx
+
 ```typescript
 // Shows: Logo | Nav links | User email | Logout button
 // Logout: POST /api/auth/logout → clear cookie → redirect /login
 ```
 
 ### apps/web/src/lib/api.ts
+
 ```typescript
 // Base URL: process.env.NEXT_PUBLIC_API_URL
 // All requests include credentials: 'include' (for httpOnly cookies)
@@ -153,6 +166,7 @@ Main content:
 ```
 
 ### Protected Route Pattern (App Router)
+
 ```typescript
 // apps/web/src/app/dashboard/layout.tsx
 // On server side: check cookie, redirect to /login if missing
@@ -160,6 +174,7 @@ Main content:
 ```
 
 ## UI Design Notes
+
 - **Color scheme**: LinkedIn blue (#0077B5) as accent, white/gray background
 - **Font**: Inter (already in Next.js)
 - **Suggestion card colors by format**:
@@ -172,6 +187,7 @@ Main content:
 - **Toasts**: shadcn Toaster for success/error notifications
 
 ## Completion Criteria
+
 - Can register → redirected to onboarding
 - Can complete LinkedIn URL analysis
 - Can complete 5-question interview in chat

@@ -18,19 +18,19 @@
  * is represented where possible.
  */
 
-import type { RawTrendItem } from '../services/trends'
+import type { RawTrendItem } from "../services/trends";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ScoredTrendItem extends RawTrendItem {
-  relevanceScore: number
-  matchedKeywords: string[]
+  relevanceScore: number;
+  matchedKeywords: string[];
 }
 
 export interface PersonaSignals {
-  topics: string[]
-  contentPillars: string[]
-  industry?: string
+  topics: string[];
+  contentPillars: string[];
+  industry?: string;
 }
 
 // ── Scoring ───────────────────────────────────────────────────────────────────
@@ -39,7 +39,11 @@ export interface PersonaSignals {
  * Normalise a string for keyword comparison.
  */
 function normalise(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -47,60 +51,60 @@ function normalise(s: string): string {
  */
 export function scoreTrendRelevance(
   item: RawTrendItem,
-  persona: PersonaSignals
+  persona: PersonaSignals,
 ): ScoredTrendItem {
-  const titleNorm = normalise(item.title)
-  const matchedKeywords: string[] = []
-  let score = 0
+  const titleNorm = normalise(item.title);
+  const matchedKeywords: string[] = [];
+  let score = 0;
 
   // Score: topic / keyword matches in title (+3 each, capped)
   const allKeywords = [
     ...persona.topics,
     ...(persona.contentPillars ?? []),
-  ].filter(Boolean)
+  ].filter(Boolean);
 
   for (const kw of allKeywords) {
-    const kwNorm = normalise(kw)
+    const kwNorm = normalise(kw);
     if (kwNorm && titleNorm.includes(kwNorm)) {
-      score += 3
-      matchedKeywords.push(kw)
+      score += 3;
+      matchedKeywords.push(kw);
     } else {
       // Partial match: any word from a multi-word keyword
-      const words = kwNorm.split(' ').filter((w) => w.length > 3)
-      const anyWordMatch = words.some((w) => titleNorm.includes(w))
+      const words = kwNorm.split(" ").filter((w) => w.length > 3);
+      const anyWordMatch = words.some((w) => titleNorm.includes(w));
       if (anyWordMatch) {
-        score += 1
-        matchedKeywords.push(kw)
+        score += 1;
+        matchedKeywords.push(kw);
       }
     }
   }
 
   // Score: industry match (+2)
   if (persona.industry) {
-    const industryNorm = normalise(persona.industry)
+    const industryNorm = normalise(persona.industry);
     if (industryNorm && titleNorm.includes(industryNorm)) {
-      score += 2
-      matchedKeywords.push(persona.industry)
+      score += 2;
+      matchedKeywords.push(persona.industry);
     }
   }
 
   // Score: premium source bonus
-  if (item.source === 'tavily') {
-    score += 1
-  } else if (item.source === 'hackernews' && (item.score ?? 0) > 50) {
-    score += 1
+  if (item.source === "tavily") {
+    score += 1;
+  } else if (item.source === "hackernews" && (item.score ?? 0) > 50) {
+    score += 1;
   }
 
   // Penalty: no keyword overlap at all (likely off-topic)
   if (matchedKeywords.length === 0) {
-    score -= 1
+    score -= 1;
   }
 
   return {
     ...item,
     relevanceScore: Math.max(0, score),
     matchedKeywords: [...new Set(matchedKeywords)],
-  }
+  };
 }
 
 /**
@@ -108,11 +112,11 @@ export function scoreTrendRelevance(
  */
 export function scoreAndRankTrends(
   items: RawTrendItem[],
-  persona: PersonaSignals
+  persona: PersonaSignals,
 ): ScoredTrendItem[] {
   return items
     .map((item) => scoreTrendRelevance(item, persona))
-    .sort((a, b) => b.relevanceScore - a.relevanceScore)
+    .sort((a, b) => b.relevanceScore - a.relevanceScore);
 }
 
 // ── Balanced selection ────────────────────────────────────────────────────────
@@ -128,26 +132,28 @@ export function scoreAndRankTrends(
 export function selectBalancedTrends(
   scored: ScoredTrendItem[],
   contentPillars: string[],
-  maxItems = 15
+  maxItems = 15,
 ): ScoredTrendItem[] {
-  const selected: ScoredTrendItem[] = []
-  const usedIndexes = new Set<number>()
+  const selected: ScoredTrendItem[] = [];
+  const usedIndexes = new Set<number>();
 
   // Pass 1: one representative item per content pillar
   for (const pillar of contentPillars) {
-    if (selected.length >= maxItems) break
-    const pillarNorm = normalise(pillar)
+    if (selected.length >= maxItems) break;
+    const pillarNorm = normalise(pillar);
     const bestIdx = scored.findIndex(
       (item, idx) =>
         !usedIndexes.has(idx) &&
         (normalise(item.title).includes(pillarNorm) ||
-          item.matchedKeywords.some((kw) => normalise(kw).includes(pillarNorm)))
-    )
+          item.matchedKeywords.some((kw) =>
+            normalise(kw).includes(pillarNorm),
+          )),
+    );
     if (bestIdx !== -1) {
-      const item = scored[bestIdx]
+      const item = scored[bestIdx];
       if (item) {
-        selected.push(item)
-        usedIndexes.add(bestIdx)
+        selected.push(item);
+        usedIndexes.add(bestIdx);
       }
     }
   }
@@ -155,13 +161,13 @@ export function selectBalancedTrends(
   // Pass 2: fill remaining slots with top-scored items not yet selected
   for (let i = 0; i < scored.length && selected.length < maxItems; i++) {
     if (!usedIndexes.has(i)) {
-      const item = scored[i]
+      const item = scored[i];
       if (item) {
-        selected.push(item)
-        usedIndexes.add(i)
+        selected.push(item);
+        usedIndexes.add(i);
       }
     }
   }
 
-  return selected
+  return selected;
 }

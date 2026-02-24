@@ -1,47 +1,49 @@
-import { Router, Response, NextFunction } from 'express'
-import { z } from 'zod'
-import { authenticate, AuthRequest } from '../middleware/auth'
-import { runContentPipelineWithRetry } from '../agents/mastra'
-import { ContentSuggestion } from '../models/ContentSuggestion'
-import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
-import mongoose from 'mongoose'
-import { generateText } from 'ai'
-import { google } from '@ai-sdk/google'
-import { sanitizeMessage } from '../utils/sanitizeInput'
+import { Router, Response, NextFunction } from "express";
+import { z } from "zod";
+import { authenticate, AuthRequest } from "../middleware/auth";
+import { runContentPipelineWithRetry } from "../agents/mastra";
+import { ContentSuggestion } from "../models/ContentSuggestion";
+import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import mongoose from "mongoose";
+import { generateText } from "ai";
+import { google } from "@ai-sdk/google";
+import { sanitizeMessage } from "../utils/sanitizeInput";
 
-const router = Router()
-router.use(authenticate)
+const router = Router();
+router.use(authenticate);
 
 const platformGoalEnum = z.enum([
-  'thought-leadership',
-  'lead-generation',
-  'personal-brand',
-  'hiring',
-  'community-building',
-])
+  "thought-leadership",
+  "lead-generation",
+  "personal-brand",
+  "hiring",
+  "community-building",
+]);
 
 const contentMixEnum = z.enum([
-  'more-carousels',
-  'more-text-posts',
-  'more-polls',
-  'balanced',
-])
+  "more-carousels",
+  "more-text-posts",
+  "more-polls",
+  "balanced",
+]);
 
-const generateContextSchema = z.object({
-  mode: z.enum(['profile', 'topic-focus', 'chat-refined']),
-  topicFocus: z.string().optional(),
-  targetAudienceOverride: z.string().optional(),
-  platformGoal: platformGoalEnum.optional(),
-  contentMix: contentMixEnum.optional(),
-  chatRefinementContext: z.string().optional(),
-}).optional()
+const generateContextSchema = z
+  .object({
+    mode: z.enum(["profile", "topic-focus", "chat-refined"]),
+    topicFocus: z.string().optional(),
+    targetAudienceOverride: z.string().optional(),
+    platformGoal: platformGoalEnum.optional(),
+    contentMix: contentMixEnum.optional(),
+    chatRefinementContext: z.string().optional(),
+  })
+  .optional();
 
 const generateSchema = z.object({
   linkedinUrl: z.string().url().optional(),
   manualPosts: z.string().optional(),
   forceReanalyze: z.boolean().optional().default(false),
   context: generateContextSchema,
-})
+});
 
 // ── POST /api/suggestions/generate ───────────────────────────────────────────
 /**
@@ -103,66 +105,72 @@ const generateSchema = z.object({
  *       503:
  *         description: AI generation failed
  */
-router.post('/generate', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const body = generateSchema.parse(req.body)
+router.post(
+  "/generate",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = generateSchema.parse(req.body);
 
-    const result = await runContentPipelineWithRetry({
-      userId: req.userId!,
-      linkedinUrl: body.linkedinUrl,
-      manualPosts: body.manualPosts,
-      forceReanalyze: body.forceReanalyze,
-      context: body.context,
-    })
+      const result = await runContentPipelineWithRetry({
+        userId: req.userId!,
+        linkedinUrl: body.linkedinUrl,
+        manualPosts: body.manualPosts,
+        forceReanalyze: body.forceReanalyze,
+        context: body.context,
+      });
 
-    switch (result.status) {
-      case 'success':
-        res.json({
-          suggestions: result.suggestions,
-          id: result.suggestionId,
-          trendsUsed: result.trendsUsed,
-          trendSource: result.trendSource ?? 'live',
-          generatedAt: new Date().toISOString(),
-        })
-        break
+      switch (result.status) {
+        case "success":
+          res.json({
+            suggestions: result.suggestions,
+            id: result.suggestionId,
+            trendsUsed: result.trendsUsed,
+            trendSource: result.trendSource ?? "live",
+            generatedAt: new Date().toISOString(),
+          });
+          break;
 
-      case 'interview_required':
-        res.status(400).json({
-          error: result.message,
-          action: 'Complete the onboarding interview at POST /api/onboarding/chat',
-        })
-        break
+        case "interview_required":
+          res.status(400).json({
+            error: result.message,
+            action:
+              "Complete the onboarding interview at POST /api/onboarding/chat",
+          });
+          break;
 
-      case 'persona_required':
-        res.status(400).json({
-          error: result.message,
-          action: 'Analyze your profile first at POST /api/persona/analyze',
-        })
-        break
+        case "persona_required":
+          res.status(400).json({
+            error: result.message,
+            action: "Analyze your profile first at POST /api/persona/analyze",
+          });
+          break;
 
-      case 'scraping_blocked':
-        res.status(422).json({
-          error: result.message,
-          scrapingError: result.scrapingError,
-          fallback: 'Use the manualPosts field to paste your LinkedIn posts directly.',
-        })
-        break
+        case "scraping_blocked":
+          res.status(422).json({
+            error: result.message,
+            scrapingError: result.scrapingError,
+            fallback:
+              "Use the manualPosts field to paste your LinkedIn posts directly.",
+          });
+          break;
 
-      case 'quota_exceeded':
-        res.status(429).json({
-          error: result.message ?? 'Token quota exceeded.',
-        })
-        break
+        case "quota_exceeded":
+          res.status(429).json({
+            error: result.message ?? "Token quota exceeded.",
+          });
+          break;
 
-      default:
-        res.status(503).json({
-          error: result.message ?? 'Content generation failed. Please try again.',
-        })
+        default:
+          res.status(503).json({
+            error:
+              result.message ?? "Content generation failed. Please try again.",
+          });
+      }
+    } catch (err) {
+      next(err);
     }
-  } catch (err) {
-    next(err)
-  }
-})
+  },
+);
 
 // ── GET /api/suggestions ──────────────────────────────────────────────────────
 /**
@@ -205,13 +213,16 @@ router.post('/generate', async (req: AuthRequest, res: Response, next: NextFunct
  *                 totalPages:
  *                   type: integer
  */
-router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get("/", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const page = Math.max(1, parseInt(req.query.page as string) || 1)
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10))
-    const skip = (page - 1) * limit
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(
+      50,
+      Math.max(1, parseInt(req.query.limit as string) || 10),
+    );
+    const skip = (page - 1) * limit;
 
-    const userId = new mongoose.Types.ObjectId(req.userId!)
+    const userId = new mongoose.Types.ObjectId(req.userId!);
 
     const [data, total] = await Promise.all([
       ContentSuggestion.find({ userId })
@@ -220,7 +231,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
         .limit(limit)
         .lean(),
       ContentSuggestion.countDocuments({ userId }),
-    ])
+    ]);
 
     res.json({
       data,
@@ -228,11 +239,11 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-    })
+    });
   } catch (err) {
-    next(err)
+    next(err);
   }
-})
+});
 
 // ── GET /api/suggestions/:id ──────────────────────────────────────────────────
 /**
@@ -257,28 +268,31 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
  *       404:
  *         description: Not found
  */
-router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    if (!mongoose.Types.ObjectId.isValid(req.params['id'] ?? '')) {
-      res.status(400).json({ error: 'Invalid suggestion ID' })
-      return
+router.get(
+  "/:id",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params["id"] ?? "")) {
+        res.status(400).json({ error: "Invalid suggestion ID" });
+        return;
+      }
+
+      const suggestion = await ContentSuggestion.findOne({
+        _id: req.params["id"],
+        userId: new mongoose.Types.ObjectId(req.userId!),
+      }).lean();
+
+      if (!suggestion) {
+        res.status(404).json({ error: "Suggestion set not found." });
+        return;
+      }
+
+      res.json({ suggestion });
+    } catch (err) {
+      next(err);
     }
-
-    const suggestion = await ContentSuggestion.findOne({
-      _id: req.params['id'],
-      userId: new mongoose.Types.ObjectId(req.userId!),
-    }).lean()
-
-    if (!suggestion) {
-      res.status(404).json({ error: 'Suggestion set not found.' })
-      return
-    }
-
-    res.json({ suggestion })
-  } catch (err) {
-    next(err)
-  }
-})
+  },
+);
 
 // ── POST /api/suggestions/refine-context ─────────────────────────────────────
 // Stateless single-turn chat to refine content generation context before generating.
@@ -319,34 +333,40 @@ router.get('/:id', async (req: AuthRequest, res: Response, next: NextFunction) =
  *         description: AI reply + optional summary when context is gathered
  */
 const refineContextSchema = z.object({
-  messages: z.array(z.object({
-    role: z.enum(['user', 'assistant']),
-    content: z.string(),
-  })).min(1),
-})
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      }),
+    )
+    .min(1),
+});
 
-router.post('/refine-context', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { messages: rawMessages } = refineContextSchema.parse(req.body)
-    // Sanitize user messages before sending to LLM
-    const messages = rawMessages.map((m) => ({
-      role: m.role,
-      content: m.role === 'user' ? sanitizeMessage(m.content) : m.content,
-    }))
+router.post(
+  "/refine-context",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { messages: rawMessages } = refineContextSchema.parse(req.body);
+      // Sanitize user messages before sending to LLM
+      const messages = rawMessages.map((m) => ({
+        role: m.role,
+        content: m.role === "user" ? sanitizeMessage(m.content) : m.content,
+      }));
 
-    // Pre-flight quota check
-    const quota = await checkTokenQuota(req.userId!)
-    if (!quota.allowed) {
-      res.status(429).json({
-        error: 'Token quota exceeded',
-        message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
-        tokensUsed: quota.tokensUsed,
-        tokenLimit: quota.tokenLimit,
-      })
-      return
-    }
+      // Pre-flight quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
 
-    const systemPrompt = `You are a content strategy assistant helping a LinkedIn creator define the perfect angle for their next batch of content ideas.
+      const systemPrompt = `You are a content strategy assistant helping a LinkedIn creator define the perfect angle for their next batch of content ideas.
 
 Your job: ask 2-3 focused questions to understand:
 1. What specific topic or niche they want to focus on (if any)
@@ -365,61 +385,67 @@ When you have enough context (after 2-3 exchanges), output a special block at th
 }
 CONTEXT_SUMMARY-->
 
-If you don't have enough context yet, do NOT include the summary block — just continue the conversation.`
+If you don't have enough context yet, do NOT include the summary block — just continue the conversation.`;
 
-    const aiMessages = messages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }))
+      const aiMessages = messages.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      }));
 
-    const { text, usage: genUsage } = await generateText({
-      model: google('gemini-2.5-flash'),
-      system: systemPrompt,
-      messages: aiMessages,
-    })
+      const { text, usage: genUsage } = await generateText({
+        model: google("gemini-2.5-flash"),
+        system: systemPrompt,
+        messages: aiMessages,
+      });
 
-    // Track refine-context token usage — fire-and-forget
-    trackTokenUsage({
-      userId: req.userId!,
-      agent: 'refine-context',
-      operation: 'refine_context',
-      inputTokens: genUsage?.inputTokens ?? 0,
-      outputTokens: genUsage?.outputTokens ?? 0,
-      totalTokens: (genUsage?.inputTokens ?? 0) + (genUsage?.outputTokens ?? 0),
-    })
+      // Track refine-context token usage — fire-and-forget
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "refine-context",
+        operation: "refine_context",
+        inputTokens: genUsage?.inputTokens ?? 0,
+        outputTokens: genUsage?.outputTokens ?? 0,
+        totalTokens:
+          (genUsage?.inputTokens ?? 0) + (genUsage?.outputTokens ?? 0),
+      });
 
-    // Extract structured summary if present
-    const summaryMatch = text.match(/<!--CONTEXT_SUMMARY\s*([\s\S]*?)\s*CONTEXT_SUMMARY-->/)
-    let summary: string | undefined
-    let topicFocus: string | undefined
-    let targetAudienceOverride: string | undefined
-    let platformGoal: string | undefined
+      // Extract structured summary if present
+      const summaryMatch = text.match(
+        /<!--CONTEXT_SUMMARY\s*([\s\S]*?)\s*CONTEXT_SUMMARY-->/,
+      );
+      let summary: string | undefined;
+      let topicFocus: string | undefined;
+      let targetAudienceOverride: string | undefined;
+      let platformGoal: string | undefined;
 
-    if (summaryMatch) {
-      try {
-        const parsed = JSON.parse(summaryMatch[1]!)
-        summary = parsed.summary
-        topicFocus = parsed.topicFocus ?? undefined
-        targetAudienceOverride = parsed.targetAudienceOverride ?? undefined
-        platformGoal = parsed.platformGoal ?? undefined
-      } catch {
-        // ignore parse error, just return the reply
+      if (summaryMatch) {
+        try {
+          const parsed = JSON.parse(summaryMatch[1]!);
+          summary = parsed.summary;
+          topicFocus = parsed.topicFocus ?? undefined;
+          targetAudienceOverride = parsed.targetAudienceOverride ?? undefined;
+          platformGoal = parsed.platformGoal ?? undefined;
+        } catch {
+          // ignore parse error, just return the reply
+        }
       }
+
+      // Strip the summary block from the visible reply
+      const visibleReply = text
+        .replace(/<!--CONTEXT_SUMMARY[\s\S]*?CONTEXT_SUMMARY-->/g, "")
+        .trim();
+
+      res.json({
+        reply: visibleReply,
+        summary,
+        topicFocus,
+        targetAudienceOverride,
+        platformGoal,
+      });
+    } catch (err) {
+      next(err);
     }
+  },
+);
 
-    // Strip the summary block from the visible reply
-    const visibleReply = text.replace(/<!--CONTEXT_SUMMARY[\s\S]*?CONTEXT_SUMMARY-->/g, '').trim()
-
-    res.json({
-      reply: visibleReply,
-      summary,
-      topicFocus,
-      targetAudienceOverride,
-      platformGoal,
-    })
-  } catch (err) {
-    next(err)
-  }
-})
-
-export default router
+export default router;

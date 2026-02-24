@@ -1,12 +1,12 @@
-import { Router, Response, NextFunction } from 'express'
-import { z } from 'zod'
-import { authenticate, AuthRequest } from '../middleware/auth'
-import { runPersonaChat, applyPersonaChanges } from '../agents/personaChat'
-import { getSessionHistory } from '../services/chatSessionService'
-import { findPersonaByUserIdLean } from '../services/userPersonaService'
+import { Router, Response, NextFunction } from "express";
+import { z } from "zod";
+import { authenticate, AuthRequest } from "../middleware/auth";
+import { runPersonaChat, applyPersonaChanges } from "../agents/personaChat";
+import { getSessionHistory } from "../services/chatSessionService";
+import { findPersonaByUserIdLean } from "../services/userPersonaService";
 
-const router = Router()
-router.use(authenticate)
+const router = Router();
+router.use(authenticate);
 
 // ── POST /api/persona-chat/chat ───────────────────────────────────────────────
 /**
@@ -40,23 +40,26 @@ router.use(authenticate)
 const chatSchema = z.object({
   message: z.string().min(1).max(2000),
   sessionId: z.string().optional(),
-})
+});
 
-router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { message, sessionId } = chatSchema.parse(req.body)
+router.post(
+  "/chat",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { message, sessionId } = chatSchema.parse(req.body);
 
-    const result = await runPersonaChat({
-      userId: req.userId!,
-      message,
-      sessionId,
-    })
+      const result = await runPersonaChat({
+        userId: req.userId!,
+        message,
+        sessionId,
+      });
 
-    res.json(result)
-  } catch (err) {
-    next(err)
-  }
-})
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── POST /api/persona-chat/apply-changes ─────────────────────────────────────
 /**
@@ -86,12 +89,12 @@ router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction)
  *         description: Updated persona
  */
 const platformGoalEnum = z.enum([
-  'thought-leadership',
-  'lead-generation',
-  'personal-brand',
-  'hiring',
-  'community-building',
-])
+  "thought-leadership",
+  "lead-generation",
+  "personal-brand",
+  "hiring",
+  "community-building",
+]);
 
 const applyChangesSchema = z.object({
   changes: z.object({
@@ -105,22 +108,25 @@ const applyChangesSchema = z.object({
     writingStyle: z.string().optional(),
     platformGoal: platformGoalEnum.optional(),
   }),
-})
+});
 
-router.post('/apply-changes', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const { changes } = applyChangesSchema.parse(req.body)
+router.post(
+  "/apply-changes",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { changes } = applyChangesSchema.parse(req.body);
 
-    const persona = await applyPersonaChanges(req.userId!, changes)
+      const persona = await applyPersonaChanges(req.userId!, changes);
 
-    res.json({
-      persona,
-      message: 'Persona updated successfully.',
-    })
-  } catch (err) {
-    next(err)
-  }
-})
+      res.json({
+        persona,
+        message: "Persona updated successfully.",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── GET /api/persona-chat/history ─────────────────────────────────────────────
 /**
@@ -136,14 +142,17 @@ router.post('/apply-changes', async (req: AuthRequest, res: Response, next: Next
  *       200:
  *         description: Chat session messages
  */
-router.get('/history', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const history = await getSessionHistory(req.userId!, 'persona-chat')
-    res.json({ messages: history.messages, sessionId: history.sessionId })
-  } catch (err) {
-    next(err)
-  }
-})
+router.get(
+  "/history",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const history = await getSessionHistory(req.userId!, "persona-chat");
+      res.json({ messages: history.messages, sessionId: history.sessionId });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ── GET /api/persona-chat/persona ─────────────────────────────────────────────
 /**
@@ -159,19 +168,24 @@ router.get('/history', async (req: AuthRequest, res: Response, next: NextFunctio
  *       200:
  *         description: User persona
  */
-router.get('/persona', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const persona = await findPersonaByUserIdLean(req.userId!)
+router.get(
+  "/persona",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const persona = await findPersonaByUserIdLean(req.userId!);
 
-    if (!persona) {
-      res.status(404).json({ error: 'Persona not found. Complete onboarding first.' })
-      return
+      if (!persona) {
+        res
+          .status(404)
+          .json({ error: "Persona not found. Complete onboarding first." });
+        return;
+      }
+
+      res.json({ persona });
+    } catch (err) {
+      next(err);
     }
+  },
+);
 
-    res.json({ persona })
-  } catch (err) {
-    next(err)
-  }
-})
-
-export default router
+export default router;

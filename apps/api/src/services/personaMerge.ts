@@ -5,8 +5,11 @@
  * Handles: deduplication, field merging, snapshot creation, and diff computation.
  */
 
-import type { PersonaAnalysis } from '../agents/personaAnalyst'
-import type { IUserPersonaDocument, IPersonaSnapshot } from '../models/UserPersona'
+import type { PersonaAnalysis } from "../agents/personaAnalyst";
+import type {
+  IUserPersonaDocument,
+  IPersonaSnapshot,
+} from "../models/UserPersona";
 
 // ── Normalization ─────────────────────────────────────────────────────────────
 
@@ -17,9 +20,9 @@ import type { IUserPersonaDocument, IPersonaSnapshot } from '../models/UserPerso
 export function normalizeForDedup(s: string): string {
   return s
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -27,16 +30,16 @@ export function normalizeForDedup(s: string): string {
  * Preserves the original casing of the first occurrence.
  */
 export function deduplicateStrings(items: string[]): string[] {
-  const seen = new Set<string>()
-  const result: string[] = []
+  const seen = new Set<string>();
+  const result: string[] = [];
   for (const item of items) {
-    const key = normalizeForDedup(item)
+    const key = normalizeForDedup(item);
     if (key && !seen.has(key)) {
-      seen.add(key)
-      result.push(item)
+      seen.add(key);
+      result.push(item);
     }
   }
-  return result
+  return result;
 }
 
 // ── Post deduplication ────────────────────────────────────────────────────────
@@ -45,14 +48,17 @@ export function deduplicateStrings(items: string[]): string[] {
  * Filter newPosts to only include posts not already in existingPosts.
  * Uses first 100 chars of each post (normalised) as the dedup key.
  */
-export function deduplicatePosts(existingPosts: string[], newPosts: string[]): string[] {
+export function deduplicatePosts(
+  existingPosts: string[],
+  newPosts: string[],
+): string[] {
   const existingKeys = new Set(
-    existingPosts.map((p) => normalizeForDedup(p.slice(0, 100)))
-  )
+    existingPosts.map((p) => normalizeForDedup(p.slice(0, 100))),
+  );
   return newPosts.filter((p) => {
-    const key = normalizeForDedup(p.slice(0, 100))
-    return key.length > 0 && !existingKeys.has(key)
-  })
+    const key = normalizeForDedup(p.slice(0, 100));
+    return key.length > 0 && !existingKeys.has(key);
+  });
 }
 
 // ── Persona merge ─────────────────────────────────────────────────────────────
@@ -68,17 +74,17 @@ export function deduplicatePosts(existingPosts: string[], newPosts: string[]): s
  */
 export function mergePersonaAnalysis(
   existing: IUserPersonaDocument,
-  newAnalysis: PersonaAnalysis
+  newAnalysis: PersonaAnalysis,
 ): Partial<IUserPersonaDocument> {
   const mergedTopics = deduplicateStrings([
     ...(existing.topics ?? []),
     ...(newAnalysis.topics ?? []),
-  ]).slice(0, 15)
+  ]).slice(0, 15);
 
   const mergedFormats = deduplicateStrings([
     ...(existing.postFormats ?? []),
     ...(newAnalysis.postFormats ?? []),
-  ])
+  ]);
 
   return {
     writingStyle: newAnalysis.writingStyle,
@@ -89,7 +95,7 @@ export function mergePersonaAnalysis(
     ...(existing.postingFrequency
       ? {}
       : { postingFrequency: newAnalysis.estimatedPostFrequency }),
-  }
+  };
 }
 
 // ── Snapshot ──────────────────────────────────────────────────────────────────
@@ -99,7 +105,7 @@ export function mergePersonaAnalysis(
  * Used for the analysis history timeline.
  */
 export function createPersonaSnapshot(
-  persona: IUserPersonaDocument
+  persona: IUserPersonaDocument,
 ): IPersonaSnapshot {
   return {
     snapshotAt: new Date(),
@@ -108,17 +114,17 @@ export function createPersonaSnapshot(
     tone: persona.tone,
     topics: [...(persona.topics ?? [])],
     postFormats: [...(persona.postFormats ?? [])],
-  }
+  };
 }
 
 // ── Diff ──────────────────────────────────────────────────────────────────────
 
 export interface PersonaDiff {
-  topicsAdded: string[]
-  topicsRemoved: string[]
-  formatsAdded: string[]
-  writingStyleChanged: boolean
-  toneChanged: boolean
+  topicsAdded: string[];
+  topicsRemoved: string[];
+  formatsAdded: string[];
+  writingStyleChanged: boolean;
+  toneChanged: boolean;
 }
 
 /**
@@ -126,22 +132,22 @@ export interface PersonaDiff {
  */
 export function computePersonaDiff(
   before: IPersonaSnapshot,
-  after: Partial<IUserPersonaDocument>
+  after: Partial<IUserPersonaDocument>,
 ): PersonaDiff {
-  const beforeTopics = new Set(before.topics.map(normalizeForDedup))
-  const afterTopics = (after.topics ?? []).map(normalizeForDedup)
+  const beforeTopics = new Set(before.topics.map(normalizeForDedup));
+  const afterTopics = (after.topics ?? []).map(normalizeForDedup);
 
   const topicsAdded = (after.topics ?? []).filter(
-    (t) => !beforeTopics.has(normalizeForDedup(t))
-  )
+    (t) => !beforeTopics.has(normalizeForDedup(t)),
+  );
   const topicsRemoved = before.topics.filter(
-    (t) => !new Set(afterTopics).has(normalizeForDedup(t))
-  )
+    (t) => !new Set(afterTopics).has(normalizeForDedup(t)),
+  );
 
-  const beforeFormats = new Set(before.postFormats.map(normalizeForDedup))
+  const beforeFormats = new Set(before.postFormats.map(normalizeForDedup));
   const formatsAdded = (after.postFormats ?? []).filter(
-    (f) => !beforeFormats.has(normalizeForDedup(f))
-  )
+    (f) => !beforeFormats.has(normalizeForDedup(f)),
+  );
 
   return {
     topicsAdded,
@@ -149,5 +155,5 @@ export function computePersonaDiff(
     formatsAdded,
     writingStyleChanged: before.writingStyle !== after.writingStyle,
     toneChanged: before.tone !== after.tone,
-  }
+  };
 }

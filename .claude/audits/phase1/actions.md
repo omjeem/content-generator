@@ -9,6 +9,7 @@
 ## How to Resume
 
 If context runs out, come back here and:
+
 1. Read this file to see what is done and what is next
 2. Start from the first unchecked `[ ]` item
 3. Do NOT redo completed `[x]` items
@@ -97,6 +98,7 @@ If context runs out, come back here and:
 ## Files To Create / Modify
 
 ### NEW files created ✅
+
 - `apps/api/src/utils/extractJSON.ts` — robust JSON extraction utility
 - `apps/api/src/utils/chatHistory.ts` — sliding window for chat history
 - `apps/api/src/utils/scoring.ts` — trend-persona relevance scoring
@@ -116,6 +118,7 @@ If context runs out, come back here and:
 - `apps/web/src/app/dashboard/usage/page.tsx` — token usage page
 
 ### Key modified files
+
 - `apps/api/src/index.ts` — CORS allowlist + rate limiting + health endpoint
 - `apps/api/src/agents/personaAnalyst.ts` — extractJSON + removed dead linkedinScrapeTool + sanitizePosts
 - `apps/api/src/agents/trendResearch.ts` — extractJSON + scoring + `isLive` field + heuristic fast path (#32)

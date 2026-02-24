@@ -1,21 +1,32 @@
 # Phase 3: Mastra AI Setup + All 4 Agents + Orchestrator
+
 # Status: COMPLETE ✓ (2026-02-20)
+
 # IMPORTANT NOTES for future sessions:
+
 # - Mastra version: 1.5.0 — Agent requires 'id' field in addition to 'name'
+
 # - Import path: Agent from '@mastra/core/agent', createTool from '@mastra/core/tools'
+
 # - generate() returns result.text (string) — NOT result.object
+
 # - Structured output: parse JSON from result.text using regex, then Zod.parse()
+
 # - Tool execute receives raw input object (not {context: ...}) — use toolInput?.field ?? toolInput?.context?.field
+
 # - tsconfig lib must include "DOM" for Puppeteer page.evaluate() to see document
+
 # - google-trends-api has no @types package — use require() with manual interface types
 
 ---
 
 ## Goal
+
 Build the complete multi-agent pipeline using Mastra AI. All agents must be
 functional and the orchestrator must sequence them correctly.
 
 ## Checklist
+
 - [ ] Install Mastra packages + Gemini provider
 - [ ] Install Puppeteer for LinkedIn scraping
 - [ ] Install google-trends-api
@@ -32,6 +43,7 @@ functional and the orchestrator must sequence them correctly.
 ## npm packages to install (apps/api)
 
 ### Dependencies
+
 ```
 @mastra/core
 @ai-sdk/google
@@ -42,11 +54,12 @@ google-trends-api
 ## Mastra Configuration
 
 ### apps/api/src/agents/mastra.ts
-```typescript
-import { Mastra } from '@mastra/core'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
 
-const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY })
+```typescript
+import { Mastra } from "@mastra/core";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+
+const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export const mastra = new Mastra({
   agents: {
@@ -54,8 +67,8 @@ export const mastra = new Mastra({
     onboarding: onboardingAgent,
     trendResearch: trendResearchAgent,
     contentGenerator: contentGeneratorAgent,
-  }
-})
+  },
+});
 
 // Orchestrator function — sequences all 4 agents
 export async function runContentPipeline(userId: string, input: PipelineInput) {
@@ -70,6 +83,7 @@ export async function runContentPipeline(userId: string, input: PipelineInput) {
 ## Agent 1: Persona Analyst
 
 ### File: apps/api/src/agents/personaAnalyst.ts
+
 ```typescript
 // Tools:
 //   - scrapeLinkedIn(url): Uses Puppeteer to scrape posts
@@ -92,6 +106,7 @@ export async function runContentPipeline(userId: string, input: PipelineInput) {
 ```
 
 ### File: apps/api/src/services/linkedin.ts
+
 ```typescript
 // Function: scrapeLinkedInProfile(url: string): Promise<string[]>
 // - Launch Puppeteer (headless: true, args: ['--no-sandbox'])
@@ -109,6 +124,7 @@ export async function runContentPipeline(userId: string, input: PipelineInput) {
 ## Agent 2: Onboarding/Interview Agent
 
 ### File: apps/api/src/agents/onboarding.ts
+
 ```typescript
 // System prompt:
 // "You are a LinkedIn content strategist conducting a friendly interview.
@@ -133,6 +149,7 @@ export async function runContentPipeline(userId: string, input: PipelineInput) {
 ## Agent 3: Trend Research Agent
 
 ### File: apps/api/src/agents/trendResearch.ts
+
 ```typescript
 // Tools:
 //   - getGoogleTrends(keywords: string[], geo?: string): trending searches
@@ -152,8 +169,9 @@ export async function runContentPipeline(userId: string, input: PipelineInput) {
 ```
 
 ### File: apps/api/src/services/trends.ts
+
 ```typescript
-import googleTrends from 'google-trends-api'
+import googleTrends from "google-trends-api";
 
 // Function: getTrendingTopics(keywords: string[], geo = 'US'): Promise<string[]>
 // - Call googleTrends.relatedTopics({ keyword, geo })
@@ -169,6 +187,7 @@ import googleTrends from 'google-trends-api'
 ## Agent 4: Content Idea Generator
 
 ### File: apps/api/src/agents/contentGenerator.ts
+
 ```typescript
 // System prompt:
 // "You are an expert LinkedIn ghostwriter. Given:
@@ -190,40 +209,50 @@ import googleTrends from 'google-trends-api'
 ## Orchestrator Flow
 
 ```typescript
-export async function runContentPipeline(userId: string, input: {
-  linkedinUrl?: string,
-  manualPosts?: string,
-}) {
+export async function runContentPipeline(
+  userId: string,
+  input: {
+    linkedinUrl?: string;
+    manualPosts?: string;
+  },
+) {
   // 1. Agent 1: Analyze persona (skip if already done)
-  const existingPersona = await UserPersona.findOne({ userId })
+  const existingPersona = await UserPersona.findOne({ userId });
   if (!existingPersona || input.linkedinUrl || input.manualPosts) {
     const posts = input.linkedinUrl
       ? await scrapeLinkedInProfile(input.linkedinUrl)
-      : parseManualPosts(input.manualPosts!)
-    const persona = await personaAnalystAgent.generate(posts)
-    await UserPersona.findOneAndUpdate({ userId }, persona, { upsert: true })
+      : parseManualPosts(input.manualPosts!);
+    const persona = await personaAnalystAgent.generate(posts);
+    await UserPersona.findOneAndUpdate({ userId }, persona, { upsert: true });
   }
 
   // 2. Agent 2: Check interview status (must be complete before generating)
-  const persona = await UserPersona.findOne({ userId })
+  const persona = await UserPersona.findOne({ userId });
   if (!persona?.interviewComplete) {
-    return { status: 'interview_required', message: 'Complete the onboarding interview first' }
+    return {
+      status: "interview_required",
+      message: "Complete the onboarding interview first",
+    };
   }
 
   // 3. Agent 3: Get trends for user's niche
-  const trends = await trendResearchAgent.generate({ industry: persona.industry, topics: persona.topics })
+  const trends = await trendResearchAgent.generate({
+    industry: persona.industry,
+    topics: persona.topics,
+  });
 
   // 4. Agent 4: Generate content ideas
-  const suggestions = await contentGeneratorAgent.generate({ persona, trends })
+  const suggestions = await contentGeneratorAgent.generate({ persona, trends });
 
   // 5. Save to DB
-  await ContentSuggestion.create({ userId, trendsUsed: trends, suggestions })
+  await ContentSuggestion.create({ userId, trendsUsed: trends, suggestions });
 
-  return { status: 'success', suggestions }
+  return { status: "success", suggestions };
 }
 ```
 
 ## Completion Criteria
+
 - Each agent can be called individually and returns expected output
 - Orchestrator sequences all 4 agents correctly
 - Persona saved to MongoDB after Agent 1

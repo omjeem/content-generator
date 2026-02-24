@@ -1,13 +1,13 @@
-'use client'
-import type { IPersonaDiff } from '@repo/shared-types'
+"use client";
+import type { IPersonaDiff } from "@repo/shared-types";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface PersonaDiffCardProps {
-  diff: IPersonaDiff
-  postsAdded: number
-  className?: string
-  onDismiss?: () => void
+  diff: IPersonaDiff;
+  postsAdded: number;
+  className?: string;
+  onDismiss?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -16,21 +16,29 @@ interface PersonaDiffCardProps {
  * Displays a "before/after" diff card when posts are added to a persona.
  * Shows new topics, removed topics, new formats, and style/tone changes.
  */
-export function PersonaDiffCard({ diff, postsAdded, className = '', onDismiss }: PersonaDiffCardProps) {
+export function PersonaDiffCard({
+  diff,
+  postsAdded,
+  className = "",
+  onDismiss,
+}: PersonaDiffCardProps) {
   const hasChanges =
     diff.topicsAdded.length > 0 ||
     diff.topicsRemoved.length > 0 ||
     diff.formatsAdded.length > 0 ||
     diff.writingStyleChanged ||
-    diff.toneChanged
+    diff.toneChanged;
 
   if (!hasChanges) {
     return (
-      <div className={`rounded-lg bg-green-50 border border-green-200 px-4 py-3 ${className}`}>
+      <div
+        className={`rounded-lg bg-green-50 border border-green-200 px-4 py-3 ${className}`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-sm font-medium text-green-700">
-              ✓ {postsAdded} post{postsAdded !== 1 ? 's' : ''} added — persona already up to date
+              ✓ {postsAdded} post{postsAdded !== 1 ? "s" : ""} added — persona
+              already up to date
             </p>
             <p className="text-xs text-green-600 mt-0.5">
               No significant changes detected from the new posts.
@@ -47,11 +55,13 @@ export function PersonaDiffCard({ diff, postsAdded, className = '', onDismiss }:
           )}
         </div>
       </div>
-    )
+    );
   }
 
   return (
-    <div className={`rounded-lg border border-blue-200 bg-blue-50 overflow-hidden ${className}`}>
+    <div
+      className={`rounded-lg border border-blue-200 bg-blue-50 overflow-hidden ${className}`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-blue-100 bg-blue-100/50">
         <div className="flex items-center gap-2">
@@ -59,7 +69,7 @@ export function PersonaDiffCard({ diff, postsAdded, className = '', onDismiss }:
             ✨ Persona updated
           </span>
           <span className="text-xs text-blue-600 font-medium">
-            +{postsAdded} post{postsAdded !== 1 ? 's' : ''} analysed
+            +{postsAdded} post{postsAdded !== 1 ? "s" : ""} analysed
           </span>
         </div>
         {onDismiss && (
@@ -102,12 +112,10 @@ export function PersonaDiffCard({ diff, postsAdded, className = '', onDismiss }:
         {diff.writingStyleChanged && (
           <ChangedBadge label="Writing style updated" />
         )}
-        {diff.toneChanged && (
-          <ChangedBadge label="Tone updated" />
-        )}
+        {diff.toneChanged && <ChangedBadge label="Tone updated" />}
       </div>
     </div>
-  )
+  );
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
@@ -118,25 +126,27 @@ function DiffRow({
   label,
   items,
 }: {
-  icon: '+' | '−'
-  color: 'green' | 'red' | 'blue'
-  label: string
-  items: string[]
+  icon: "+" | "−";
+  color: "green" | "red" | "blue";
+  label: string;
+  items: string[];
 }) {
   const colorMap = {
-    green: 'text-green-700 bg-green-100 border-green-200',
-    red:   'text-red-700 bg-red-50 border-red-200',
-    blue:  'text-blue-700 bg-blue-100 border-blue-200',
-  }
+    green: "text-green-700 bg-green-100 border-green-200",
+    red: "text-red-700 bg-red-50 border-red-200",
+    blue: "text-blue-700 bg-blue-100 border-blue-200",
+  };
   const iconColorMap = {
-    green: 'text-green-600 font-bold',
-    red:   'text-red-500 font-bold',
-    blue:  'text-blue-600 font-bold',
-  }
+    green: "text-green-600 font-bold",
+    red: "text-red-500 font-bold",
+    blue: "text-blue-600 font-bold",
+  };
 
   return (
     <div className="flex items-start gap-2">
-      <span className={`text-xs mt-0.5 shrink-0 ${iconColorMap[color]}`}>{icon}</span>
+      <span className={`text-xs mt-0.5 shrink-0 ${iconColorMap[color]}`}>
+        {icon}
+      </span>
       <div className="min-w-0">
         <p className="text-xs text-gray-500 mb-1">{label}:</p>
         <div className="flex flex-wrap gap-1">
@@ -151,7 +161,7 @@ function DiffRow({
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function ChangedBadge({ label }: { label: string }) {
@@ -162,5 +172,5 @@ function ChangedBadge({ label }: { label: string }) {
         {label}
       </span>
     </div>
-  )
+  );
 }

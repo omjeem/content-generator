@@ -1,11 +1,11 @@
-import { Router, Response, NextFunction } from 'express'
-import { authenticate, AuthRequest } from '../middleware/auth'
-import { researchTrendsForUser } from '../agents/trendResearch'
-import { UserPersona } from '../models/UserPersona'
-import mongoose from 'mongoose'
+import { Router, Response, NextFunction } from "express";
+import { authenticate, AuthRequest } from "../middleware/auth";
+import { researchTrendsForUser } from "../agents/trendResearch";
+import { UserPersona } from "../models/UserPersona";
+import mongoose from "mongoose";
 
-const router = Router()
-router.use(authenticate)
+const router = Router();
+router.use(authenticate);
 
 // ── GET /api/trends ───────────────────────────────────────────────────────────
 /**
@@ -53,34 +53,34 @@ router.use(authenticate)
  *       400:
  *         description: Persona not found — complete analysis first
  */
-router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get("/", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const geo = (req.query.geo as string | undefined) ?? 'US'
+    const geo = (req.query.geo as string | undefined) ?? "US";
 
     const persona = await UserPersona.findOne({
       userId: new mongoose.Types.ObjectId(req.userId!),
-    })
+    });
 
     if (!persona) {
       res.status(400).json({
-        error: 'No persona found. Complete POST /api/persona/analyze first.',
-      })
-      return
+        error: "No persona found. Complete POST /api/persona/analyze first.",
+      });
+      return;
     }
 
     const result = await researchTrendsForUser({
-      industry: persona.industry ?? 'business',
+      industry: persona.industry ?? "business",
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
       geo,
-    })
+    });
 
     res.json({
       ...result,
       fetchedAt: new Date().toISOString(),
-    })
+    });
   } catch (err) {
-    next(err)
+    next(err);
   }
-})
+});
 
-export default router
+export default router;

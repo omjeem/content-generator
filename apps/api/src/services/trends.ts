@@ -18,17 +18,17 @@
  * which filters them for relevance and adds LinkedIn content angles.
  */
 
-import Parser from 'rss-parser'
-import { tavily } from '@tavily/core'
+import Parser from "rss-parser";
+import { tavily } from "@tavily/core";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface RawTrendItem {
-  title: string
-  url?: string
-  source: string   // "hackernews" | "rss:TechCrunch" | "tavily" | etc.
-  score?: number   // HN points or Tavily relevance score
-  publishedAt?: string
+  title: string;
+  url?: string;
+  source: string; // "hackernews" | "rss:TechCrunch" | "tavily" | etc.
+  score?: number; // HN points or Tavily relevance score
+  publishedAt?: string;
 }
 
 // ── RSS feed sources ───────────────────────────────────────────────────────────
@@ -37,76 +37,91 @@ export interface RawTrendItem {
 
 const RSS_FEEDS: { name: string; url: string; topics: string[] }[] = [
   {
-    name: 'TechCrunch',
-    url: 'https://techcrunch.com/feed/',
-    topics: ['tech', 'ai', 'startup', 'saas', 'software', 'engineering'],
+    name: "TechCrunch",
+    url: "https://techcrunch.com/feed/",
+    topics: ["tech", "ai", "startup", "saas", "software", "engineering"],
   },
   {
-    name: 'HBR',
-    url: 'https://feeds.hbr.org/harvardbusiness',
-    topics: ['leadership', 'management', 'strategy', 'business', 'career', 'hr'],
+    name: "HBR",
+    url: "https://feeds.hbr.org/harvardbusiness",
+    topics: [
+      "leadership",
+      "management",
+      "strategy",
+      "business",
+      "career",
+      "hr",
+    ],
   },
   {
-    name: 'VentureBeat',
-    url: 'https://feeds.feedburner.com/venturebeat/SZYF',
-    topics: ['ai', 'ml', 'enterprise', 'tech', 'startup', 'data'],
+    name: "VentureBeat",
+    url: "https://feeds.feedburner.com/venturebeat/SZYF",
+    topics: ["ai", "ml", "enterprise", "tech", "startup", "data"],
   },
   {
-    name: 'Fast Company',
-    url: 'https://www.fastcompany.com/latest/rss',
-    topics: ['innovation', 'design', 'business', 'leadership', 'marketing'],
+    name: "Fast Company",
+    url: "https://www.fastcompany.com/latest/rss",
+    topics: ["innovation", "design", "business", "leadership", "marketing"],
   },
   {
-    name: 'MIT Technology Review',
-    url: 'https://www.technologyreview.com/feed/',
-    topics: ['ai', 'biotech', 'climate', 'computing', 'engineering', 'science'],
+    name: "MIT Technology Review",
+    url: "https://www.technologyreview.com/feed/",
+    topics: ["ai", "biotech", "climate", "computing", "engineering", "science"],
   },
   {
-    name: 'Inc. Magazine',
-    url: 'https://www.inc.com/rss',
-    topics: ['entrepreneurship', 'startup', 'growth', 'management', 'marketing'],
+    name: "Inc. Magazine",
+    url: "https://www.inc.com/rss",
+    topics: [
+      "entrepreneurship",
+      "startup",
+      "growth",
+      "management",
+      "marketing",
+    ],
   },
-]
+];
 
 // ── HN subreddits-equivalent search terms per broad topic ─────────────────────
 // Maps niche keywords → HN search queries for best results
 
 const HN_QUERY_MAP: Record<string, string> = {
-  ai: 'AI machine learning LLM',
-  'machine learning': 'machine learning neural network',
-  saas: 'SaaS startup product',
-  startup: 'startup founder YC',
-  engineering: 'software engineering developer tools',
-  fintech: 'fintech payments crypto',
-  healthcare: 'health tech biotech medical',
-  marketing: 'marketing growth SEO content',
-  leadership: 'leadership management productivity',
-  design: 'design UX product',
-  data: 'data engineering analytics',
-  security: 'security infosec cybersecurity',
-  cloud: 'cloud AWS infrastructure devops',
-  ecommerce: 'ecommerce retail B2C',
-  hr: 'hiring remote work people management',
-}
+  ai: "AI machine learning LLM",
+  "machine learning": "machine learning neural network",
+  saas: "SaaS startup product",
+  startup: "startup founder YC",
+  engineering: "software engineering developer tools",
+  fintech: "fintech payments crypto",
+  healthcare: "health tech biotech medical",
+  marketing: "marketing growth SEO content",
+  leadership: "leadership management productivity",
+  design: "design UX product",
+  data: "data engineering analytics",
+  security: "security infosec cybersecurity",
+  cloud: "cloud AWS infrastructure devops",
+  ecommerce: "ecommerce retail B2C",
+  hr: "hiring remote work people management",
+};
 
 // ── Utility: keyword relevance check (word-boundary aware) ───────────────────
 // Uses \b word boundaries so short words like "ai" don't match "tail" or "email".
 // Falls back to simple includes() for multi-word phrases (spaces break \b matching).
 
 function isRelevant(text: string, keywords: string[]): boolean {
-  const lower = text.toLowerCase()
+  const lower = text.toLowerCase();
   return keywords.some((kw) => {
-    const kwLower = kw.toLowerCase().trim()
-    if (!kwLower) return false
+    const kwLower = kw.toLowerCase().trim();
+    if (!kwLower) return false;
     // Multi-word keyword: use simple includes (word boundaries don't help across spaces)
-    if (kwLower.includes(' ')) return lower.includes(kwLower)
+    if (kwLower.includes(" ")) return lower.includes(kwLower);
     // Single word: use word-boundary regex to avoid false partial matches
     try {
-      return new RegExp(`\\b${kwLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lower)
+      return new RegExp(
+        `\\b${kwLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+      ).test(lower);
     } catch {
-      return lower.includes(kwLower)
+      return lower.includes(kwLower);
     }
-  })
+  });
 }
 
 // ── Source 1: Tavily — premium AI web search ──────────────────────────────────
@@ -117,35 +132,35 @@ async function fetchFromTavily(
   keywords: string[],
   industry: string,
 ): Promise<RawTrendItem[]> {
-  const apiKey = process.env.TAVILY_API_KEY
-  if (!apiKey) return []
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return [];
 
   try {
-    const client = tavily({ apiKey })
-    const query = `trending topics and news in ${industry}: ${keywords.slice(0, 3).join(', ')} 2026`
+    const client = tavily({ apiKey });
+    const query = `trending topics and news in ${industry}: ${keywords.slice(0, 3).join(", ")} 2026`;
 
-    console.log(`[trends:tavily] Searching: "${query}"`)
+    console.log(`[trends:tavily] Searching: "${query}"`);
 
     const response = await client.search(query, {
-      topic: 'news',
-      time_range: 'week',     // only content from the last week
+      topic: "news",
+      time_range: "week", // only content from the last week
       max_results: 10,
-      search_depth: 'basic',  // 1 credit each
-    })
+      search_depth: "basic", // 1 credit each
+    });
 
     const items: RawTrendItem[] = (response.results ?? []).map((r) => ({
       title: r.title ?? r.url,
       url: r.url,
-      source: 'tavily',
+      source: "tavily",
       score: r.score,
       publishedAt: r.publishedDate,
-    }))
+    }));
 
-    console.log(`[trends:tavily] ✓ ${items.length} results`)
-    return items
+    console.log(`[trends:tavily] ✓ ${items.length} results`);
+    return items;
   } catch (err) {
-    console.warn('[trends:tavily] Failed:', (err as Error).message)
-    return []
+    console.warn("[trends:tavily] Failed:", (err as Error).message);
+    return [];
   }
 }
 
@@ -167,47 +182,53 @@ async function fetchFromHackerNews(
     //  3. Fall back to the top 3 raw keywords or the industry name
     const firstMappedExpansion = keywords
       .map((k) => HN_QUERY_MAP[k.toLowerCase()])
-      .find(Boolean) // first hit wins
-    const fallbackTerms = keywords.slice(0, 3).join(' ') || industry
-    const query = firstMappedExpansion ?? fallbackTerms
+      .find(Boolean); // first hit wins
+    const fallbackTerms = keywords.slice(0, 3).join(" ") || industry;
+    const query = firstMappedExpansion ?? fallbackTerms;
 
-    const url = new URL('https://hn.algolia.com/api/v1/search_by_date')
-    url.searchParams.set('query', query)
-    url.searchParams.set('tags', 'story')
-    url.searchParams.set('numericFilters', 'points>10')  // only quality posts
-    url.searchParams.set('hitsPerPage', '20')
+    const url = new URL("https://hn.algolia.com/api/v1/search_by_date");
+    url.searchParams.set("query", query);
+    url.searchParams.set("tags", "story");
+    url.searchParams.set("numericFilters", "points>10"); // only quality posts
+    url.searchParams.set("hitsPerPage", "20");
 
-    console.log(`[trends:hn] Searching HN for: "${query}"`)
+    console.log(`[trends:hn] Searching HN for: "${query}"`);
 
     const res = await fetch(url.toString(), {
-      headers: { 'User-Agent': 'ContentGeneratorApp/1.0' },
+      headers: { "User-Agent": "ContentGeneratorApp/1.0" },
       signal: AbortSignal.timeout(8000),
-    })
+    });
 
     if (!res.ok) {
-      console.warn(`[trends:hn] HTTP ${res.status}`)
-      return []
+      console.warn(`[trends:hn] HTTP ${res.status}`);
+      return [];
     }
 
-    const data = await res.json() as {
-      hits: { title: string; url?: string; story_url?: string; points: number; created_at: string }[]
-    }
+    const data = (await res.json()) as {
+      hits: {
+        title: string;
+        url?: string;
+        story_url?: string;
+        points: number;
+        created_at: string;
+      }[];
+    };
 
     const items: RawTrendItem[] = (data.hits ?? [])
       .filter((h) => h.title && h.title.length > 10)
       .map((h) => ({
         title: h.title,
         url: h.url ?? h.story_url,
-        source: 'hackernews',
+        source: "hackernews",
         score: h.points,
         publishedAt: h.created_at,
-      }))
+      }));
 
-    console.log(`[trends:hn] ✓ ${items.length} stories`)
-    return items
+    console.log(`[trends:hn] ✓ ${items.length} stories`);
+    return items;
   } catch (err) {
-    console.warn('[trends:hn] Failed:', (err as Error).message)
-    return []
+    console.warn("[trends:hn] Failed:", (err as Error).message);
+    return [];
   }
 }
 
@@ -215,58 +236,60 @@ async function fetchFromHackerNews(
 // Completely free, no keys. Fetches from 2-4 curated feeds relevant to
 // the user's keywords, then filters items by keyword match.
 
-async function fetchFromRSSFeeds(
-  keywords: string[],
-): Promise<RawTrendItem[]> {
+async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
   const parser = new Parser({
     timeout: 8000,
-    headers: { 'User-Agent': 'ContentGeneratorApp/1.0' },
-  })
+    headers: { "User-Agent": "ContentGeneratorApp/1.0" },
+  });
 
   // Select 3 feeds whose topic tags match the user's keywords
-  const selectedFeeds = RSS_FEEDS
-    .map((feed) => ({
-      ...feed,
-      matchScore: feed.topics.filter((t) => isRelevant(t, keywords)).length,
-    }))
+  const selectedFeeds = RSS_FEEDS.map((feed) => ({
+    ...feed,
+    matchScore: feed.topics.filter((t) => isRelevant(t, keywords)).length,
+  }))
     .sort((a, b) => b.matchScore - a.matchScore)
-    .slice(0, 3)   // top 3 most relevant feeds
+    .slice(0, 3); // top 3 most relevant feeds
 
   console.log(
-    `[trends:rss] Fetching from: ${selectedFeeds.map((f) => f.name).join(', ')}`
-  )
+    `[trends:rss] Fetching from: ${selectedFeeds.map((f) => f.name).join(", ")}`,
+  );
 
-  const allItems: RawTrendItem[] = []
+  const allItems: RawTrendItem[] = [];
 
   await Promise.allSettled(
     selectedFeeds.map(async (feed) => {
       try {
-        const parsed = await parser.parseURL(feed.url)
+        const parsed = await parser.parseURL(feed.url);
 
         const items = (parsed.items ?? [])
-          .slice(0, 15)   // latest 15 items per feed
+          .slice(0, 15) // latest 15 items per feed
           .filter((item) => {
-            const text = `${item.title ?? ''} ${item.contentSnippet ?? ''}`
+            const text = `${item.title ?? ""} ${item.contentSnippet ?? ""}`;
             // Accept if item is keyword-relevant OR if no keywords to filter by
-            return keywords.length === 0 || isRelevant(text, keywords)
+            return keywords.length === 0 || isRelevant(text, keywords);
           })
-          .map((item): RawTrendItem => ({
-            title: item.title ?? '',
-            url: item.link,
-            source: `rss:${feed.name}`,
-            publishedAt: item.isoDate ?? item.pubDate,
-          }))
-          .filter((item) => item.title.length > 0)
+          .map(
+            (item): RawTrendItem => ({
+              title: item.title ?? "",
+              url: item.link,
+              source: `rss:${feed.name}`,
+              publishedAt: item.isoDate ?? item.pubDate,
+            }),
+          )
+          .filter((item) => item.title.length > 0);
 
-        allItems.push(...items)
-        console.log(`[trends:rss] ✓ ${items.length} items from ${feed.name}`)
+        allItems.push(...items);
+        console.log(`[trends:rss] ✓ ${items.length} items from ${feed.name}`);
       } catch (err) {
-        console.warn(`[trends:rss] ${feed.name} failed:`, (err as Error).message)
+        console.warn(
+          `[trends:rss] ${feed.name} failed:`,
+          (err as Error).message,
+        );
       }
-    })
-  )
+    }),
+  );
 
-  return allItems
+  return allItems;
 }
 
 // ── 30-minute in-memory trend cache ──────────────────────────────────────────
@@ -274,36 +297,40 @@ async function fetchFromRSSFeeds(
 // Cache key = sorted keywords + industry + geo → deterministic hash.
 // TTL = 30 minutes (30 * 60 * 1000 ms).
 
-const TREND_CACHE_TTL_MS = 30 * 60 * 1000
+const TREND_CACHE_TTL_MS = 30 * 60 * 1000;
 
 interface TrendCacheEntry {
-  items: RawTrendItem[]
-  cachedAt: number   // Date.now() timestamp
+  items: RawTrendItem[];
+  cachedAt: number; // Date.now() timestamp
 }
 
-const trendCache = new Map<string, TrendCacheEntry>()
+const trendCache = new Map<string, TrendCacheEntry>();
 
-function buildCacheKey(keywords: string[], industry: string, geo: string): string {
-  const sortedKeywords = [...keywords].sort().join(',').toLowerCase()
-  return `${sortedKeywords}|${industry.toLowerCase()}|${geo.toLowerCase()}`
+function buildCacheKey(
+  keywords: string[],
+  industry: string,
+  geo: string,
+): string {
+  const sortedKeywords = [...keywords].sort().join(",").toLowerCase();
+  return `${sortedKeywords}|${industry.toLowerCase()}|${geo.toLowerCase()}`;
 }
 
 function getCachedTrends(key: string): RawTrendItem[] | null {
-  const entry = trendCache.get(key)
-  if (!entry) return null
+  const entry = trendCache.get(key);
+  if (!entry) return null;
   if (Date.now() - entry.cachedAt > TREND_CACHE_TTL_MS) {
-    trendCache.delete(key)
-    return null
+    trendCache.delete(key);
+    return null;
   }
-  return entry.items
+  return entry.items;
 }
 
 function setCachedTrends(key: string, items: RawTrendItem[]): void {
-  trendCache.set(key, { items, cachedAt: Date.now() })
+  trendCache.set(key, { items, cachedAt: Date.now() });
   // Evict entries older than 2x TTL to prevent unbounded growth
   for (const [k, v] of trendCache.entries()) {
     if (Date.now() - v.cachedAt > TREND_CACHE_TTL_MS * 2) {
-      trendCache.delete(k)
+      trendCache.delete(k);
     }
   }
 }
@@ -321,22 +348,24 @@ function setCachedTrends(key: string, items: RawTrendItem[]): void {
 export async function fetchRealTrendingContent(
   keywords: string[],
   industry: string,
-  geo = 'US',
+  geo = "US",
 ): Promise<RawTrendItem[]> {
   // Check cache first
-  const cacheKey = buildCacheKey(keywords, industry, geo)
-  const cached = getCachedTrends(cacheKey)
+  const cacheKey = buildCacheKey(keywords, industry, geo);
+  const cached = getCachedTrends(cacheKey);
   if (cached) {
-    console.log(`[trends] Cache HIT for key="${cacheKey}" (${cached.length} items)`)
-    return cached
+    console.log(
+      `[trends] Cache HIT for key="${cacheKey}" (${cached.length} items)`,
+    );
+    return cached;
   }
-  const hasTavily = !!process.env.TAVILY_API_KEY
+  const hasTavily = !!process.env.TAVILY_API_KEY;
 
   console.log(
-    `[trends] Cache MISS — fetching | industry="${industry}" keywords=[${keywords.join(', ')}] geo=${geo} tavily=${hasTavily}`
-  )
+    `[trends] Cache MISS — fetching | industry="${industry}" keywords=[${keywords.join(", ")}] geo=${geo} tavily=${hasTavily}`,
+  );
 
-  let results: RawTrendItem[]
+  let results: RawTrendItem[];
 
   if (hasTavily) {
     // Tier 1: Tavily — best quality, targeted, recency-filtered
@@ -344,21 +373,21 @@ export async function fetchRealTrendingContent(
       fetchFromTavily(keywords, industry),
       fetchFromHackerNews(keywords, industry),
       fetchFromRSSFeeds(keywords),
-    ])
+    ]);
     // Tavily first (highest relevance), then HN + RSS for breadth
-    results = deduplicateAndRank([...tavilyItems, ...hnItems, ...rssItems])
+    results = deduplicateAndRank([...tavilyItems, ...hnItems, ...rssItems]);
   } else {
     // Tier 2: HN + RSS — always-on, no keys required
     const [hnItems, rssItems] = await Promise.all([
       fetchFromHackerNews(keywords, industry),
       fetchFromRSSFeeds(keywords),
-    ])
-    results = deduplicateAndRank([...hnItems, ...rssItems])
+    ]);
+    results = deduplicateAndRank([...hnItems, ...rssItems]);
   }
 
   // Cache results (even empty arrays — avoids hammering APIs on repeated failures)
-  setCachedTrends(cacheKey, results)
-  return results
+  setCachedTrends(cacheKey, results);
+  return results;
 }
 
 // ── Kept for backward compatibility with trendResearch.ts ─────────────────────
@@ -370,24 +399,24 @@ export async function fetchRealTrendingContent(
  */
 export async function getTrendingTopics(
   keywords: string[],
-  geo = 'US',
+  geo = "US",
 ): Promise<string[]> {
-  const industry = keywords[0] ?? 'business'
-  const items = await fetchRealTrendingContent(keywords, industry, geo)
-  return items.map((item) => item.title).slice(0, 15)
+  const industry = keywords[0] ?? "business";
+  const items = await fetchRealTrendingContent(keywords, industry, geo);
+  return items.map((item) => item.title).slice(0, 15);
 }
 
 /**
  * @deprecated Use fetchRealTrendingContent instead.
  * Kept for compatibility — returns general trending items without keyword filter.
  */
-export async function getDailyTrends(geo = 'US'): Promise<string[]> {
+export async function getDailyTrends(geo = "US"): Promise<string[]> {
   const items = await fetchRealTrendingContent(
-    ['technology', 'AI', 'business', 'leadership'],
-    'technology',
+    ["technology", "AI", "business", "leadership"],
+    "technology",
     geo,
-  )
-  return items.map((item) => item.title).slice(0, 15)
+  );
+  return items.map((item) => item.title).slice(0, 15);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -397,43 +426,46 @@ export async function getDailyTrends(geo = 'US'): Promise<string[]> {
  * Items with higher scores are ranked first.
  */
 function deduplicateAndRank(items: RawTrendItem[]): RawTrendItem[] {
-  const seen = new Set<string>()
-  const unique: RawTrendItem[] = []
+  const seen = new Set<string>();
+  const unique: RawTrendItem[] = [];
 
   for (const item of items) {
     // Normalise title for dedup check (lowercase, strip punctuation)
-    const key = item.title.toLowerCase().replace(/[^a-z0-9 ]/g, '').slice(0, 60)
+    const key = item.title
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, "")
+      .slice(0, 60);
     if (!seen.has(key)) {
-      seen.add(key)
-      unique.push(item)
+      seen.add(key);
+      unique.push(item);
     }
   }
 
   // Sort: Tavily (scored) first, then HN (by points), then RSS
   unique.sort((a, b) => {
-    const aScore = a.score ?? 0
-    const bScore = b.score ?? 0
-    if (aScore !== bScore) return bScore - aScore
+    const aScore = a.score ?? 0;
+    const bScore = b.score ?? 0;
+    if (aScore !== bScore) return bScore - aScore;
     // Prefer Tavily > HN > RSS
     const sourcePriority = (s: string) =>
-      s === 'tavily' ? 3 : s === 'hackernews' ? 2 : 1
-    return sourcePriority(b.source) - sourcePriority(a.source)
-  })
+      s === "tavily" ? 3 : s === "hackernews" ? 2 : 1;
+    return sourcePriority(b.source) - sourcePriority(a.source);
+  });
 
-  return unique.slice(0, 30)  // max 30 items passed to the agent
+  return unique.slice(0, 30); // max 30 items passed to the agent
 }
 
 export function geoToLabel(geo: string): string {
   const map: Record<string, string> = {
-    US: 'the United States',
-    GB: 'the United Kingdom',
-    IN: 'India',
-    CA: 'Canada',
-    AU: 'Australia',
-    SG: 'Singapore',
-    AE: 'the UAE',
-    DE: 'Germany',
-    FR: 'France',
-  }
-  return map[geo.toUpperCase()] ?? geo
+    US: "the United States",
+    GB: "the United Kingdom",
+    IN: "India",
+    CA: "Canada",
+    AU: "Australia",
+    SG: "Singapore",
+    AE: "the UAE",
+    DE: "Germany",
+    FR: "France",
+  };
+  return map[geo.toUpperCase()] ?? geo;
 }

@@ -1,9 +1,11 @@
 # Architecture & Technology Decisions Log
+
 # Reference this when unsure about any choice made in this project
 
 ---
 
 ## Decision 1: Express (user requested)
+
 - **Chosen**: Express
 - **Originally considered**: Hono
 - **Reason**: User explicitly requested Express over Hono on 2026-02-20.
@@ -12,6 +14,7 @@
 - **Packages**: express, cors, cookie-parser, @types/express, @types/cors, @types/cookie-parser
 
 ## Decision 2: Gemini over OpenAI/Anthropic in Mastra
+
 - **Chosen**: Google Gemini (gemini-2.5-flash or gemini-2.5-flash)
 - **Rejected**: OpenAI GPT-4, Anthropic Claude
 - **Reason**: Free tier available at ai.google.dev with no credit card needed.
@@ -20,6 +23,7 @@
 - **Model ID**: `google('gemini-2.5-flash')` or `google('gemini-2.5-flash')`
 
 ## Decision 3: Puppeteer for LinkedIn Scraping
+
 - **Chosen**: Puppeteer
 - **Rejected**: linkedin-api (requires LinkedIn credentials), RapidAPI (paid)
 - **Reason**: No API key needed. Puppeteer controls a real browser so it can
@@ -32,6 +36,7 @@
 - **File**: `apps/api/src/services/linkedin.ts`
 
 ## Decision 4: Real-API Trend Fetching (replaces LLM-hallucinated trends) — updated 2026-02-21
+
 - **History**: google-trends-api v4.9.2 broken on 2026-02-20 (endpoints dead/blocked)
 - **Interim fix**: Replaced with Gemini `generateText` (LLM hallucinated trends — no real data)
 - **Final fix on 2026-02-21**: Replaced with real live API sources — no LLM hallucination
@@ -39,12 +44,14 @@
 ### Data Sources (3-tier, highest quality first)
 
 **Tier 1 — Tavily** (when `TAVILY_API_KEY` is set)
+
 - AI-optimised web search engine built for AI agents
 - `topic: "news"`, `time_range: "week"` — real articles from the past 7 days
 - Returns relevance-scored results for the user's exact niche keywords
 - npm: `@tavily/core`, Free: 1,000 searches/month
 
 **Tier 2 — Hacker News Algolia + RSS Feeds** (always-on, zero API keys)
+
 - **HN Algolia** (`hn.algolia.com/api/v1/search_by_date`):
   - No API key, ~10,000 req/hour, completely free
   - Filters by `points>10` to ensure community-validated quality
@@ -56,10 +63,12 @@
   - Best for: business, leadership, marketing, innovation, entrepreneurship
 
 **Tier 3 — Evergreen fallback** (no network call)
+
 - Returns content-pillar-based topics if all APIs fail
 - Ensures the pipeline never blocks on trend fetch errors
 
 ### Architecture change
+
 - `fetchRealTrendingContent(keywords, industry, geo)` — new main export, returns `RawTrendItem[]`
   with `title`, `url`, `source`, `score`, `publishedAt` from real articles
 - `getTrendingTopics` / `getDailyTrends` kept as deprecated compatibility wrappers
@@ -69,16 +78,19 @@
 - Deduplication by title normalisation; ranked by score then source quality
 
 ### New packages
+
 - `rss-parser@3.13.0` — parses RSS/Atom feeds, ships TS types, no key needed
 - `@tavily/core@0.7.1` — official Tavily client, optional (only used if key set)
 
 ### Files changed
+
 - `apps/api/src/services/trends.ts` — full rewrite with real API sources
 - `apps/api/src/agents/trendResearch.ts` — updated prompt to receive real article titles
 - `apps/api/package.json` — added `rss-parser` and `@tavily/core`
 - `.env.example` — updated Tavily comment to reflect new role
 
 ## Decision 5: Mastra AI for Multi-Agent Orchestration
+
 - **Chosen**: Mastra AI (`@mastra/core`)
 - **Rejected**: LangChain, LlamaIndex, raw LLM calls
 - **Reason**: Mastra provides:
@@ -94,6 +106,7 @@
   - Orchestrator uses `agent.generate()` calls in sequence
 
 ## Decision 6: MongoDB over PostgreSQL
+
 - **Chosen**: MongoDB (Atlas free M0 = 512MB)
 - **Rejected**: PostgreSQL (Supabase free tier)
 - **Reason**: Persona data and chat messages are naturally document-shaped.
@@ -102,6 +115,7 @@
 - **Collections**: `users`, `user_personas`, `chat_sessions`, `content_suggestions`
 
 ## Decision 7: JWT in httpOnly Cookies
+
 - **Chosen**: JWT stored in httpOnly cookies (set by backend)
 - **Rejected**: localStorage JWT, session tokens
 - **Reason**: httpOnly cookies prevent XSS attacks from stealing tokens.
@@ -109,6 +123,7 @@
 - **Implementation**: `cookie-parser` middleware on backend, credentials:include on frontend fetch
 
 ## Decision 8: Turborepo
+
 - **Chosen**: Turborepo
 - **Rejected**: Nx, Lerna, simple npm workspaces
 - **Reason**: Turborepo has near-zero config overhead, excellent caching,
@@ -117,6 +132,7 @@
 - **turbo.json**: Defines `build`, `dev`, `lint` pipelines
 
 ## Decision 9: shadcn/ui over Material UI / Chakra
+
 - **Chosen**: shadcn/ui + Tailwind CSS
 - **Rejected**: Material UI, Chakra UI, Ant Design
 - **Reason**: shadcn/ui copies components into the project (no runtime dependency),
@@ -124,12 +140,14 @@
 - **Setup**: `npx shadcn@latest init` inside apps/web
 
 ## Decision 10: Port Assignments
+
 - **API (Hono)**: Port 3001
 - **Web (Next.js)**: Port 3000
 - **Why 3001 for API**: Next.js defaults to 3000, so API gets 3001 to avoid conflicts
 - **In .env**: `PORT=3001`, `NEXT_PUBLIC_API_URL=http://localhost:3001`
 
 ## Decision 11: Flexible Content Generation (3 Modes) — 2026-02-21
+
 - **Chosen approach**: Pre-generate options panel with 3 modes: profile, topic-focus, chat-refined
 - **Why 3 modes**: Users have wildly different needs each session — sometimes they want
   full-persona generation, sometimes they want to focus on a specific niche, sometimes they
@@ -142,6 +160,7 @@
 - **Files**: `suggestions.ts` route, `contentGenerator.ts`, `mastra.ts`, `GenerateOptionsPanel.tsx`
 
 ## Decision 12: Hidden-Block Pattern for Structured AI Output — 2026-02-21
+
 - **Pattern**: `<!--BLOCK_NAME {...json...} BLOCK_NAME-->` embedded in LLM response
 - **Why**: Allows the LLM to return both human-readable text AND structured data in a
   single response without needing strict JSON-only output (which LLMs often fail at)
@@ -151,6 +170,7 @@
 - **Stripping**: Regex replace removes the block from the visible reply
 
 ## Decision 13: Persona Chat with User-Approved Changes — 2026-02-21
+
 - **Pattern**: AI proposes changes → user reviews → user explicitly applies (2-step)
 - **Why not auto-apply**: Persona is critical data. Auto-applying AI suggestions could
   overwrite carefully crafted personas with incorrect interpretations.
@@ -160,6 +180,7 @@
 - **Files**: `personaChat.ts` agent, `personaChat.ts` routes, `profile/page.tsx`, `PendingChangesCard.tsx`
 
 ## Decision 14: Rich Content Brief in Each Suggestion — 2026-02-21
+
 - **Added fields**: `seoKeywords[]`, `clickbaitHooks[]`, `postPointers[]`, `callToAction`
 - **Why**: Users need a complete content brief they can immediately use to write the post,
   not just an idea. The brief removes the "blank page" problem.

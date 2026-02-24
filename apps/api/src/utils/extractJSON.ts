@@ -14,40 +14,43 @@
  * Returns the parsed value or throws an error with a diagnostic message.
  */
 
-export function extractJSON<T = unknown>(raw: string, context = 'LLM response'): T {
-  const text = raw.trim()
+export function extractJSON<T = unknown>(
+  raw: string,
+  context = "LLM response",
+): T {
+  const text = raw.trim();
 
   // ── Strategy 1: Direct parse ───────────────────────────────────────────────
   try {
-    return JSON.parse(text) as T
+    return JSON.parse(text) as T;
   } catch {
     // fall through
   }
 
   // ── Strategy 2: Strip markdown code fences ────────────────────────────────
   // Matches: ```json\n...\n``` OR ```\n...\n``` OR `...`
-  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (fenceMatch && fenceMatch[1] !== undefined) {
-    const fenceContent = fenceMatch[1].trim()
+    const fenceContent = fenceMatch[1].trim();
     try {
-      return JSON.parse(fenceContent) as T
+      return JSON.parse(fenceContent) as T;
     } catch {
       // fall through — try balanced scan on the fenced content first
-      const innerResult = balancedScan<T>(fenceContent)
-      if (innerResult !== null) return innerResult
+      const innerResult = balancedScan<T>(fenceContent);
+      if (innerResult !== null) return innerResult;
     }
   }
 
   // ── Strategy 3: Balanced brace/bracket scan ───────────────────────────────
   // Find the first complete JSON object `{...}` or array `[...]` in the text.
-  const result = balancedScan<T>(text)
-  if (result !== null) return result
+  const result = balancedScan<T>(text);
+  if (result !== null) return result;
 
   // ── All strategies failed ─────────────────────────────────────────────────
-  const preview = text.length > 200 ? text.slice(0, 200) + '…' : text
+  const preview = text.length > 200 ? text.slice(0, 200) + "…" : text;
   throw new Error(
-    `[extractJSON] Could not find valid JSON in ${context}.\nPreview: ${preview}`
-  )
+    `[extractJSON] Could not find valid JSON in ${context}.\nPreview: ${preview}`,
+  );
 }
 
 /**
@@ -57,50 +60,50 @@ export function extractJSON<T = unknown>(raw: string, context = 'LLM response'):
  */
 function balancedScan<T>(text: string): T | null {
   for (let i = 0; i < text.length; i++) {
-    const ch = text[i]
-    if (ch !== '{' && ch !== '[') continue
+    const ch = text[i];
+    if (ch !== "{" && ch !== "[") continue;
 
-    const opener = ch
-    const closer = opener === '{' ? '}' : ']'
-    let depth = 0
-    let inString = false
-    let escape = false
+    const opener = ch;
+    const closer = opener === "{" ? "}" : "]";
+    let depth = 0;
+    let inString = false;
+    let escape = false;
 
     for (let j = i; j < text.length; j++) {
-      const c = text[j]
+      const c = text[j];
 
       if (escape) {
-        escape = false
-        continue
+        escape = false;
+        continue;
       }
 
-      if (c === '\\' && inString) {
-        escape = true
-        continue
+      if (c === "\\" && inString) {
+        escape = true;
+        continue;
       }
 
       if (c === '"') {
-        inString = !inString
-        continue
+        inString = !inString;
+        continue;
       }
 
-      if (inString) continue
+      if (inString) continue;
 
-      if (c === opener) depth++
+      if (c === opener) depth++;
       else if (c === closer) {
-        depth--
+        depth--;
         if (depth === 0) {
-          const candidate = text.slice(i, j + 1)
+          const candidate = text.slice(i, j + 1);
           try {
-            return JSON.parse(candidate) as T
+            return JSON.parse(candidate) as T;
           } catch {
             // Not valid JSON — keep scanning from next position
-            break
+            break;
           }
         }
       }
     }
   }
 
-  return null
+  return null;
 }

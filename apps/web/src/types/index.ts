@@ -16,4 +16,4 @@ export type {
   IOnboardingResponse,
   ISuggestionsGenerateResponse,
   IPaginatedResponse,
-} from '@repo/shared-types'
+} from "@repo/shared-types";

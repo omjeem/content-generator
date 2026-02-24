@@ -1,9 +1,11 @@
 # LinkedIn AI Content Suggestion Agent — Full Project Context
+
 # This file is the MASTER CONTEXT for Claude. Read this first on every session resume.
 
 ---
 
 ## PROJECT IDENTITY
+
 - **Name**: LinkedIn AI Content Suggestion Agent
 - **Type**: Full-stack Applied AI — Multi-Agent Pipeline
 - **Working Directory**: `/Users/hexahealth/Documents/PP/content-generator/`
@@ -35,19 +37,19 @@ content-generator/          ← ROOT (Turborepo workspace)
 
 ## TECH STACK DECISIONS (with reasons)
 
-| Layer | Technology | Why |
-|---|---|---|
-| Monorepo | Turborepo | Fast build caching, simple workspace, industry standard |
-| Backend | Express + TypeScript | Battle-tested, rich middleware ecosystem, widely supported |
-| AI Framework | Mastra AI | Native multi-agent, built-in working memory, tool use support |
-| LLM | Gemini API (google/gemini-2.5-flash) | Free tier, generous limits, strong reasoning |
-| LinkedIn Scraping | Puppeteer | No API key needed, most reliable headless scraper |
-| Trend Data | google-trends-api npm | Completely free, no signup, no key |
-| Database | MongoDB + Mongoose | Flexible schema for evolving persona/chat data |
-| Auth | JWT (jsonwebtoken + bcrypt) | Stateless, simple cross-monorepo auth |
-| Frontend | Next.js 14 App Router | Modern React, SSR, easy API routes |
-| Styling | Tailwind CSS + shadcn/ui | Fast UI, accessible components |
-| API Docs | swagger-ui-express | Industry standard, integrates with Express |
+| Layer             | Technology                           | Why                                                           |
+| ----------------- | ------------------------------------ | ------------------------------------------------------------- |
+| Monorepo          | Turborepo                            | Fast build caching, simple workspace, industry standard       |
+| Backend           | Express + TypeScript                 | Battle-tested, rich middleware ecosystem, widely supported    |
+| AI Framework      | Mastra AI                            | Native multi-agent, built-in working memory, tool use support |
+| LLM               | Gemini API (google/gemini-2.5-flash) | Free tier, generous limits, strong reasoning                  |
+| LinkedIn Scraping | Puppeteer                            | No API key needed, most reliable headless scraper             |
+| Trend Data        | google-trends-api npm                | Completely free, no signup, no key                            |
+| Database          | MongoDB + Mongoose                   | Flexible schema for evolving persona/chat data                |
+| Auth              | JWT (jsonwebtoken + bcrypt)          | Stateless, simple cross-monorepo auth                         |
+| Frontend          | Next.js 14 App Router                | Modern React, SSR, easy API routes                            |
+| Styling           | Tailwind CSS + shadcn/ui             | Fast UI, accessible components                                |
+| API Docs          | swagger-ui-express                   | Industry standard, integrates with Express                    |
 
 ---
 
@@ -69,6 +71,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 ## MULTI-AGENT PIPELINE DETAIL
 
 ### Agent 1 — Persona Analyst Agent
+
 - **File**: `apps/api/src/agents/personaAnalyst.ts`
 - **Input**: LinkedIn profile URL OR manually pasted post text
 - **Tools**: Puppeteer scraper (`apps/api/src/services/linkedin.ts`)
@@ -77,6 +80,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 - **Fallback**: If scraping blocked → accepts manual post paste
 
 ### Agent 2 — Onboarding/Interview Agent
+
 - **File**: `apps/api/src/agents/onboarding.ts`
 - **Input**: User chat messages
 - **Tools**: MongoDB working memory via `chat_sessions` collection
@@ -85,6 +89,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 - **Memory**: Mastra working memory persists across sessions via MongoDB
 
 ### Agent 3 — Trend Research Agent
+
 - **File**: `apps/api/src/agents/trendResearch.ts`
 - **Input**: User's industry/niche (from persona)
 - **Tools**: google-trends-api (`apps/api/src/services/trends.ts`)
@@ -92,6 +97,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 - **Fallback**: Tavily web search if google-trends returns no results
 
 ### Agent 4 — Content Idea Generator Agent
+
 - **File**: `apps/api/src/agents/contentGenerator.ts`
 - **Input**: Persona + interview answers + trending topics (all from MongoDB)
 - **Output**: 5-10 LinkedIn post ideas, each with:
@@ -103,6 +109,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 - **Saved to**: `content_suggestions` MongoDB collection
 
 ### Mastra Orchestrator
+
 - **File**: `apps/api/src/agents/mastra.ts`
 - **Role**: Supervisor — sequences Agent 1 → 2 → 3 → 4
 - **Handles**: Retry logic, error propagation, partial failure recovery
@@ -113,6 +120,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 ## DATABASE SCHEMAS
 
 ### Collection: `users`
+
 ```typescript
 {
   _id: ObjectId,
@@ -125,6 +133,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 ```
 
 ### Collection: `user_personas`
+
 ```typescript
 {
   _id: ObjectId,
@@ -148,6 +157,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 ```
 
 ### Collection: `chat_sessions`
+
 ```typescript
 {
   _id: ObjectId,
@@ -164,6 +174,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 ```
 
 ### Collection: `content_suggestions`
+
 ```typescript
 {
   _id: ObjectId,
@@ -188,27 +199,33 @@ NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
 ## API ROUTES PLAN
 
 ### Auth Routes (no auth required)
+
 - `POST /api/auth/register` — Create account
 - `POST /api/auth/login` — Get JWT token
 
 ### Persona Routes (JWT required)
+
 - `POST /api/persona/analyze` — Trigger Agent 1 (LinkedIn URL or paste)
 - `GET /api/persona` — Get current user's persona
 
 ### Onboarding Routes (JWT required)
+
 - `POST /api/onboarding/chat` — Send message to Agent 2
 - `GET /api/onboarding/session` — Get current chat session history
 - `GET /api/onboarding/status` — Check if interview is complete
 
 ### Trends Routes (JWT required)
+
 - `GET /api/trends` — Get trends for user's niche (Agent 3)
 
 ### Suggestions Routes (JWT required)
+
 - `POST /api/suggestions/generate` — Run full pipeline → generate ideas
 - `GET /api/suggestions` — Get history of generated suggestions
 - `GET /api/suggestions/:id` — Get specific suggestion set
 
 ### Docs
+
 - `GET /api/docs` — Swagger UI
 
 ---

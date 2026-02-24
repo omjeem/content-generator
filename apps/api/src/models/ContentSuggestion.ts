@@ -1,30 +1,30 @@
-import mongoose, { Schema, Document, Model } from 'mongoose'
-import type { PostFormat, IGenerateContextOptions } from '@repo/shared-types'
+import mongoose, { Schema, Document, Model } from "mongoose";
+import type { PostFormat, IGenerateContextOptions } from "@repo/shared-types";
 
-export type GenerationMode = 'profile' | 'topic-focus' | 'chat-refined'
+export type GenerationMode = "profile" | "topic-focus" | "chat-refined";
 
 export interface ISuggestionItem {
-  topic: string
-  angle: string
-  format: PostFormat
-  hook: string
-  whyItFits: string
+  topic: string;
+  angle: string;
+  format: PostFormat;
+  hook: string;
+  whyItFits: string;
   // Rich content brief fields
-  seoKeywords: string[]
-  clickbaitHooks: string[]
-  postPointers: string[]
-  callToAction: string
+  seoKeywords: string[];
+  clickbaitHooks: string[];
+  postPointers: string[];
+  callToAction: string;
 }
 
 export interface IContentSuggestionDocument extends Document {
-  userId: mongoose.Types.ObjectId
-  generatedAt: Date
-  trendsUsed: string[]
-  suggestions: ISuggestionItem[]
+  userId: mongoose.Types.ObjectId;
+  generatedAt: Date;
+  trendsUsed: string[];
+  suggestions: ISuggestionItem[];
   // Generation metadata (#17)
-  generationMode: GenerationMode
-  contextOptions?: IGenerateContextOptions
-  createdAt: Date
+  generationMode: GenerationMode;
+  contextOptions?: IGenerateContextOptions;
+  createdAt: Date;
 }
 
 const suggestionItemSchema = new Schema<ISuggestionItem>(
@@ -33,7 +33,7 @@ const suggestionItemSchema = new Schema<ISuggestionItem>(
     angle: { type: String, required: true },
     format: {
       type: String,
-      enum: ['carousel', 'text-post', 'poll', 'video-script', 'list'],
+      enum: ["carousel", "text-post", "poll", "video-script", "list"],
       required: true,
     },
     hook: { type: String, required: true },
@@ -42,16 +42,16 @@ const suggestionItemSchema = new Schema<ISuggestionItem>(
     seoKeywords: { type: [String], default: [] },
     clickbaitHooks: { type: [String], default: [] },
     postPointers: { type: [String], default: [] },
-    callToAction: { type: String, default: '' },
+    callToAction: { type: String, default: "" },
   },
-  { _id: false }
-)
+  { _id: false },
+);
 
 const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
   {
     userId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
     generatedAt: {
@@ -63,15 +63,18 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
     // Generation metadata (#17) — defaults to 'profile' for backward-compat
     generationMode: {
       type: String,
-      enum: ['profile', 'topic-focus', 'chat-refined'],
-      default: 'profile',
+      enum: ["profile", "topic-focus", "chat-refined"],
+      default: "profile",
     },
     contextOptions: { type: Schema.Types.Mixed },
   },
-  { timestamps: true }
-)
+  { timestamps: true },
+);
 
-contentSuggestionSchema.index({ userId: 1, createdAt: -1 })
+contentSuggestionSchema.index({ userId: 1, createdAt: -1 });
 
 export const ContentSuggestion: Model<IContentSuggestionDocument> =
-  mongoose.model<IContentSuggestionDocument>('ContentSuggestion', contentSuggestionSchema)
+  mongoose.model<IContentSuggestionDocument>(
+    "ContentSuggestion",
+    contentSuggestionSchema,
+  );

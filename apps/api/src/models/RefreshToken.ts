@@ -10,22 +10,22 @@
  * Cleanup: TTL index automatically removes expired tokens from MongoDB.
  */
 
-import mongoose, { Schema, Document, Model } from 'mongoose'
+import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IRefreshTokenDocument extends Document {
-  userId: mongoose.Types.ObjectId
-  tokenHash: string    // SHA-256 hash of the raw token (never store plaintext)
-  expiresAt: Date
-  createdAt: Date
-  ip?: string          // request IP at creation time (for audit logging)
-  userAgent?: string   // user agent at creation time (for audit logging)
+  userId: mongoose.Types.ObjectId;
+  tokenHash: string; // SHA-256 hash of the raw token (never store plaintext)
+  expiresAt: Date;
+  createdAt: Date;
+  ip?: string; // request IP at creation time (for audit logging)
+  userAgent?: string; // user agent at creation time (for audit logging)
 }
 
 const refreshTokenSchema = new Schema<IRefreshTokenDocument>(
   {
     userId: {
       type: Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
       index: true,
     },
@@ -43,11 +43,11 @@ const refreshTokenSchema = new Schema<IRefreshTokenDocument>(
   },
   {
     timestamps: { createdAt: true, updatedAt: false },
-  }
-)
+  },
+);
 
 // TTL index: MongoDB automatically removes expired documents
-refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+refreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const RefreshToken: Model<IRefreshTokenDocument> =
-  mongoose.model<IRefreshTokenDocument>('RefreshToken', refreshTokenSchema)
+  mongoose.model<IRefreshTokenDocument>("RefreshToken", refreshTokenSchema);

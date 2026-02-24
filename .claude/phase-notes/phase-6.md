@@ -1,13 +1,16 @@
 # Phase 6: Wire Frontend to Backend + End-to-End Testing Guide
+
 # Status: COMPLETE (2026-02-20)
 
 ---
 
 ## Goal
+
 Ensure all frontend pages are fully connected to backend APIs, fix any
 integration issues, and provide a complete testing guide.
 
 ## Checklist
+
 - [x] Verify all API calls from frontend match backend route signatures
 - [x] Fix: suggestions route returned `suggestionId` but ISuggestionsGenerateResponse used `id` — fixed to `id`
 - [x] Fix: .env.example said "Hono API server" — updated to "Express API server"
@@ -19,17 +22,21 @@ integration issues, and provide a complete testing guide.
 - [x] Write end-to-end testing guide in TESTING.md
 
 ## CORS Configuration
+
 ```typescript
 // apps/api/src/index.ts
-app.use(cors({
-  origin: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000',
-  credentials: true,  // required for httpOnly cookies
-}))
+app.use(
+  cors({
+    origin: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000",
+    credentials: true, // required for httpOnly cookies
+  }),
+);
 ```
 
 ## End-to-End Test Scenarios
 
 ### Scenario 1: Full Happy Path
+
 ```
 1. Register new user
 2. Login
@@ -45,6 +52,7 @@ app.use(cors({
 ```
 
 ### Scenario 2: LinkedIn URL Scraping
+
 ```
 1. Login
 2. /onboarding → Tab "LinkedIn URL"
@@ -54,6 +62,7 @@ app.use(cors({
 ```
 
 ### Scenario 3: Resuming Interview
+
 ```
 1. Login, start interview, answer 2 questions, close browser
 2. Reopen browser, login
@@ -62,6 +71,7 @@ app.use(cors({
 ```
 
 ### Scenario 4: Error Handling
+
 ```
 1. Try to generate suggestions WITHOUT completing interview → should get error
 2. Try to login with wrong password → should get 401
@@ -72,6 +82,7 @@ app.use(cors({
 ## curl Test Commands
 
 ### Register
+
 ```bash
 curl -X POST http://localhost:3001/api/auth/register \
   -H "Content-Type: application/json" \
@@ -80,6 +91,7 @@ curl -X POST http://localhost:3001/api/auth/register \
 ```
 
 ### Login
+
 ```bash
 curl -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
@@ -88,6 +100,7 @@ curl -X POST http://localhost:3001/api/auth/login \
 ```
 
 ### Analyze Persona (manual paste)
+
 ```bash
 curl -X POST http://localhost:3001/api/persona/analyze \
   -H "Content-Type: application/json" \
@@ -98,6 +111,7 @@ curl -X POST http://localhost:3001/api/persona/analyze \
 ```
 
 ### Start Interview
+
 ```bash
 curl -X POST http://localhost:3001/api/onboarding/chat \
   -H "Content-Type: application/json" \
@@ -106,6 +120,7 @@ curl -X POST http://localhost:3001/api/onboarding/chat \
 ```
 
 ### Generate Suggestions
+
 ```bash
 curl -X POST http://localhost:3001/api/suggestions/generate \
   -H "Content-Type: application/json" \
@@ -114,12 +129,14 @@ curl -X POST http://localhost:3001/api/suggestions/generate \
 ```
 
 ### Get Suggestions History
+
 ```bash
 curl http://localhost:3001/api/suggestions?page=1&limit=10 \
   -b cookies.txt
 ```
 
 ### Check Swagger UI
+
 ```
 Open browser: http://localhost:3001/api/docs
 ```
@@ -127,34 +144,40 @@ Open browser: http://localhost:3001/api/docs
 ## Common Issues & Fixes
 
 ### CORS error on frontend
+
 ```
 Fix: Ensure credentials: 'include' in fetch, and CORS origin matches exactly
 Check: No trailing slash in NEXT_PUBLIC_API_URL
 ```
 
 ### Cookie not sent
+
 ```
 Fix: sameSite: 'lax', secure: false (for localhost), credentials: include
 ```
 
 ### MongoDB connection fails
+
 ```
 Fix: Check MONGODB_URI has correct cluster URL and password
 Check: IP whitelist in Atlas allows 0.0.0.0/0 for development
 ```
 
 ### Gemini API rate limit
+
 ```
 Fix: Use gemini-2.5-flash instead of gemini-2.5-flash (higher free quota)
 ```
 
 ### LinkedIn scraping blocked
+
 ```
 Expected behavior: Error message shown, user prompted to paste manually
 Fix: Already handled with fallback in Agent 1
 ```
 
 ## Completion Criteria
+
 - All 4 test scenarios pass
 - No CORS errors in browser console
 - JWT cookies persist across page refreshes

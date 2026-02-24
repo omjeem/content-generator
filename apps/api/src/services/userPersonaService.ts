@@ -6,10 +6,10 @@
  * orchestration; routes stay focused on HTTP handling.
  */
 
-import mongoose from 'mongoose'
-import { UserPersona } from '../models/UserPersona'
-import type { IUserPersonaDocument } from '../models/UserPersona'
-import type { IPersonaPendingChanges } from '@repo/shared-types'
+import mongoose from "mongoose";
+import { UserPersona } from "../models/UserPersona";
+import type { IUserPersonaDocument } from "../models/UserPersona";
+import type { IPersonaPendingChanges } from "@repo/shared-types";
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 
@@ -20,16 +20,18 @@ import type { IPersonaPendingChanges } from '@repo/shared-types'
  * Pass `lean: true` for read-only consumers that don't need the Mongoose document
  * (e.g. route GET handlers, context building).
  */
-export async function findPersonaByUserId(userId: string): Promise<IUserPersonaDocument | null> {
-  return UserPersona.findOne({ userId: new mongoose.Types.ObjectId(userId) })
+export async function findPersonaByUserId(
+  userId: string,
+): Promise<IUserPersonaDocument | null> {
+  return UserPersona.findOne({ userId: new mongoose.Types.ObjectId(userId) });
 }
 
 export async function findPersonaByUserIdLean(
-  userId: string
+  userId: string,
 ): Promise<IUserPersonaDocument | null> {
   return UserPersona.findOne({
     userId: new mongoose.Types.ObjectId(userId),
-  }).lean() as Promise<IUserPersonaDocument | null>
+  }).lean() as Promise<IUserPersonaDocument | null>;
 }
 
 // ── Update arbitrary fields ───────────────────────────────────────────────────
@@ -43,25 +45,25 @@ export async function findPersonaByUserIdLean(
  */
 export async function updatePersonaFields(
   userId: string,
-  changes: Partial<Record<string, unknown>>
+  changes: Partial<Record<string, unknown>>,
 ): Promise<IUserPersonaDocument> {
   // Filter out undefined values — only set fields that are explicitly provided
-  const updateSet: Record<string, unknown> = {}
+  const updateSet: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(changes)) {
-    if (value !== undefined) updateSet[key] = value
+    if (value !== undefined) updateSet[key] = value;
   }
 
   const updated = await UserPersona.findOneAndUpdate(
     { userId: new mongoose.Types.ObjectId(userId) },
     { $set: updateSet },
-    { new: true, upsert: true }
-  )
+    { new: true, upsert: true },
+  );
 
   if (!updated) {
-    throw new Error('Failed to update persona')
+    throw new Error("Failed to update persona");
   }
 
-  return updated
+  return updated;
 }
 
 // ── Apply persona changes (from personaChat agent) ────────────────────────────
@@ -72,21 +74,26 @@ export async function updatePersonaFields(
  */
 export async function applyPersonaChanges(
   userId: string,
-  changes: IPersonaPendingChanges
+  changes: IPersonaPendingChanges,
 ): Promise<IUserPersonaDocument> {
-  const updateSet: Record<string, unknown> = {}
+  const updateSet: Record<string, unknown> = {};
 
-  if (changes.goals !== undefined) updateSet['goals'] = changes.goals
-  if (changes.targetAudience !== undefined) updateSet['targetAudience'] = changes.targetAudience
-  if (changes.industry !== undefined) updateSet['industry'] = changes.industry
-  if (changes.contentPillars !== undefined) updateSet['contentPillars'] = changes.contentPillars
-  if (changes.postingFrequency !== undefined) updateSet['postingFrequency'] = changes.postingFrequency
-  if (changes.topics !== undefined) updateSet['topics'] = changes.topics
-  if (changes.tone !== undefined) updateSet['tone'] = changes.tone
-  if (changes.writingStyle !== undefined) updateSet['writingStyle'] = changes.writingStyle
-  if (changes.platformGoal !== undefined) updateSet['platformGoal'] = changes.platformGoal
+  if (changes.goals !== undefined) updateSet["goals"] = changes.goals;
+  if (changes.targetAudience !== undefined)
+    updateSet["targetAudience"] = changes.targetAudience;
+  if (changes.industry !== undefined) updateSet["industry"] = changes.industry;
+  if (changes.contentPillars !== undefined)
+    updateSet["contentPillars"] = changes.contentPillars;
+  if (changes.postingFrequency !== undefined)
+    updateSet["postingFrequency"] = changes.postingFrequency;
+  if (changes.topics !== undefined) updateSet["topics"] = changes.topics;
+  if (changes.tone !== undefined) updateSet["tone"] = changes.tone;
+  if (changes.writingStyle !== undefined)
+    updateSet["writingStyle"] = changes.writingStyle;
+  if (changes.platformGoal !== undefined)
+    updateSet["platformGoal"] = changes.platformGoal;
 
-  return updatePersonaFields(userId, updateSet)
+  return updatePersonaFields(userId, updateSet);
 }
 
 // ── Onboarding completion ─────────────────────────────────────────────────────
@@ -98,12 +105,12 @@ export async function applyPersonaChanges(
 export async function saveInterviewAnswers(
   userId: string,
   answers: {
-    goals?: string | null
-    targetAudience?: string | null
-    industry?: string | null
-    contentPillars?: string[] | null
-    postingFrequency?: string | null
-  }
+    goals?: string | null;
+    targetAudience?: string | null;
+    industry?: string | null;
+    contentPillars?: string[] | null;
+    postingFrequency?: string | null;
+  },
 ): Promise<IUserPersonaDocument> {
   return updatePersonaFields(userId, {
     goals: answers.goals,
@@ -112,7 +119,7 @@ export async function saveInterviewAnswers(
     contentPillars: answers.contentPillars ?? [],
     postingFrequency: answers.postingFrequency,
     interviewComplete: true,
-  })
+  });
 }
 
 // ── Interview status check ────────────────────────────────────────────────────
@@ -122,24 +129,30 @@ export async function saveInterviewAnswers(
  * Returns `complete` flag + list of any missing required fields.
  */
 export async function getInterviewStatus(userId: string): Promise<{
-  complete: boolean
-  missingFields: string[]
+  complete: boolean;
+  missingFields: string[];
 }> {
-  const persona = await findPersonaByUserId(userId)
+  const persona = await findPersonaByUserId(userId);
 
   if (!persona) {
     return {
       complete: false,
-      missingFields: ['goals', 'targetAudience', 'industry', 'contentPillars', 'postingFrequency'],
-    }
+      missingFields: [
+        "goals",
+        "targetAudience",
+        "industry",
+        "contentPillars",
+        "postingFrequency",
+      ],
+    };
   }
 
-  const missingFields: string[] = []
-  if (!persona.goals) missingFields.push('goals')
-  if (!persona.targetAudience) missingFields.push('targetAudience')
-  if (!persona.industry) missingFields.push('industry')
-  if (!persona.contentPillars?.length) missingFields.push('contentPillars')
-  if (!persona.postingFrequency) missingFields.push('postingFrequency')
+  const missingFields: string[] = [];
+  if (!persona.goals) missingFields.push("goals");
+  if (!persona.targetAudience) missingFields.push("targetAudience");
+  if (!persona.industry) missingFields.push("industry");
+  if (!persona.contentPillars?.length) missingFields.push("contentPillars");
+  if (!persona.postingFrequency) missingFields.push("postingFrequency");
 
-  return { complete: persona.interviewComplete, missingFields }
+  return { complete: persona.interviewComplete, missingFields };
 }

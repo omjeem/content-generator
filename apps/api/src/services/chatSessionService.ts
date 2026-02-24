@@ -7,24 +7,24 @@
  * (validate → call agent/service → respond).
  */
 
-import mongoose from 'mongoose'
-import { ChatSession } from '../models/ChatSession'
-import type { IChatSessionDocument } from '../models/ChatSession'
+import mongoose from "mongoose";
+import { ChatSession } from "../models/ChatSession";
+import type { IChatSessionDocument } from "../models/ChatSession";
 
 // ── Agent type alias ─────────────────────────────────────────────────────────
 
-export type AgentType = 'onboarding' | 'persona-chat'
+export type AgentType = "onboarding" | "persona-chat";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
+  role: "user" | "assistant";
+  content: string;
 }
 
 export interface SessionHistory {
-  messages: ChatMessage[]
-  sessionId: string | null
+  messages: ChatMessage[];
+  sessionId: string | null;
 }
 
 // ── findOrCreate ──────────────────────────────────────────────────────────────
@@ -35,11 +35,11 @@ export interface SessionHistory {
  */
 export async function findOrCreateSession(
   userId: string,
-  agentType: AgentType
+  agentType: AgentType,
 ): Promise<IChatSessionDocument> {
-  const userObjectId = new mongoose.Types.ObjectId(userId)
+  const userObjectId = new mongoose.Types.ObjectId(userId);
 
-  let session = await ChatSession.findOne({ userId: userObjectId, agentType })
+  let session = await ChatSession.findOne({ userId: userObjectId, agentType });
 
   if (!session) {
     session = await ChatSession.create({
@@ -47,10 +47,10 @@ export async function findOrCreateSession(
       sessionId: `${agentType}-${userId}`,
       agentType,
       messages: [],
-    })
+    });
   }
 
-  return session
+  return session;
 }
 
 // ── persistMessages ───────────────────────────────────────────────────────────
@@ -62,12 +62,16 @@ export async function findOrCreateSession(
 export async function persistMessages(
   session: IChatSessionDocument,
   userMessage: string,
-  assistantReply: string
+  assistantReply: string,
 ): Promise<void> {
-  const now = new Date()
-  session.messages.push({ role: 'user', content: userMessage, timestamp: now })
-  session.messages.push({ role: 'assistant', content: assistantReply, timestamp: now })
-  await session.save()
+  const now = new Date();
+  session.messages.push({ role: "user", content: userMessage, timestamp: now });
+  session.messages.push({
+    role: "assistant",
+    content: assistantReply,
+    timestamp: now,
+  });
+  await session.save();
 }
 
 // ── getHistory ────────────────────────────────────────────────────────────────
@@ -79,24 +83,24 @@ export async function persistMessages(
  */
 export async function getSessionHistory(
   userId: string,
-  agentType: AgentType
+  agentType: AgentType,
 ): Promise<SessionHistory> {
   const session = await ChatSession.findOne({
     userId: new mongoose.Types.ObjectId(userId),
     agentType,
-  }).lean()
+  }).lean();
 
   if (!session) {
-    return { messages: [], sessionId: null }
+    return { messages: [], sessionId: null };
   }
 
   return {
     messages: session.messages.map((m) => ({
-      role: m.role as 'user' | 'assistant',
+      role: m.role as "user" | "assistant",
       content: m.content,
     })),
     sessionId: session.sessionId,
-  }
+  };
 }
 
 /**
@@ -106,10 +110,10 @@ export async function getSessionHistory(
  */
 export async function findSession(
   userId: string,
-  agentType: AgentType
+  agentType: AgentType,
 ): Promise<IChatSessionDocument | null> {
   return ChatSession.findOne({
     userId: new mongoose.Types.ObjectId(userId),
     agentType,
-  })
+  });
 }

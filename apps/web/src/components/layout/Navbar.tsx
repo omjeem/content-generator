@@ -1,43 +1,44 @@
-'use client'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useState, useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { authApi, tokenApi, ApiError } from '@/lib/api'
-import type { ITokenUsageSummary } from '@repo/shared-types'
+"use client";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { authApi, tokenApi, ApiError } from "@/lib/api";
+import type { ITokenUsageSummary } from "@repo/shared-types";
 
 interface NavbarProps {
-  userName?: string
+  userName?: string;
 }
 
 export function Navbar({ userName }: NavbarProps) {
-  const router = useRouter()
-  const [loggingOut, setLoggingOut] = useState(false)
-  const [tokenUsage, setTokenUsage] = useState<ITokenUsageSummary | null>(null)
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [tokenUsage, setTokenUsage] = useState<ITokenUsageSummary | null>(null);
 
   // Fetch token usage silently on mount — failure is non-critical
   useEffect(() => {
-    tokenApi.getUsage()
+    tokenApi
+      .getUsage()
       .then(setTokenUsage)
-      .catch(() => {}) // silently ignore
-  }, [])
+      .catch(() => {}); // silently ignore
+  }, []);
 
   async function handleLogout() {
-    setLoggingOut(true)
+    setLoggingOut(true);
     try {
-      await authApi.logout()
+      await authApi.logout();
     } catch (e) {
-      if (!(e instanceof ApiError)) console.error(e)
+      if (!(e instanceof ApiError)) console.error(e);
     } finally {
-      router.push('/login')
+      router.push("/login");
     }
   }
 
   // Color based on usage percentage
   function getBarColor(percent: number): string {
-    if (percent >= 100) return 'bg-red-500'
-    if (percent >= 80) return 'bg-amber-500'
-    return 'bg-[#0A66C2]'
+    if (percent >= 100) return "bg-red-500";
+    if (percent >= 80) return "bg-amber-500";
+    return "bg-[#0A66C2]";
   }
 
   return (
@@ -53,19 +54,34 @@ export function Navbar({ userName }: NavbarProps) {
 
         {/* Nav links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
-          <Link href="/dashboard" className="text-gray-600 hover:text-linkedin transition-colors">
+          <Link
+            href="/dashboard"
+            className="text-gray-600 hover:text-linkedin transition-colors"
+          >
             Dashboard
           </Link>
-          <Link href="/dashboard/suggestions" className="text-gray-600 hover:text-linkedin transition-colors">
+          <Link
+            href="/dashboard/suggestions"
+            className="text-gray-600 hover:text-linkedin transition-colors"
+          >
             History
           </Link>
-          <Link href="/dashboard/profile" className="text-gray-600 hover:text-linkedin transition-colors">
+          <Link
+            href="/dashboard/profile"
+            className="text-gray-600 hover:text-linkedin transition-colors"
+          >
             My Profile
           </Link>
-          <Link href="/onboarding" className="text-gray-600 hover:text-linkedin transition-colors">
+          <Link
+            href="/onboarding"
+            className="text-gray-600 hover:text-linkedin transition-colors"
+          >
             Profile Setup
           </Link>
-          <Link href="/dashboard/usage" className="text-gray-600 hover:text-linkedin transition-colors">
+          <Link
+            href="/dashboard/usage"
+            className="text-gray-600 hover:text-linkedin transition-colors"
+          >
             Token Usage
           </Link>
         </nav>
@@ -89,22 +105,26 @@ export function Navbar({ userName }: NavbarProps) {
                   style={{ width: `${Math.min(100, tokenUsage.percentUsed)}%` }}
                 />
               </div>
-              <span className={`text-[10px] leading-none ${
-                tokenUsage.percentUsed >= 100
-                  ? 'text-red-500 font-medium'
-                  : tokenUsage.percentUsed >= 80
-                  ? 'text-amber-500'
-                  : 'text-gray-400'
-              }`}>
+              <span
+                className={`text-[10px] leading-none ${
+                  tokenUsage.percentUsed >= 100
+                    ? "text-red-500 font-medium"
+                    : tokenUsage.percentUsed >= 80
+                      ? "text-amber-500"
+                      : "text-gray-400"
+                }`}
+              >
                 {tokenUsage.percentUsed >= 100
-                  ? 'Quota exceeded'
+                  ? "Quota exceeded"
                   : `${tokenUsage.tokensRemaining.toLocaleString()} left`}
               </span>
             </Link>
           )}
 
           {userName && (
-            <span className="hidden md:block text-sm text-gray-500">{userName}</span>
+            <span className="hidden md:block text-sm text-gray-500">
+              {userName}
+            </span>
           )}
           <Button
             variant="outline"
@@ -117,5 +137,5 @@ export function Navbar({ userName }: NavbarProps) {
         </div>
       </div>
     </header>
-  )
+  );
 }

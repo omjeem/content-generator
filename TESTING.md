@@ -36,6 +36,7 @@ cd apps/web  && npm run dev   # Next.js  on :3000
 ```
 
 Verify the API is up:
+
 ```bash
 curl http://localhost:3001/api/health
 # Expected: {"status":"ok","timestamp":"...","docs":"http://localhost:3001/api/docs"}
@@ -110,14 +111,14 @@ Open in browser: **http://localhost:3001/api/docs**
 
 ## Scenario 4: Error Handling
 
-| Scenario | Expected Behaviour |
-|---|---|
-| Login with wrong password | Red error: "Invalid email or password." |
-| Register with existing email | Red error: "An account with this email already exists." |
-| Access `/dashboard` without token | Redirected to `/login` |
-| Access `/login` while logged in | Redirected to `/dashboard` |
-| Generate without completing interview | API returns 400 → frontend redirects to `/onboarding` |
-| Paste fewer than 30 chars of posts | API returns 400 validation error |
+| Scenario                              | Expected Behaviour                                      |
+| ------------------------------------- | ------------------------------------------------------- |
+| Login with wrong password             | Red error: "Invalid email or password."                 |
+| Register with existing email          | Red error: "An account with this email already exists." |
+| Access `/dashboard` without token     | Redirected to `/login`                                  |
+| Access `/login` while logged in       | Redirected to `/dashboard`                              |
+| Generate without completing interview | API returns 400 → frontend redirects to `/onboarding`   |
+| Paste fewer than 30 chars of posts    | API returns 400 validation error                        |
 
 ---
 
@@ -126,6 +127,7 @@ Open in browser: **http://localhost:3001/api/docs**
 Save a cookie jar and reuse it across commands:
 
 ### Register
+
 ```bash
 curl -s -X POST http://localhost:3001/api/auth/register \
   -H "Content-Type: application/json" \
@@ -134,6 +136,7 @@ curl -s -X POST http://localhost:3001/api/auth/register \
 ```
 
 ### Login
+
 ```bash
 curl -s -X POST http://localhost:3001/api/auth/login \
   -H "Content-Type: application/json" \
@@ -142,12 +145,14 @@ curl -s -X POST http://localhost:3001/api/auth/login \
 ```
 
 ### Get Current User
+
 ```bash
 curl -s http://localhost:3001/api/auth/me \
   -b /tmp/cookies.txt | jq
 ```
 
 ### Analyze Persona (manual paste)
+
 ```bash
 curl -s -X POST http://localhost:3001/api/persona/analyze \
   -H "Content-Type: application/json" \
@@ -158,6 +163,7 @@ curl -s -X POST http://localhost:3001/api/persona/analyze \
 ```
 
 ### Start / Continue Interview
+
 ```bash
 curl -s -X POST http://localhost:3001/api/onboarding/chat \
   -H "Content-Type: application/json" \
@@ -166,12 +172,14 @@ curl -s -X POST http://localhost:3001/api/onboarding/chat \
 ```
 
 ### Check Interview Status
+
 ```bash
 curl -s http://localhost:3001/api/onboarding/status \
   -b /tmp/cookies.txt | jq
 ```
 
 ### Generate Content Suggestions
+
 ```bash
 curl -s -X POST http://localhost:3001/api/suggestions/generate \
   -H "Content-Type: application/json" \
@@ -180,12 +188,14 @@ curl -s -X POST http://localhost:3001/api/suggestions/generate \
 ```
 
 ### Get Suggestion History
+
 ```bash
 curl -s "http://localhost:3001/api/suggestions?page=1&limit=5" \
   -b /tmp/cookies.txt | jq
 ```
 
 ### Logout
+
 ```bash
 curl -s -X POST http://localhost:3001/api/auth/logout \
   -b /tmp/cookies.txt | jq
@@ -196,35 +206,43 @@ curl -s -X POST http://localhost:3001/api/auth/logout \
 ## Common Issues & Fixes
 
 ### CORS error in browser console
+
 ```
 Access to fetch at 'http://localhost:3001/...' from origin 'http://localhost:3000' has been blocked
 ```
+
 **Fix:** Ensure `apps/web/.env.local` contains `NEXT_PUBLIC_API_URL=http://localhost:3001` (no trailing slash).
 **Check:** `apps/api/src/index.ts` CORS origin must be `http://localhost:3000` (no trailing slash).
 
 ---
 
 ### Cookie not sent with requests
+
 ```
 401 Authentication required
 ```
+
 **Check:** Frontend `fetch()` calls use `credentials: 'include'` ✓ (already set in `lib/api.ts`).
 **Check:** Cookie is `sameSite: 'lax'`, `secure: false` in development ✓ (already set in `routes/auth.ts`).
 
 ---
 
 ### MongoDB connection fails on startup
+
 ```
 [db] Connection attempt 1/5 failed
 ```
+
 **Fix:** Verify `MONGODB_URI` in root `.env`. For Atlas: whitelist your IP in **Network Access → Add IP Address → Allow Access from Anywhere (0.0.0.0/0)** during development.
 
 ---
 
 ### Gemini API error / empty suggestions
+
 ```
 Content generation failed: ...
 ```
+
 **Check:** `GEMINI_API_KEY` is set. Visit https://ai.google.dev to get a free key.
 **Check:** Free tier limits: 15 RPM, 1M tokens/day for `gemini-2.5-flash`.
 **Fix:** If hitting rate limits, wait 60 seconds and retry.
@@ -232,6 +250,7 @@ Content generation failed: ...
 ---
 
 ### LinkedIn scraping blocked (expected)
+
 The scraper uses Puppeteer in headless mode. LinkedIn actively blocks automated scrapers.
 **Expected UX:** The error is caught, the UI switches to "Paste Posts" tab and shows an amber warning.
 **Fix:** Nothing to fix — this is working as designed.
@@ -239,6 +258,7 @@ The scraper uses Puppeteer in headless mode. LinkedIn actively blocks automated 
 ---
 
 ### `NEXT_PUBLIC_*` env not picked up
+
 Next.js only reads `NEXT_PUBLIC_*` from `.env.local` inside the `apps/web/` directory.
 **Fix:** Confirm `apps/web/.env.local` exists with `NEXT_PUBLIC_API_URL=http://localhost:3001`.
 
@@ -248,21 +268,21 @@ Next.js only reads `NEXT_PUBLIC_*` from `.env.local` inside the `apps/web/` dire
 
 Open **http://localhost:3001/api/docs** and confirm all these routes appear:
 
-| Method | Path | Tag |
-|--------|------|-----|
-| POST | /api/auth/register | Auth |
-| POST | /api/auth/login | Auth |
-| POST | /api/auth/logout | Auth |
-| GET | /api/auth/me | Auth |
-| POST | /api/persona/analyze | Persona |
-| GET | /api/persona | Persona |
-| POST | /api/onboarding/chat | Onboarding |
-| GET | /api/onboarding/session | Onboarding |
-| GET | /api/onboarding/status | Onboarding |
-| GET | /api/trends | Trends |
-| POST | /api/suggestions/generate | Suggestions |
-| GET | /api/suggestions | Suggestions |
-| GET | /api/suggestions/:id | Suggestions |
+| Method | Path                      | Tag         |
+| ------ | ------------------------- | ----------- |
+| POST   | /api/auth/register        | Auth        |
+| POST   | /api/auth/login           | Auth        |
+| POST   | /api/auth/logout          | Auth        |
+| GET    | /api/auth/me              | Auth        |
+| POST   | /api/persona/analyze      | Persona     |
+| GET    | /api/persona              | Persona     |
+| POST   | /api/onboarding/chat      | Onboarding  |
+| GET    | /api/onboarding/session   | Onboarding  |
+| GET    | /api/onboarding/status    | Onboarding  |
+| GET    | /api/trends               | Trends      |
+| POST   | /api/suggestions/generate | Suggestions |
+| GET    | /api/suggestions          | Suggestions |
+| GET    | /api/suggestions/:id      | Suggestions |
 
 ---
 

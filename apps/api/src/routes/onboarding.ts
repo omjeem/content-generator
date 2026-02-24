@@ -1,17 +1,17 @@
-import { Router, Response, NextFunction } from 'express'
-import { z } from 'zod'
-import { authenticate, AuthRequest } from '../middleware/auth'
-import { runOnboardingChat, getInterviewStatus } from '../agents/onboarding'
-import { checkTokenQuota } from '../services/tokenUsage'
-import { findSession } from '../services/chatSessionService'
+import { Router, Response, NextFunction } from "express";
+import { z } from "zod";
+import { authenticate, AuthRequest } from "../middleware/auth";
+import { runOnboardingChat, getInterviewStatus } from "../agents/onboarding";
+import { checkTokenQuota } from "../services/tokenUsage";
+import { findSession } from "../services/chatSessionService";
 
-const router = Router()
-router.use(authenticate)
+const router = Router();
+router.use(authenticate);
 
 const chatSchema = z.object({
-  message: z.string().min(1, 'Message cannot be empty').max(2000),
+  message: z.string().min(1, "Message cannot be empty").max(2000),
   sessionId: z.string().optional(),
-})
+});
 
 // ── POST /api/onboarding/chat ─────────────────────────────────────────────────
 /**
@@ -59,32 +59,35 @@ const chatSchema = z.object({
  *                   minimum: 0
  *                   maximum: 5
  */
-router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const body = chatSchema.parse(req.body)
+router.post(
+  "/chat",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = chatSchema.parse(req.body);
 
-    // Pre-flight quota check
-    const quota = await checkTokenQuota(req.userId!)
-    if (!quota.allowed) {
-      res.status(429).json({
-        error: 'Token quota exceeded',
-        message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
-        tokensUsed: quota.tokensUsed,
-        tokenLimit: quota.tokenLimit,
-      })
-      return
+      // Pre-flight quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          message: `You have used ${quota.tokensUsed.toLocaleString()} of your ${quota.tokenLimit.toLocaleString()} token limit.`,
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      const result = await runOnboardingChat({
+        userId: req.userId!,
+        message: body.message,
+      });
+
+      res.json(result);
+    } catch (err) {
+      next(err);
     }
-
-    const result = await runOnboardingChat({
-      userId: req.userId!,
-      message: body.message,
-    })
-
-    res.json(result)
-  } catch (err) {
-    next(err)
-  }
-})
+  },
+);
 
 // ── GET /api/onboarding/session ───────────────────────────────────────────────
 /**
@@ -122,30 +125,33 @@ router.post('/chat', async (req: AuthRequest, res: Response, next: NextFunction)
  *                 sessionId:
  *                   type: string
  */
-router.get('/session', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const session = await findSession(req.userId!, 'onboarding')
+router.get(
+  "/session",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const session = await findSession(req.userId!, "onboarding");
 
-    if (!session) {
+      if (!session) {
+        res.json({
+          messages: [],
+          interviewComplete: false,
+          sessionId: null,
+        });
+        return;
+      }
+
+      const { complete } = await getInterviewStatus(req.userId!);
+
       res.json({
-        messages: [],
-        interviewComplete: false,
-        sessionId: null,
-      })
-      return
+        messages: session.messages,
+        interviewComplete: complete,
+        sessionId: session.sessionId,
+      });
+    } catch (err) {
+      next(err);
     }
-
-    const { complete } = await getInterviewStatus(req.userId!)
-
-    res.json({
-      messages: session.messages,
-      interviewComplete: complete,
-      sessionId: session.sessionId,
-    })
-  } catch (err) {
-    next(err)
-  }
-})
+  },
+);
 
 // ── GET /api/onboarding/status ────────────────────────────────────────────────
 /**
@@ -173,13 +179,16 @@ router.get('/session', async (req: AuthRequest, res: Response, next: NextFunctio
  *                     type: string
  *                   example: ["industry", "contentPillars"]
  */
-router.get('/status', async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const status = await getInterviewStatus(req.userId!)
-    res.json(status)
-  } catch (err) {
-    next(err)
-  }
-})
+router.get(
+  "/status",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const status = await getInterviewStatus(req.userId!);
+      res.json(status);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
-export default router
+export default router;

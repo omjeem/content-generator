@@ -1,16 +1,19 @@
-import { Agent } from '@mastra/core/agent'
-import { google } from '@ai-sdk/google'
-import { z } from 'zod'
-import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
-import { findOrCreateSession, persistMessages } from '../services/chatSessionService'
+import { Agent } from "@mastra/core/agent";
+import { google } from "@ai-sdk/google";
+import { z } from "zod";
+import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import {
+  findOrCreateSession,
+  persistMessages,
+} from "../services/chatSessionService";
 import {
   findPersonaByUserId,
   applyPersonaChanges as applyPersonaChangesService,
-} from '../services/userPersonaService'
-import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
-import { sanitizeMessage } from '../utils/sanitizeInput'
-import type { IUserPersonaDocument } from '../models/UserPersona'
-import type { IPersonaPendingChanges } from '@repo/shared-types'
+} from "../services/userPersonaService";
+import { applyHistorySlidingWindow, historyToText } from "../utils/chatHistory";
+import { sanitizeMessage } from "../utils/sanitizeInput";
+import type { IUserPersonaDocument } from "../models/UserPersona";
+import type { IPersonaPendingChanges } from "@repo/shared-types";
 
 // ── Pending changes schema ─────────────────────────────────────────────────────
 
@@ -23,21 +26,23 @@ export const PersonaChangesSchema = z.object({
   topics: z.array(z.string()).optional(),
   tone: z.string().optional(),
   writingStyle: z.string().optional(),
-  platformGoal: z.enum([
-    'thought-leadership',
-    'lead-generation',
-    'personal-brand',
-    'hiring',
-    'community-building',
-  ]).optional(),
-})
+  platformGoal: z
+    .enum([
+      "thought-leadership",
+      "lead-generation",
+      "personal-brand",
+      "hiring",
+      "community-building",
+    ])
+    .optional(),
+});
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
 
 export const personaChatAgent = new Agent({
-  id: 'persona-chat',
-  name: 'persona-chat',
-  model: google('gemini-2.5-flash'),
+  id: "persona-chat",
+  name: "persona-chat",
+  model: google("gemini-2.5-flash"),
   instructions: `You are a LinkedIn content strategy coach. The user wants to update or refine their content persona.
 
 Your role:
@@ -72,57 +77,63 @@ Rules:
 - Keep responses concise and actionable (3-6 sentences max)
 - Ask one focused question at a time when gathering info
 - Be encouraging and strategic, not formulaic`,
-})
+});
 
 // ── Chat with working memory ──────────────────────────────────────────────────
 
 export interface PersonaChatInput {
-  userId: string
-  message: string
-  sessionId?: string
+  userId: string;
+  message: string;
+  sessionId?: string;
 }
 
 export interface PersonaChatOutput {
-  reply: string
-  sessionId: string
-  pendingChanges?: IPersonaPendingChanges
-  changesApplied: boolean
+  reply: string;
+  sessionId: string;
+  pendingChanges?: IPersonaPendingChanges;
+  changesApplied: boolean;
 }
 
-export async function runPersonaChat(input: PersonaChatInput): Promise<PersonaChatOutput> {
-  const { userId } = input
+export async function runPersonaChat(
+  input: PersonaChatInput,
+): Promise<PersonaChatOutput> {
+  const { userId } = input;
   // Sanitize user message before embedding in LLM prompt
-  const message = sanitizeMessage(input.message)
+  const message = sanitizeMessage(input.message);
 
   // Pre-flight quota check — throws 429 if blocked
-  const quota = await checkTokenQuota(userId)
+  const quota = await checkTokenQuota(userId);
   if (!quota.allowed) {
-    const err = new Error(`Token quota exceeded. Used ${quota.tokensUsed.toLocaleString()} of ${quota.tokenLimit.toLocaleString()} tokens.`)
-    ;(err as NodeJS.ErrnoException & { statusCode: number }).statusCode = 429
-    throw err
+    const err = new Error(
+      `Token quota exceeded. Used ${quota.tokensUsed.toLocaleString()} of ${quota.tokenLimit.toLocaleString()} tokens.`,
+    );
+    (err as NodeJS.ErrnoException & { statusCode: number }).statusCode = 429;
+    throw err;
   }
 
   // Load current persona for context and chat session in parallel
   const [persona, session] = await Promise.all([
     findPersonaByUserId(userId),
-    findOrCreateSession(userId, 'persona-chat'),
-  ])
+    findOrCreateSession(userId, "persona-chat"),
+  ]);
 
   // Build conversation history — apply sliding window to cap token usage
   const fullHistory = session.messages.map((m) => ({
-    role: m.role as 'user' | 'assistant',
+    role: m.role as "user" | "assistant",
     content: m.content,
-  }))
+  }));
 
   // Add user message
-  fullHistory.push({ role: 'user', content: message })
+  fullHistory.push({ role: "user", content: message });
 
   // Apply sliding window: keep last 10 verbatim, summarize older messages
-  const windowedHistory = applyHistorySlidingWindow(fullHistory)
+  const windowedHistory = applyHistorySlidingWindow(fullHistory);
 
   // Build persona context for the agent
-  const personaContext = persona ? buildPersonaContext(persona) : 'No persona on file yet.'
-  const historyText = historyToText(windowedHistory)
+  const personaContext = persona
+    ? buildPersonaContext(persona)
+    : "No persona on file yet.";
+  const historyText = historyToText(windowedHistory);
 
   const prompt = `## CURRENT PERSONA
 ${personaContext}
@@ -130,34 +141,35 @@ ${personaContext}
 ## CONVERSATION
 ${historyText}
 
-Please respond to the user's latest message.`
+Please respond to the user's latest message.`;
 
-  const result = await personaChatAgent.generate(prompt)
-  const reply = result.text
+  const result = await personaChatAgent.generate(prompt);
+  const reply = result.text;
 
   // Track token usage — fire-and-forget
   trackTokenUsage({
     userId,
-    agent: 'persona-chat',
-    operation: 'persona_chat',
+    agent: "persona-chat",
+    operation: "persona_chat",
     inputTokens: result.usage?.inputTokens ?? 0,
     outputTokens: result.usage?.outputTokens ?? 0,
-    totalTokens: (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
+    totalTokens:
+      (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
     metadata: { sessionId: session.sessionId },
-  })
+  });
 
   // Parse pending changes
-  const pendingChanges = parsePersonaChanges(reply)
+  const pendingChanges = parsePersonaChanges(reply);
 
   // Persist messages
-  await persistMessages(session, message, reply)
+  await persistMessages(session, message, reply);
 
   return {
     reply: stripPersonaChangesBlock(reply),
     sessionId: session.sessionId,
     pendingChanges: pendingChanges ?? undefined,
     changesApplied: false,
-  }
+  };
 }
 
 // ── Apply changes ──────────────────────────────────────────────────────────────
@@ -165,41 +177,45 @@ Please respond to the user's latest message.`
 /** Delegate to UserPersonaService — kept here for backwards compatibility with routes/personaChat.ts. */
 export async function applyPersonaChanges(
   userId: string,
-  changes: IPersonaPendingChanges
+  changes: IPersonaPendingChanges,
 ): Promise<IUserPersonaDocument> {
-  return applyPersonaChangesService(userId, changes)
+  return applyPersonaChangesService(userId, changes);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildPersonaContext(persona: IUserPersonaDocument): string {
   return [
-    `Goals: ${persona.goals ?? 'Not set'}`,
-    `Target Audience: ${persona.targetAudience ?? 'Not set'}`,
-    `Industry: ${persona.industry ?? 'Not set'}`,
-    `Content Pillars: ${persona.contentPillars.length ? persona.contentPillars.join(', ') : 'Not set'}`,
-    `Topics: ${persona.topics.length ? persona.topics.join(', ') : 'Not set'}`,
-    `Tone: ${persona.tone ?? 'Not set'}`,
-    `Writing Style: ${persona.writingStyle ?? 'Not set'}`,
-    `Platform Goal: ${persona.platformGoal ?? 'Not set'}`,
-    `Posting Frequency: ${persona.postingFrequency ?? 'Not set'}`,
-  ].join('\n')
+    `Goals: ${persona.goals ?? "Not set"}`,
+    `Target Audience: ${persona.targetAudience ?? "Not set"}`,
+    `Industry: ${persona.industry ?? "Not set"}`,
+    `Content Pillars: ${persona.contentPillars.length ? persona.contentPillars.join(", ") : "Not set"}`,
+    `Topics: ${persona.topics.length ? persona.topics.join(", ") : "Not set"}`,
+    `Tone: ${persona.tone ?? "Not set"}`,
+    `Writing Style: ${persona.writingStyle ?? "Not set"}`,
+    `Platform Goal: ${persona.platformGoal ?? "Not set"}`,
+    `Posting Frequency: ${persona.postingFrequency ?? "Not set"}`,
+  ].join("\n");
 }
 
 function parsePersonaChanges(text: string): IPersonaPendingChanges | null {
   try {
-    const match = text.match(/<!--PERSONA_CHANGES\s*([\s\S]*?)\s*PERSONA_CHANGES-->/)
-    if (!match || !match[1]) return null
-    const parsed = PersonaChangesSchema.safeParse(JSON.parse(match[1]))
-    if (!parsed.success) return null
+    const match = text.match(
+      /<!--PERSONA_CHANGES\s*([\s\S]*?)\s*PERSONA_CHANGES-->/,
+    );
+    if (!match || !match[1]) return null;
+    const parsed = PersonaChangesSchema.safeParse(JSON.parse(match[1]));
+    if (!parsed.success) return null;
     // Only return if there's at least one field
-    if (Object.keys(parsed.data).length === 0) return null
-    return parsed.data as IPersonaPendingChanges
+    if (Object.keys(parsed.data).length === 0) return null;
+    return parsed.data as IPersonaPendingChanges;
   } catch {
-    return null
+    return null;
   }
 }
 
 function stripPersonaChangesBlock(text: string): string {
-  return text.replace(/<!--PERSONA_CHANGES[\s\S]*?PERSONA_CHANGES-->/g, '').trim()
+  return text
+    .replace(/<!--PERSONA_CHANGES[\s\S]*?PERSONA_CHANGES-->/g, "")
+    .trim();
 }
