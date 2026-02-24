@@ -29,7 +29,10 @@ You can authenticate using either:
       contact: { name: "API Support" },
     },
     servers: [
-      { url: "http://localhost:5006", description: "Local development" },
+      {
+        url: `http://localhost:${process.env.PORT ?? "5006"}`,
+        description: "Local development",
+      },
     ],
     components: {
       securitySchemes: {

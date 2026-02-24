@@ -1,4 +1,4 @@
-import "./config/env"; // Validate env vars — .env loaded via nodemon --require ../../load-env.cjs
+import { env } from "./config/env"; // Validate env vars — .env loaded via nodemon --require ../../load-env.cjs
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -21,19 +21,21 @@ import { seedDefaultTokenLimit } from "./services/tokenUsage";
 import { getHealthStatus } from "./services/healthCheck";
 
 const app = express();
-const PORT = process.env.PORT || 5006;
+// Single source of truth: PORT and FRONTEND_URL come from env (validated in config/env.ts).
+// To change the API port → edit PORT in .env
+// To change the allowed frontend origin → edit FRONTEND_URL in .env
+const PORT = env.PORT;
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
-// Explicit allowlist — never reflect arbitrary request origins (CSRF risk)
-const ALLOWED_ORIGINS = [
-  process.env.FRONTEND_URL,
-  "http://localhost:3000",
-].filter(Boolean) as string[];
+// IMPORTANT: credentials:true + wildcard origin (*) is rejected by all browsers.
+// We must echo back the exact requesting origin when it is on our allowlist.
+// To add more allowed origins, extend FRONTEND_URL or add them to ALLOWED_ORIGINS.
+const ALLOWED_ORIGINS = [env.FRONTEND_URL].filter(Boolean) as string[];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow server-to-server / curl (no Origin header) in non-production
+      // Allow server-to-server / curl requests (no Origin header) in dev
       if (!origin) {
         return callback(null, process.env.NODE_ENV !== "production");
       }
@@ -42,9 +44,15 @@ app.use(
       }
       callback(new Error(`CORS: origin '${origin}' not allowed`));
     },
-    credentials: true,
+    credentials: true, // required for httpOnly cookie auth to work
   }),
 );
+
+// ── Body parsing & cookies ────────────────────────────────────────────────────
+// Must come BEFORE routes so req.body and req.cookies are populated.
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 // Auth-specific limiters live in routes/auth.ts (per endpoint).
@@ -57,9 +65,6 @@ const generalApiLimiter = rateLimit({
   message: { error: "Too many requests. Please slow down." },
   skip: (req) => req.path.startsWith("/docs"), // skip Swagger UI
 });
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 // ── Health Check ─────────────────────────────────────────────────────────────
 // Returns detailed degradation status — no auth required (used by monitoring)

@@ -6,8 +6,21 @@ const envSchema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: z
     .string()
     .min(1, "GOOGLE_GENERATIVE_AI_API_KEY is required"),
+
+  // ── Ports & URLs (single source of truth) ────────────────────────────────
+  // To change the API port: update PORT in the root .env file.
+  // To change the frontend origin: update FRONTEND_URL in the root .env file.
+  // All runtime code reads from these — nothing is hardcoded elsewhere.
+
+  /** Port the Express API server listens on. */
   PORT: z.string().default("5006"),
-  NEXT_PUBLIC_API_URL: z.string().default("http://localhost:3000"),
+
+  /** Origin the Next.js frontend is served from — used for CORS allowlist. */
+  FRONTEND_URL: z.string().default("http://localhost:3000"),
+
+  /** Full API base URL — used by the Next.js build (NEXT_PUBLIC_ prefix). */
+  NEXT_PUBLIC_API_URL: z.string().optional(),
+
   // Optional — fallback for trend research
   TAVILY_API_KEY: z.string().optional(),
 });
