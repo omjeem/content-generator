@@ -4,6 +4,7 @@ import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 import { scrapeLinkedInProfile, parseManualPosts, ScrapingBlockedError } from '../services/linkedin'
 import { extractJSON } from '../utils/extractJSON'
+import { sanitizePosts, wrapPostContent } from '../utils/sanitizeInput'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -94,8 +95,10 @@ export interface PersonaAnalysisResult {
 // ── Helper: run agent and get structured persona ──────────────────────────────
 
 export async function analyzePersona(posts: string[]): Promise<PersonaAnalysisResult> {
-  const postsText = posts
-    .map((p, i) => `--- POST ${i + 1} ---\n${p}`)
+  // Sanitize user-supplied post content before embedding in the LLM prompt
+  const sanitizedPosts = sanitizePosts(posts)
+  const postsText = sanitizedPosts
+    .map((p, i) => wrapPostContent(p, i + 1))
     .join('\n\n')
 
   const prompt = `Analyze the following LinkedIn posts and return ONLY a JSON object with this exact structure (no markdown, no extra text):

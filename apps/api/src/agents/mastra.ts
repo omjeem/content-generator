@@ -66,9 +66,11 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   }
 
   // ── STEP 1: Persona Analysis (Agent 1) ──────────────────────────────────────
+  // Hoist existingPersona so Step 2 can reuse it without a second DB round-trip.
+  // Only re-query in Step 2 when Step 1 ran an upsert (needsAnalysis=true).
+  let personaAfterStep1 = await UserPersona.findOne({ userId: userObjectId })
   try {
-    const existingPersona = await UserPersona.findOne({ userId: userObjectId })
-    const needsAnalysis = !existingPersona || input.forceReanalyze
+    const needsAnalysis = !personaAfterStep1 || input.forceReanalyze
 
     if (needsAnalysis && (input.linkedinUrl || input.manualPosts)) {
       console.log('[pipeline] Step 1: Running persona analysis...')
@@ -105,7 +107,8 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
         totalTokens: personaUsage.inputTokens + personaUsage.outputTokens,
       })
 
-      await UserPersona.findOneAndUpdate(
+      // Upsert and capture the updated document so Step 2 can skip another findOne
+      personaAfterStep1 = await UserPersona.findOneAndUpdate(
         { userId: userObjectId },
         {
           $set: {
@@ -136,7 +139,8 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   }
 
   // ── STEP 2: Check interview completion (Agent 2 must be done first) ──────────
-  const persona = await UserPersona.findOne({ userId: userObjectId })
+  // Reuse the persona already fetched/upserted in Step 1 — saves one DB round-trip.
+  const persona = personaAfterStep1
 
   if (!persona) {
     return {
@@ -202,10 +206,14 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   }
 
   // ── STEP 5: Persist results ───────────────────────────────────────────────────
+  // Store the ACCEPTED trend topics (not rawTrends which includes rejected ones).
+  // This makes trendsUsed accurate for historical analysis and the frontend display.
+  const acceptedTrendTopics = trends.trends.map((t) => t.topic)
+
   const saved = await ContentSuggestion.create({
     userId: userObjectId,
     generatedAt: new Date(),
-    trendsUsed: trends.rawTrends,
+    trendsUsed: acceptedTrendTopics,
     // Store generation mode + context for history/analytics (#17)
     generationMode: input.context?.mode ?? 'profile',
     contextOptions: input.context,
@@ -239,7 +247,7 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
     status: 'success',
     suggestions: contentIdeas.ideas as ISuggestion[],
     suggestionId: String(saved._id),
-    trendsUsed: trends.rawTrends,
+    trendsUsed: acceptedTrendTopics,
     trendSource: trendIsLive ? 'live' : 'fallback',
   }
 }

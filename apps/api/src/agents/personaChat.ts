@@ -5,6 +5,7 @@ import { ChatSession } from '../models/ChatSession'
 import { UserPersona } from '../models/UserPersona'
 import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
 import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
+import { sanitizeMessage } from '../utils/sanitizeInput'
 import mongoose from 'mongoose'
 import type { IUserPersonaDocument } from '../models/UserPersona'
 import type { IPersonaPendingChanges } from '@repo/shared-types'
@@ -87,7 +88,9 @@ export interface PersonaChatOutput {
 }
 
 export async function runPersonaChat(input: PersonaChatInput): Promise<PersonaChatOutput> {
-  const { userId, message } = input
+  const { userId } = input
+  // Sanitize user message before embedding in LLM prompt
+  const message = sanitizeMessage(input.message)
 
   // Pre-flight quota check — throws 429 if blocked
   const quota = await checkTokenQuota(userId)

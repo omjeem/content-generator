@@ -5,6 +5,7 @@ import { ChatSession } from '../models/ChatSession'
 import { UserPersona } from '../models/UserPersona'
 import { trackTokenUsage } from '../services/tokenUsage'
 import { applyHistorySlidingWindow, historyToText } from '../utils/chatHistory'
+import { sanitizeMessage } from '../utils/sanitizeInput'
 import mongoose from 'mongoose'
 
 // ── Interview questions the agent must cover ──────────────────────────────────
@@ -88,7 +89,9 @@ export interface OnboardingChatOutput {
 }
 
 export async function runOnboardingChat(input: OnboardingChatInput): Promise<OnboardingChatOutput> {
-  const { userId, message } = input
+  const { userId } = input
+  // Sanitize user message before embedding in LLM prompt
+  const message = sanitizeMessage(input.message)
 
   // Load or create the chat session for this user
   let session = await ChatSession.findOne({

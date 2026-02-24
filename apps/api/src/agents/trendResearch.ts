@@ -5,6 +5,7 @@ import { fetchRealTrendingContent, getTrendingTopics, getDailyTrends } from '../
 import type { RawTrendItem } from '../services/trends'
 import { extractJSON } from '../utils/extractJSON'
 import { scoreAndRankTrends, selectBalancedTrends } from '../utils/scoring'
+import type { ScoredTrendItem } from '../utils/scoring'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -116,12 +117,31 @@ export async function researchTrendsForUser(input: {
   const scoredItems = scoreAndRankTrends(rawItems, personaSignals)
   const balancedItems = selectBalancedTrends(scoredItems, contentPillars, 20)
 
+  const topScore = balancedItems[0]?.relevanceScore ?? 0
+
   console.log(
     `[trendResearch] Scoring: ${rawItems.length} → ${balancedItems.length} items after scoring+balance`,
-    `| top score: ${balancedItems[0]?.relevanceScore ?? 0}`
+    `| top score: ${topScore}`
   )
 
-  // ── Step 3: Format items for the agent — include relevance score as hint ──
+  // ── Step 3a: Heuristic-only fast path (#32) ────────────────────────────────
+  // When items have high relevance scores (top ≥ 3) AND there are enough of them,
+  // skip the LLM call entirely — saves ~2,300 tokens and ~1-2s per generation.
+  // The content generator receives the pre-scored titles directly as "trends",
+  // with deterministically generated angles instead of LLM-crafted ones.
+  const HEURISTIC_THRESHOLD = 3   // minimum top-item relevance score to skip LLM
+  const HEURISTIC_MIN_ITEMS = 4   // need at least 4 good items to skip LLM
+
+  const highRelevanceItems = balancedItems.filter((item) => item.relevanceScore >= HEURISTIC_THRESHOLD)
+  const canUseHeuristic = highRelevanceItems.length >= HEURISTIC_MIN_ITEMS
+
+  if (canUseHeuristic) {
+    console.log(`[trendResearch] Heuristic fast path: ${highRelevanceItems.length} high-relevance items — skipping LLM`)
+    const heuristicResult = buildHeuristicResult(highRelevanceItems.slice(0, 8), input.industry, input.topics, rawItems)
+    return { result: heuristicResult, usage: { inputTokens: 0, outputTokens: 0 }, isLive: true }
+  }
+
+  // ── Step 3b: Format items for the LLM agent ───────────────────────────────
   const formattedList = balancedItems
     .map((item, i) => {
       const sourcePart = item.source.startsWith('rss:')
@@ -178,6 +198,40 @@ Return ONLY the JSON object.`
   } catch (err) {
     console.error('[trendResearch] Agent error:', (err as Error).message)
     return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage: { inputTokens: 0, outputTokens: 0 }, isLive: false }
+  }
+}
+
+// ── Heuristic result builder (#32) ───────────────────────────────────────────
+// Constructs a TrendResult from high-confidence scored items without LLM.
+// Content angles are deterministically generated from matched keywords + industry.
+
+function buildHeuristicResult(
+  items: ScoredTrendItem[],
+  industry: string,
+  topics: string[],
+  allItems: RawTrendItem[]
+): TrendResult {
+  const trends = items.map((item) => {
+    const matchedKeyword = item.matchedKeywords[0] ?? topics[0] ?? industry
+    const sourceName = item.source.startsWith('rss:')
+      ? item.source.replace('rss:', '')
+      : item.source === 'hackernews'
+      ? 'Hacker News'
+      : item.source === 'tavily'
+      ? 'Web'
+      : item.source
+
+    return {
+      topic: item.title,
+      relevanceReason: `Directly relevant to ${matchedKeyword} in the ${industry} space`,
+      contentAngle: `Share your take on "${item.title.slice(0, 60)}" — what it means for ${matchedKeyword} practitioners`,
+      source: sourceName,
+    }
+  })
+
+  return {
+    trends,
+    rawTrends: allItems.map((i) => i.title),
   }
 }
 

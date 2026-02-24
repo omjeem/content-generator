@@ -7,6 +7,7 @@ import { checkTokenQuota, trackTokenUsage } from '../services/tokenUsage'
 import mongoose from 'mongoose'
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
+import { sanitizeMessage } from '../utils/sanitizeInput'
 
 const router = Router()
 router.use(authenticate)
@@ -326,7 +327,12 @@ const refineContextSchema = z.object({
 
 router.post('/refine-context', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { messages } = refineContextSchema.parse(req.body)
+    const { messages: rawMessages } = refineContextSchema.parse(req.body)
+    // Sanitize user messages before sending to LLM
+    const messages = rawMessages.map((m) => ({
+      role: m.role,
+      content: m.role === 'user' ? sanitizeMessage(m.content) : m.content,
+    }))
 
     // Pre-flight quota check
     const quota = await checkTokenQuota(req.userId!)
