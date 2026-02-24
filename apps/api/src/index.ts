@@ -35,17 +35,16 @@ const ALLOWED_ORIGINS = [env.FRONTEND_URL].filter(Boolean) as string[];
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow server-to-server / curl requests (no Origin header) in dev
+      // Allow server-to-server / curl requests (no Origin header)
       if (!origin) {
-        return callback(null, process.env.NODE_ENV !== "production");
-      }
-      if (ALLOWED_ORIGINS.includes(origin)) {
         return callback(null, true);
       }
-      callback(new Error(`CORS: origin '${origin}' not allowed`));
+
+      // Allow ALL origins
+      return callback(null, origin);
     },
-    credentials: true, // required for httpOnly cookie auth to work
-  }),
+    credentials: true,
+  })
 );
 
 // ── Body parsing & cookies ────────────────────────────────────────────────────

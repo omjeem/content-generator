@@ -21,20 +21,27 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy node_modules and shared packages
+# Copy installed node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages ./packages
 
 # Copy root config files
 COPY package.json package-lock.json turbo.json tsconfig.base.json ./
 
+# Copy shared-types SOURCE code (deps stage only had package.json, not the .ts files)
+COPY packages/shared-types ./packages/shared-types
+
 # Copy the web app source
 COPY apps/web ./apps/web
 
-# NEXT_PUBLIC_API_URL is baked into the Next.js bundle at build time.
-# It must be the externally accessible URL of your API server
+# NEXT_PUBLIC_API_URL is baked into the Next.js bundle at BUILD TIME (not runtime).
+# It must be the externally accessible URL your BROWSER will use to reach the API.
 # (e.g. http://your-server-ip:5006 or https://api.yourdomain.com)
-ARG NEXT_PUBLIC_API_URL=http://localhost:5006
+#
+# Pass it via:
+#   docker build --build-arg NEXT_PUBLIC_API_URL=http://YOUR_IP:5006
+#   or docker compose build args (see docker-compose.yaml)
+#   or GitHub Actions secret (see docker-publish.yml)
+ARG NEXT_PUBLIC_API_URL=https://trends-api.shikshatech.org
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 # Build via turbo (filters to just the web app)

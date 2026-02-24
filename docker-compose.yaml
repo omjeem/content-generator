@@ -51,7 +51,7 @@ services:
         #   http://YOUR_SERVER_IP:5006
         #   https://api.yourdomain.com
         # This value is baked into the Next.js bundle at build time.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5006}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     image: content-generator-web
     container_name: content-generator-web
     ports:

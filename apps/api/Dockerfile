@@ -22,18 +22,26 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy installed node_modules and shared packages from deps stage
+# Copy installed node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages ./packages
 
 # Copy root config files
 COPY package.json package-lock.json turbo.json tsconfig.base.json ./
+
+# Copy shared-types SOURCE code (deps stage only had package.json, not the .ts files)
+COPY packages/shared-types ./packages/shared-types
 
 # Copy only the API source
 COPY apps/api ./apps/api
 
 # Run build via turbo (filters to just the API — faster, no web build needed)
 RUN npx turbo run build --filter=@repo/api
+
+# Prune devDependencies while still inside the workspace context.
+# This removes @types/*, typescript, nodemon, eslint-config etc.
+# Doing it HERE avoids running npm install in Stage 3 (which would fail
+# because @repo/* packages don't exist on the public npm registry).
+RUN npm prune --omit=dev --workspace=apps/api
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 3: Production runner — minimal image
@@ -60,17 +68,12 @@ ENV NODE_ENV=production
 # Copy compiled output from builder
 COPY --from=builder /app/apps/api/dist ./dist
 
-# Copy shared-types source (resolved at runtime via require paths)
-# Actually shared-types are compiled into dist/, so we only need package.json
-COPY --from=builder /app/packages ./packages
+# Copy production node_modules (already pruned in builder stage)
+# In npm workspaces, dependencies are hoisted to root node_modules/
+COPY --from=builder /app/node_modules ./node_modules
 
-# Copy package.json for production dependency install
-COPY apps/api/package.json ./package.json
-# We need the root workspace package.json for npm to resolve @repo/* packages
-COPY package.json ./root-package.json
-
-# Install ONLY production dependencies
-RUN npm install --omit=dev --ignore-scripts
+# Copy shared-types source (needed at runtime for require resolution)
+COPY --from=builder /app/packages/shared-types ./node_modules/@repo/shared-types
 
 EXPOSE 5006
 

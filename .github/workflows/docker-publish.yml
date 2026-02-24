@@ -144,7 +144,7 @@ jobs:
           labels: ${{ steps.meta-web.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL' }}
+            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
@@ -171,6 +171,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Deploy to your server:" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker compose -f docker-compose.yml -f docker-compose.prod.yml pull" >> $GITHUB_STEP_SUMMARY
-          echo "docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d" >> $GITHUB_STEP_SUMMARY
+          echo "docker compose -f docker-compose.yaml -f docker-compose.prod.yaml pull" >> $GITHUB_STEP_SUMMARY
+          echo "docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
