@@ -144,7 +144,7 @@
 #           labels: ${{ steps.meta-web.outputs.labels }}
 #           platforms: linux/amd64,linux/arm64
 #           build-args: |
-#             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL || 'http://localhost:3001' }}
+#             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL' }}
 #           cache-from: type=gha,scope=web
 #           cache-to: type=gha,mode=max,scope=web
 

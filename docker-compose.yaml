@@ -31,7 +31,7 @@ services:
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5006/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -51,7 +51,7 @@ services:
         #   http://YOUR_SERVER_IP:3001
         #   https://api.yourdomain.com
         # This value is baked into the Next.js bundle at build time.
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5006}
     image: content-generator-web
     container_name: content-generator-web
     ports:

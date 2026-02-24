@@ -15,7 +15,7 @@ Before running tests, ensure:
    MONGODB_URI=<your-connection-string>
    JWT_SECRET=<32+-char-secret>
    PORT=3001
-   NEXT_PUBLIC_API_URL=http://localhost:3001
+   NEXT_PUBLIC_API_URL=http://localhost:5006
    ```
 3. **Generate a JWT secret** if you haven't:
    ```bash
@@ -38,15 +38,15 @@ cd apps/web  && npm run dev   # Next.js  on :3000
 Verify the API is up:
 
 ```bash
-curl http://localhost:3001/api/health
-# Expected: {"status":"ok","timestamp":"...","docs":"http://localhost:3001/api/docs"}
+curl http://localhost:5006/api/health
+# Expected: {"status":"ok","timestamp":"...","docs":"http://localhost:5006/api/docs"}
 ```
 
 ---
 
 ## Swagger UI (Interactive API Docs)
 
-Open in browser: **http://localhost:3001/api/docs**
+Open in browser: **http://localhost:5006/api/docs**
 
 - All 13 endpoints are documented with request/response schemas
 - Click "Authorize" → enter Bearer token OR use cookie auth (see below)
@@ -129,7 +129,7 @@ Save a cookie jar and reuse it across commands:
 ### Register
 
 ```bash
-curl -s -X POST http://localhost:3001/api/auth/register \
+curl -s -X POST http://localhost:5006/api/auth/register \
   -H "Content-Type: application/json" \
   -c /tmp/cookies.txt \
   -d '{"email":"test@example.com","password":"password123","name":"Test User"}' | jq
@@ -138,7 +138,7 @@ curl -s -X POST http://localhost:3001/api/auth/register \
 ### Login
 
 ```bash
-curl -s -X POST http://localhost:3001/api/auth/login \
+curl -s -X POST http://localhost:5006/api/auth/login \
   -H "Content-Type: application/json" \
   -c /tmp/cookies.txt \
   -d '{"email":"test@example.com","password":"password123"}' | jq
@@ -147,14 +147,14 @@ curl -s -X POST http://localhost:3001/api/auth/login \
 ### Get Current User
 
 ```bash
-curl -s http://localhost:3001/api/auth/me \
+curl -s http://localhost:5006/api/auth/me \
   -b /tmp/cookies.txt | jq
 ```
 
 ### Analyze Persona (manual paste)
 
 ```bash
-curl -s -X POST http://localhost:3001/api/persona/analyze \
+curl -s -X POST http://localhost:5006/api/persona/analyze \
   -H "Content-Type: application/json" \
   -b /tmp/cookies.txt \
   -d '{
@@ -165,7 +165,7 @@ curl -s -X POST http://localhost:3001/api/persona/analyze \
 ### Start / Continue Interview
 
 ```bash
-curl -s -X POST http://localhost:3001/api/onboarding/chat \
+curl -s -X POST http://localhost:5006/api/onboarding/chat \
   -H "Content-Type: application/json" \
   -b /tmp/cookies.txt \
   -d '{"message": "Hi! I am ready to set up my content strategy."}' | jq
@@ -174,14 +174,14 @@ curl -s -X POST http://localhost:3001/api/onboarding/chat \
 ### Check Interview Status
 
 ```bash
-curl -s http://localhost:3001/api/onboarding/status \
+curl -s http://localhost:5006/api/onboarding/status \
   -b /tmp/cookies.txt | jq
 ```
 
 ### Generate Content Suggestions
 
 ```bash
-curl -s -X POST http://localhost:3001/api/suggestions/generate \
+curl -s -X POST http://localhost:5006/api/suggestions/generate \
   -H "Content-Type: application/json" \
   -b /tmp/cookies.txt \
   -d '{}' | jq
@@ -190,14 +190,14 @@ curl -s -X POST http://localhost:3001/api/suggestions/generate \
 ### Get Suggestion History
 
 ```bash
-curl -s "http://localhost:3001/api/suggestions?page=1&limit=5" \
+curl -s "http://localhost:5006/api/suggestions?page=1&limit=5" \
   -b /tmp/cookies.txt | jq
 ```
 
 ### Logout
 
 ```bash
-curl -s -X POST http://localhost:3001/api/auth/logout \
+curl -s -X POST http://localhost:5006/api/auth/logout \
   -b /tmp/cookies.txt | jq
 ```
 
@@ -208,10 +208,10 @@ curl -s -X POST http://localhost:3001/api/auth/logout \
 ### CORS error in browser console
 
 ```
-Access to fetch at 'http://localhost:3001/...' from origin 'http://localhost:3000' has been blocked
+Access to fetch at 'http://localhost:5006/...' from origin 'http://localhost:3000' has been blocked
 ```
 
-**Fix:** Ensure `apps/web/.env.local` contains `NEXT_PUBLIC_API_URL=http://localhost:3001` (no trailing slash).
+**Fix:** Ensure `apps/web/.env.local` contains `NEXT_PUBLIC_API_URL=http://localhost:5006` (no trailing slash).
 **Check:** `apps/api/src/index.ts` CORS origin must be `http://localhost:3000` (no trailing slash).
 
 ---
@@ -260,13 +260,13 @@ The scraper uses Puppeteer in headless mode. LinkedIn actively blocks automated 
 ### `NEXT_PUBLIC_*` env not picked up
 
 Next.js only reads `NEXT_PUBLIC_*` from `.env.local` inside the `apps/web/` directory.
-**Fix:** Confirm `apps/web/.env.local` exists with `NEXT_PUBLIC_API_URL=http://localhost:3001`.
+**Fix:** Confirm `apps/web/.env.local` exists with `NEXT_PUBLIC_API_URL=http://localhost:5006`.
 
 ---
 
 ## Verifying All 13 API Endpoints
 
-Open **http://localhost:3001/api/docs** and confirm all these routes appear:
+Open **http://localhost:5006/api/docs** and confirm all these routes appear:
 
 | Method | Path                      | Tag         |
 | ------ | ------------------------- | ----------- |

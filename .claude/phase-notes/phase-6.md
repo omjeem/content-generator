@@ -14,7 +14,7 @@ integration issues, and provide a complete testing guide.
 - [x] Verify all API calls from frontend match backend route signatures
 - [x] Fix: suggestions route returned `suggestionId` but ISuggestionsGenerateResponse used `id` — fixed to `id`
 - [x] Fix: .env.example said "Hono API server" — updated to "Express API server"
-- [x] Created apps/web/.env.local with NEXT_PUBLIC_API_URL=http://localhost:3001
+- [x] Created apps/web/.env.local with NEXT_PUBLIC_API_URL=http://localhost:5006
 - [x] CORS already configured correctly (origin: http://localhost:3000, credentials: true)
 - [x] Cookie: sameSite: 'lax', secure: false in dev — correct for localhost
 - [x] Middleware.ts protects /dashboard and /onboarding routes
@@ -84,7 +84,7 @@ app.use(
 ### Register
 
 ```bash
-curl -X POST http://localhost:3001/api/auth/register \
+curl -X POST http://localhost:5006/api/auth/register \
   -H "Content-Type: application/json" \
   -c cookies.txt \
   -d '{"email":"test@test.com","password":"password123","name":"Test User"}'
@@ -93,7 +93,7 @@ curl -X POST http://localhost:3001/api/auth/register \
 ### Login
 
 ```bash
-curl -X POST http://localhost:3001/api/auth/login \
+curl -X POST http://localhost:5006/api/auth/login \
   -H "Content-Type: application/json" \
   -c cookies.txt \
   -d '{"email":"test@test.com","password":"password123"}'
@@ -102,7 +102,7 @@ curl -X POST http://localhost:3001/api/auth/login \
 ### Analyze Persona (manual paste)
 
 ```bash
-curl -X POST http://localhost:3001/api/persona/analyze \
+curl -X POST http://localhost:5006/api/persona/analyze \
   -H "Content-Type: application/json" \
   -b cookies.txt \
   -d '{
@@ -113,7 +113,7 @@ curl -X POST http://localhost:3001/api/persona/analyze \
 ### Start Interview
 
 ```bash
-curl -X POST http://localhost:3001/api/onboarding/chat \
+curl -X POST http://localhost:5006/api/onboarding/chat \
   -H "Content-Type: application/json" \
   -b cookies.txt \
   -d '{"message": "Hello, I am ready to start"}'
@@ -122,7 +122,7 @@ curl -X POST http://localhost:3001/api/onboarding/chat \
 ### Generate Suggestions
 
 ```bash
-curl -X POST http://localhost:3001/api/suggestions/generate \
+curl -X POST http://localhost:5006/api/suggestions/generate \
   -H "Content-Type: application/json" \
   -b cookies.txt \
   -d '{}'
@@ -131,14 +131,14 @@ curl -X POST http://localhost:3001/api/suggestions/generate \
 ### Get Suggestions History
 
 ```bash
-curl http://localhost:3001/api/suggestions?page=1&limit=10 \
+curl http://localhost:5006/api/suggestions?page=1&limit=10 \
   -b cookies.txt
 ```
 
 ### Check Swagger UI
 
 ```
-Open browser: http://localhost:3001/api/docs
+Open browser: http://localhost:5006/api/docs
 ```
 
 ## Common Issues & Fixes

@@ -22,7 +22,7 @@ import type {
   IPersonaPostsResponse,
 } from "@repo/shared-types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 export class ApiError extends Error {
   constructor(

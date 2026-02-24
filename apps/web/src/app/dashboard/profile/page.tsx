@@ -125,7 +125,7 @@ export default function ProfilePage() {
 
     personaChatApi.applyChanges; // trigger fetch on mount via GET persona endpoint
     fetch(
-      `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"}/api/persona-chat/persona`,
+      `${process.env.NEXT_PUBLIC_API_URL}/api/persona-chat/persona`,
       {
         credentials: "include",
       },

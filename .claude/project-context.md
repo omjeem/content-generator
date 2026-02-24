@@ -63,7 +63,7 @@ MONGODB_URI=             # https://cloud.mongodb.com — Atlas free M0 cluster
 JWT_SECRET=              # Any 64-char random string: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 TAVILY_API_KEY=          # https://tavily.com — free tier, 1000 searches/month
 PORT=3001                # Backend port
-NEXT_PUBLIC_API_URL=http://localhost:3001  # Frontend → Backend URL
+NEXT_PUBLIC_API_URL=http://localhost:5006  # Frontend → Backend URL
 ```
 
 ---

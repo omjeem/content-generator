@@ -76,7 +76,7 @@ EXPOSE 3001
 
 # Health check so docker compose / orchestrators know when ready
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 \
-  CMD wget -qO- http://localhost:3001/api/health || exit 1
+  CMD wget -qO- http://localhost:5006/api/health || exit 1
 
 # In production, env vars come from the container environment (Docker Compose / cloud)
 # No dotenv/load-env.cjs needed — process.env is already populated

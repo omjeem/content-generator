@@ -59,9 +59,9 @@ This tells you what has already been created.
 ```bash
 cd /Users/hexahealth/Documents/PP/content-generator
 npm run dev
-# API → http://localhost:3001
+# API → http://localhost:5006
 # Web → http://localhost:3000
-# Swagger → http://localhost:3001/api/docs
+# Swagger → http://localhost:5006/api/docs
 ```
 
 ### Key Port Numbers
@@ -131,4 +131,4 @@ All values must be in `.env` (gitignored). See `.env.example` for where to get e
 - `JWT_SECRET` → Any 64-char random string
 - `TAVILY_API_KEY` → https://tavily.com (free tier, optional)
 - `PORT` → 3001
-- `NEXT_PUBLIC_API_URL` → http://localhost:3001
+- `NEXT_PUBLIC_API_URL` → http://localhost:5006

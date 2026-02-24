@@ -203,12 +203,12 @@ GET /api/auth/me  (requires auth middleware)
 
 ```bash
 # Register
-curl -X POST http://localhost:3001/api/auth/register \
+curl -X POST http://localhost:5006/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password123","name":"Test User"}'
 
 # Login
-curl -X POST http://localhost:3001/api/auth/login \
+curl -X POST http://localhost:5006/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password123"}'
 ```

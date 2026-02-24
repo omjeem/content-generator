@@ -168,7 +168,7 @@ All errors follow this format:
 ## Completion Criteria
 
 - All 11 routes return correct responses
-- Swagger UI loads at http://localhost:3001/api/docs
+- Swagger UI loads at http://localhost:5006/api/docs
 - Can test auth flow entirely from Swagger UI
 - Can trigger content generation from Swagger UI
 - All routes have OpenAPI descriptions and example responses
