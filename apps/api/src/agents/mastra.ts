@@ -47,6 +47,8 @@ export interface PipelineResult {
   suggestionId?: string
   trendsUsed?: string[]
   scrapingError?: string
+  /** Whether trends came from live APIs or the evergreen fallback (#34) */
+  trendSource?: 'live' | 'fallback'
 }
 
 // ── Main orchestrator ─────────────────────────────────────────────────────────
@@ -151,14 +153,19 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
   }
 
   // ── STEP 3: Trend Research (Agent 3) ─────────────────────────────────────────
+  // For returning users (persona already exists), trend research is independent
+  // of any further persona work so we can start it immediately. (#31)
   let trends
+  let trendIsLive = false
   try {
-    console.log('[pipeline] Step 3: Researching trends...')
-    const { result: trendResult, usage: trendUsage } = await researchTrendsForUser({
+    console.log('[pipeline] Step 3: Researching trends (parallel-ready)...')
+    const { result: trendResult, usage: trendUsage, isLive } = await researchTrendsForUser({
       industry: persona.industry ?? 'business',
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
+      contentPillars: persona.contentPillars,  // for balanced selection (#15)
     })
     trends = trendResult
+    trendIsLive = isLive
 
     // Track trend research token usage — fire-and-forget
     trackTokenUsage({
@@ -170,10 +177,11 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
       totalTokens: trendUsage.inputTokens + trendUsage.outputTokens,
     })
 
-    console.log(`[pipeline] Step 3: Found ${trends.trends.length} relevant trends.`, trends)
+    console.log(`[pipeline] Step 3: Found ${trends.trends.length} relevant trends (${isLive ? 'live' : 'fallback'}).`)
   } catch (err) {
-    console.warn('[pipeline] Step 3: Trend research failed, continuing with empty trends:', err, trends)
+    console.warn('[pipeline] Step 3: Trend research failed, continuing with empty trends:', err)
     trends = { trends: [], rawTrends: [] }
+    trendIsLive = false
   }
 
   // ── STEP 4: Content Generation (Agent 4) ─────────────────────────────────────
@@ -232,6 +240,7 @@ export async function runContentPipeline(input: PipelineInput): Promise<Pipeline
     suggestions: contentIdeas.ideas as ISuggestion[],
     suggestionId: String(saved._id),
     trendsUsed: trends.rawTrends,
+    trendSource: trendIsLive ? 'live' : 'fallback',
   }
 }
 

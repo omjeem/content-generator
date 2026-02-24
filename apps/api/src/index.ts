@@ -18,6 +18,7 @@ import tokenUsageRoutes from './routes/tokenUsage'
 
 // Services
 import { seedDefaultTokenLimit } from './services/tokenUsage'
+import { getHealthStatus } from './services/healthCheck'
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -59,12 +60,18 @@ app.use(express.urlencoded({ extended: true }))
 app.use(cookieParser())
 
 // ── Health Check ─────────────────────────────────────────────────────────────
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    docs: `http://localhost:${PORT}/api/docs`,
-  })
+// Returns detailed degradation status — no auth required (used by monitoring)
+app.get('/api/health', async (_req, res) => {
+  try {
+    const report = await getHealthStatus()
+    const httpStatus = report.status === 'down' ? 503 : 200
+    res.status(httpStatus).json({
+      ...report,
+      docs: `http://localhost:${PORT}/api/docs`,
+    })
+  } catch {
+    res.status(500).json({ status: 'down', timestamp: new Date().toISOString() })
+  }
 })
 
 // ── API Routes ────────────────────────────────────────────────────────────────

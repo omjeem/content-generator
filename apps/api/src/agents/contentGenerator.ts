@@ -83,6 +83,21 @@ Return ONLY a valid JSON object (no markdown, no extra text):
 }`,
 })
 
+// ── Compressed persona summary (#23) ─────────────────────────────────────────
+// Produces a 5-bullet summary instead of per-field verbose listing.
+// Saves ~150 tokens per generation call without losing signal.
+
+function buildPersonaSummary(persona: IUserPersonaDocument): string {
+  const lines: string[] = [
+    `• Industry/niche: ${persona.industry ?? 'Business'} | Goal: ${persona.platformGoal ?? 'thought-leadership'}`,
+    `• Audience: ${persona.targetAudience ?? 'Business professionals'}`,
+    `• Content pillars: ${persona.contentPillars.slice(0, 4).join(', ') || persona.topics.slice(0, 4).join(', ') || 'Leadership, Growth, Innovation'}`,
+    `• Voice: ${persona.tone ?? 'Professional'} tone, ${persona.writingStyle ?? 'clear'} style | Formats: ${persona.postFormats.slice(0, 3).join(', ') || 'text-post, carousel'}`,
+    `• Goal: ${persona.goals?.slice(0, 120) ?? 'Build thought leadership on LinkedIn'}`,
+  ]
+  return lines.join('\n')
+}
+
 // ── Usage tuple type ──────────────────────────────────────────────────────────
 
 export interface ContentGenerationResult {
@@ -108,22 +123,15 @@ export async function generateContentIdeas(input: {
   // Build context override section
   const contextSection = buildContextSection(context)
 
+  // ── Compressed persona prompt (#23) ──────────────────────────────────────
+  // 5-bullet summary instead of verbose field listing — saves ~150 tokens/call.
+  const personaSummary = buildPersonaSummary(persona)
+
   const prompt = `Generate 5-10 authentic LinkedIn post ideas for this creator.
 Each idea MUST include all fields: topic, angle, format, hook, whyItFits, seoKeywords (3-5), clickbaitHooks (2-3), postPointers (4-6), callToAction.
 
-## USER PERSONA
-Writing Style: ${persona.writingStyle ?? 'Not analysed'}
-Tone: ${persona.tone ?? 'Professional'}
-Topics: ${persona.topics.join(', ') || 'General business'}
-Post Formats Preferred: ${persona.postFormats.join(', ') || 'text-post, carousel'}
-
-## GOALS & STRATEGY
-Professional Goals: ${persona.goals ?? 'Build thought leadership'}
-Target Audience: ${persona.targetAudience ?? 'Business professionals'}
-Industry: ${persona.industry ?? 'Business'}
-Content Pillars: ${persona.contentPillars.join(', ') || 'Leadership, Growth, Innovation'}
-Posting Frequency: ${persona.postingFrequency ?? 'Weekly'}
-Platform Goal: ${persona.platformGoal ?? 'thought-leadership'}
+## CREATOR PROFILE
+${personaSummary}
 
 ## CURRENT TRENDS IN THEIR NICHE
 ${trendsList}
@@ -147,6 +155,14 @@ Return ONLY the JSON object with the ideas array.`
 
       if (attempt > 1) {
         console.log(`[contentGenerator] ✓ Succeeded on retry attempt ${attempt}`)
+      }
+
+      // ── Diversity validation (#22) ─────────────────────────────────────────
+      // Warn (but don't fail) if output lacks format variety or topic diversity.
+      // Issues logged so they can inform prompt tuning.
+      const diversityWarnings = validateDiversity(ideas)
+      if (diversityWarnings.length > 0) {
+        console.warn('[contentGenerator] Diversity check:', diversityWarnings.join(' | '))
       }
 
       return {
@@ -185,6 +201,36 @@ function buildSimplifiedPrompt(
 Topics: ${topTopics}. Recent trends: ${topTrends || 'general industry trends'}.
 Return ONLY a JSON object:
 {"ideas":[{"topic":"...","angle":"...","format":"text-post","hook":"...","whyItFits":"...","seoKeywords":["#tag"],"clickbaitHooks":["...","..."],"postPointers":["...","...","...","..."],"callToAction":"..."}]}`
+}
+
+// ── Diversity validation (#22) ────────────────────────────────────────────────
+// Returns an array of warning strings (empty = all good).
+
+function validateDiversity(ideas: ContentIdeas): string[] {
+  const warnings: string[] = []
+
+  // Check format diversity — expect ≥3 unique formats
+  const formats = ideas.ideas.map((i) => i.format)
+  const uniqueFormats = new Set(formats)
+  if (uniqueFormats.size < 3 && ideas.ideas.length >= 5) {
+    warnings.push(
+      `Low format diversity: only ${uniqueFormats.size} format(s) used (${[...uniqueFormats].join(', ')})`
+    )
+  }
+
+  // Check topic diversity — no topic should repeat more than twice
+  const topicCounts = new Map<string, number>()
+  for (const idea of ideas.ideas) {
+    const topicKey = idea.topic.toLowerCase().slice(0, 40)
+    topicCounts.set(topicKey, (topicCounts.get(topicKey) ?? 0) + 1)
+  }
+  for (const [topic, count] of topicCounts.entries()) {
+    if (count > 2) {
+      warnings.push(`Topic repeated ${count}x: "${topic}"`)
+    }
+  }
+
+  return warnings
 }
 
 // ── Build optional context override section ───────────────────────────────────

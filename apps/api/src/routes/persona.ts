@@ -8,6 +8,7 @@ import {
   deduplicatePosts,
   mergePersonaAnalysis,
   createPersonaSnapshot,
+  computePersonaDiff,
 } from '../services/personaMerge'
 import mongoose from 'mongoose'
 import crypto from 'crypto'
@@ -362,12 +363,16 @@ router.post('/add-posts', async (req: AuthRequest, res: Response, next: NextFunc
 
     const updatedPersona = await UserPersona.findOneAndUpdate({ userId }, updateQuery, { new: true })
 
+    // Compute diff for display in the frontend (#28)
+    const diff = updatedPersona ? computePersonaDiff(snapshot, updatedPersona) : null
+
     res.json({
       message: `Successfully added ${uniqueNewPosts.length} new post${uniqueNewPosts.length !== 1 ? 's' : ''} to your persona.`,
       postsAdded: uniqueNewPosts.length,
       duplicatesSkipped: body.postsArray.length - uniqueNewPosts.length,
       persona: updatedPersona,
       batchId,
+      diff,
     })
   } catch (err) {
     next(err)

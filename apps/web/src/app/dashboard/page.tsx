@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const [loadingStep, setLoadingStep] = useState(0)
   const [suggestions, setSuggestions] = useState<ISuggestion[]>([])
   const [trendsUsed, setTrendsUsed] = useState<string[]>([])
+  const [trendSource, setTrendSource] = useState<'live' | 'fallback' | null>(null)
   const [generateError, setGenerateError] = useState('')
 
   // Load persona on mount
@@ -57,6 +58,7 @@ export default function DashboardPage() {
       const result = await suggestionsApi.generate({ context })
       setSuggestions(result.suggestions)
       setTrendsUsed(result.trendsUsed)
+      setTrendSource(result.trendSource ?? 'live')
       setGenerateState('done')
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
@@ -205,10 +207,24 @@ export default function DashboardPage() {
           {/* Trends used */}
           {trendsUsed.length > 0 && (
             <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3">
-              <p className="text-sm text-blue-700">
-                <span className="font-medium">Trending topics used: </span>
-                {trendsUsed.join(', ')}
-              </p>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Live / Fallback badge (#34) */}
+                {trendSource === 'live' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold bg-green-100 text-green-700 px-2 py-0.5 rounded-full shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                    Live trends
+                  </span>
+                ) : trendSource === 'fallback' ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                    Evergreen topics
+                  </span>
+                ) : null}
+                <p className="text-sm text-blue-700 min-w-0">
+                  <span className="font-medium">Trending topics used: </span>
+                  {trendsUsed.slice(0, 5).join(', ')}{trendsUsed.length > 5 ? ` +${trendsUsed.length - 5} more` : ''}
+                </p>
+              </div>
             </div>
           )}
 

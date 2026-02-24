@@ -5,6 +5,7 @@ import type {
   IUserPersona,
   IPersonaAnalysisInput,
   IAddPostsRequest,
+  IAddPostsResponse,
   IOnboardingMessage,
   IOnboardingResponse,
   IChatSession,
@@ -90,13 +91,7 @@ export const personaApi = {
   get: () => request<{ persona: IUserPersona }>('/api/persona'),
 
   addPosts: (body: IAddPostsRequest) =>
-    request<{
-      message: string
-      postsAdded: number
-      duplicatesSkipped: number
-      persona: IUserPersona
-      batchId: string
-    }>('/api/persona/add-posts', {
+    request<IAddPostsResponse>('/api/persona/add-posts', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

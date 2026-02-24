@@ -89,11 +89,24 @@ const HN_QUERY_MAP: Record<string, string> = {
   hr: 'hiring remote work people management',
 }
 
-// ── Utility: keyword relevance check ─────────────────────────────────────────
+// ── Utility: keyword relevance check (word-boundary aware) ───────────────────
+// Uses \b word boundaries so short words like "ai" don't match "tail" or "email".
+// Falls back to simple includes() for multi-word phrases (spaces break \b matching).
 
 function isRelevant(text: string, keywords: string[]): boolean {
   const lower = text.toLowerCase()
-  return keywords.some((kw) => lower.includes(kw.toLowerCase()))
+  return keywords.some((kw) => {
+    const kwLower = kw.toLowerCase().trim()
+    if (!kwLower) return false
+    // Multi-word keyword: use simple includes (word boundaries don't help across spaces)
+    if (kwLower.includes(' ')) return lower.includes(kwLower)
+    // Single word: use word-boundary regex to avoid false partial matches
+    try {
+      return new RegExp(`\\b${kwLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(lower)
+    } catch {
+      return lower.includes(kwLower)
+    }
+  })
 }
 
 // ── Source 1: Tavily — premium AI web search ──────────────────────────────────
@@ -145,13 +158,18 @@ async function fetchFromHackerNews(
   industry: string,
 ): Promise<RawTrendItem[]> {
   try {
-    // Build a targeted query from the user's keywords
-    const baseQuery = keywords.slice(0, 3).join(' ')
-    // Map known topics to better HN search terms
-    const mapped = keywords
-      .map((k) => HN_QUERY_MAP[k.toLowerCase()] ?? k)
-      .join(' ')
-    const query = mapped || baseQuery || industry
+    // Build a focused HN query — 3-5 terms max for best relevance.
+    // Too many terms cause HN Algolia to return noisy/empty results.
+    //
+    // Strategy:
+    //  1. Check HN_QUERY_MAP for known topic expansions (e.g. "ai" → "AI machine learning LLM")
+    //  2. Use the first mapped expansion found (single best match)
+    //  3. Fall back to the top 3 raw keywords or the industry name
+    const firstMappedExpansion = keywords
+      .map((k) => HN_QUERY_MAP[k.toLowerCase()])
+      .find(Boolean) // first hit wins
+    const fallbackTerms = keywords.slice(0, 3).join(' ') || industry
+    const query = firstMappedExpansion ?? fallbackTerms
 
     const url = new URL('https://hn.algolia.com/api/v1/search_by_date')
     url.searchParams.set('query', query)

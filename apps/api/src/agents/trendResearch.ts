@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { fetchRealTrendingContent, getTrendingTopics, getDailyTrends } from '../services/trends'
 import type { RawTrendItem } from '../services/trends'
 import { extractJSON } from '../utils/extractJSON'
+import { scoreAndRankTrends, selectBalancedTrends } from '../utils/scoring'
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -65,6 +66,8 @@ rawTrends should list ALL the input titles (up to 30).`,
 export interface TrendResearchResult {
   result: TrendResult
   usage: { inputTokens: number; outputTokens: number }
+  /** Whether trends were from live APIs (true) or the evergreen fallback (false) */
+  isLive: boolean
 }
 
 // ── Helper: run trend research for a user ────────────────────────────────────
@@ -72,10 +75,12 @@ export interface TrendResearchResult {
 export async function researchTrendsForUser(input: {
   industry: string
   topics: string[]
+  contentPillars?: string[]  // used for balanced trend selection
   geo?: string
 }): Promise<TrendResearchResult> {
   const geo = input.geo ?? 'US'
   const keywords = [input.industry, ...input.topics].filter(Boolean).slice(0, 6)
+  const contentPillars = input.contentPillars ?? input.topics.slice(0, 3)
 
   console.log(`[trendResearch] Starting real-API trend fetch | keywords=[${keywords.join(', ')}] geo=${geo}`)
 
@@ -90,7 +95,6 @@ export async function researchTrendsForUser(input: {
       `[trendResearch] Got ${rawItems.length} real items from APIs`,
       `(sources: ${[...new Set(rawItems.map((i) => i.source))].join(', ')})`
     )
-    console.log({rawItems})
   } catch (err) {
     console.warn('[trendResearch] fetchRealTrendingContent failed:', (err as Error).message)
   }
@@ -98,13 +102,27 @@ export async function researchTrendsForUser(input: {
   // ── Fallback if all APIs fail ─────────────────────────────────────────────
   if (rawItems.length === 0) {
     console.warn('[trendResearch] All APIs failed — using evergreen fallback')
-    return { result: buildFallbackResult(input.industry, input.topics), usage: { inputTokens: 0, outputTokens: 0 } }
+    return { result: buildFallbackResult(input.industry, input.topics), usage: { inputTokens: 0, outputTokens: 0 }, isLive: false }
   }
 
-  // ── Step 2: Format items for the agent ───────────────────────────────────
-  // Include source + score context so the agent can prioritise quality stories
-  const formattedList = rawItems
-    .slice(0, 30)
+  // ── Step 2: Score + balanced-select items before sending to LLM (#15) ─────
+  // This pre-filters for relevance deterministically (zero LLM cost),
+  // so the agent receives a smaller, more relevant input and needs less filtering.
+  const personaSignals = {
+    topics: input.topics,
+    contentPillars,
+    industry: input.industry,
+  }
+  const scoredItems = scoreAndRankTrends(rawItems, personaSignals)
+  const balancedItems = selectBalancedTrends(scoredItems, contentPillars, 20)
+
+  console.log(
+    `[trendResearch] Scoring: ${rawItems.length} → ${balancedItems.length} items after scoring+balance`,
+    `| top score: ${balancedItems[0]?.relevanceScore ?? 0}`
+  )
+
+  // ── Step 3: Format items for the agent — include relevance score as hint ──
+  const formattedList = balancedItems
     .map((item, i) => {
       const sourcePart = item.source.startsWith('rss:')
         ? item.source.replace('rss:', '')
@@ -113,18 +131,19 @@ export async function researchTrendsForUser(input: {
         : item.source === 'tavily'
         ? 'Web (Tavily)'
         : item.source
-      return `${i + 1}. [${sourcePart}] ${item.title}`
+      const scoreHint = item.relevanceScore > 0 ? ` [relevance:${item.relevanceScore}]` : ''
+      return `${i + 1}. [${sourcePart}]${scoreHint} ${item.title}`
     })
     .join('\n')
 
   const allRawTitles = rawItems.map((item) => item.title)
 
-  // ── Step 3: Agent filters for relevance and adds content angles ───────────
-  const prompt = `Filter and enrich these REAL trending stories for a LinkedIn creator in the **${input.industry}** industry.
-Their content pillars / keywords: ${input.topics.slice(0, 5).join(', ')}.
+  // ── Step 4: Agent adds content angles to pre-scored items ─────────────────
+  const prompt = `Enrich these pre-scored trending stories for a LinkedIn creator in the **${input.industry}** industry.
+Content pillars: ${contentPillars.slice(0, 5).join(', ')}.
 Target geo: ${geo}.
 
-Real stories fetched from live sources (Hacker News, TechCrunch, HBR, VentureBeat, etc.):
+Stories (pre-sorted by persona relevance — higher [relevance:N] = better fit):
 ${formattedList}
 
 Select the 4-8 most relevant stories. Add relevance reason and content angle for each.
@@ -145,20 +164,20 @@ Return ONLY the JSON object.`
       rawJson = extractJSON(text, 'trend research agent')
     } catch {
       console.warn('[trendResearch] No JSON in agent response — using fallback with raw titles')
-      return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage }
+      return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage, isLive: false }
     }
 
     const parsed = TrendResultSchema.safeParse(rawJson)
     if (!parsed.success) {
       console.warn('[trendResearch] Schema validation failed:', parsed.error.message)
-      return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage }
+      return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage, isLive: false }
     }
 
     console.log(`[trendResearch] ✓ ${parsed.data.trends.length} curated trends from real data`)
-    return { result: parsed.data, usage }
+    return { result: parsed.data, usage, isLive: true }
   } catch (err) {
     console.error('[trendResearch] Agent error:', (err as Error).message)
-    return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage: { inputTokens: 0, outputTokens: 0 } }
+    return { result: buildFallbackResult(input.industry, input.topics, allRawTitles), usage: { inputTokens: 0, outputTokens: 0 }, isLive: false }
   }
 }
 

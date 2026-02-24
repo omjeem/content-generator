@@ -120,6 +120,7 @@ router.post('/generate', async (req: AuthRequest, res: Response, next: NextFunct
           suggestions: result.suggestions,
           id: result.suggestionId,
           trendsUsed: result.trendsUsed,
+          trendSource: result.trendSource ?? 'live',
           generatedAt: new Date().toISOString(),
         })
         break

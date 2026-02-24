@@ -157,6 +157,25 @@ export interface IAddPostsRequest {
   source?: 'manual' | 'linkedin-scrape' | 'add-posts'
 }
 
+// Diff between persona before and after a post addition (#28)
+export interface IPersonaDiff {
+  topicsAdded: string[]
+  topicsRemoved: string[]
+  formatsAdded: string[]
+  writingStyleChanged: boolean
+  toneChanged: boolean
+}
+
+// Response from POST /api/persona/add-posts
+export interface IAddPostsResponse {
+  message: string
+  postsAdded: number
+  duplicatesSkipped: number
+  persona: IUserPersona
+  batchId: string
+  diff?: IPersonaDiff | null
+}
+
 // Response from GET /api/persona/posts
 export interface IPersonaPostsResponse {
   batches: Array<{
@@ -197,6 +216,8 @@ export interface ISuggestionsGenerateResponse {
   id: string
   generatedAt: string
   trendsUsed: string[]
+  /** Whether trends came from live APIs or evergreen fallback (#34) */
+  trendSource?: 'live' | 'fallback'
 }
 
 export interface IPaginatedResponse<T> {

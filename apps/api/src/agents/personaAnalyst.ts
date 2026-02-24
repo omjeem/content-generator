@@ -75,7 +75,8 @@ Respond with valid JSON matching this exact structure:
   "engagementPatterns": "string",
   "summary": "string"
 }`,
-  tools: { scrapeLinkedIn: linkedinScrapeTool },
+  // Note: linkedinScrapeTool removed (#35) — scraping is done by resolvePostsFromInput()
+  // before calling this agent. The agent only analyses pre-fetched text.
 })
 
 // ── Usage tuple types ─────────────────────────────────────────────────────────

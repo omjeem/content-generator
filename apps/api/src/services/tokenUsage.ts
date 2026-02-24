@@ -60,28 +60,61 @@ export async function seedDefaultTokenLimit(): Promise<void> {
   }
 }
 
+// ── In-memory cache for SystemConfig token limit (#26) ───────────────────────
+// Avoids a DB round-trip on every quota check (called before every AI operation).
+// 5-minute TTL — short enough to pick up admin changes within a reasonable window.
+
+const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000
+
+interface ConfigCacheEntry {
+  value: number
+  cachedAt: number
+}
+
+let _configCache: ConfigCacheEntry | null = null
+
+function getCachedDefaultLimit(): number | null {
+  if (!_configCache) return null
+  if (Date.now() - _configCache.cachedAt > CONFIG_CACHE_TTL_MS) {
+    _configCache = null
+    return null
+  }
+  return _configCache.value
+}
+
+function setCachedDefaultLimit(value: number): void {
+  _configCache = { value, cachedAt: Date.now() }
+}
+
 // ── Get effective limit for a user ───────────────────────────────────────────
 
 async function getEffectiveLimit(
   userTokenLimit: number | null | undefined
 ): Promise<number> {
-  // Per-user override takes priority
+  // Per-user override takes priority (no cache needed — per-user)
   if (typeof userTokenLimit === 'number' && userTokenLimit > 0) {
     return userTokenLimit
   }
 
-  // Read from SystemConfig
+  // Check in-memory cache first
+  const cached = getCachedDefaultLimit()
+  if (cached !== null) return cached
+
+  // Read from SystemConfig and populate cache
   try {
     const config = await SystemConfig.findOne({
       key: CONFIG_KEYS.DEFAULT_TOKEN_LIMIT,
     }).lean()
     if (config && typeof config.value === 'number' && config.value > 0) {
+      setCachedDefaultLimit(config.value)
       return config.value
     }
   } catch (err) {
     console.warn('[tokenUsage] Could not read SystemConfig, using fallback:', (err as Error).message)
   }
 
+  // Cache the fallback too to avoid hammering DB on repeated failures
+  setCachedDefaultLimit(FALLBACK_DEFAULT_LIMIT)
   return FALLBACK_DEFAULT_LIMIT
 }
 
