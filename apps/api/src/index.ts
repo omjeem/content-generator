@@ -21,7 +21,7 @@ import { seedDefaultTokenLimit } from "./services/tokenUsage";
 import { getHealthStatus } from "./services/healthCheck";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5006;
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 // Explicit allowlist — never reflect arbitrary request origins (CSRF risk)

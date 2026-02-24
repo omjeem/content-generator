@@ -64,7 +64,7 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1),
   JWT_SECRET: z.string().min(32),
   GEMINI_API_KEY: z.string().min(1),
-  PORT: z.string().default("3001"),
+  PORT: z.string().default("5006"),
   // TAVILY_API_KEY is optional (fallback for trends)
   TAVILY_API_KEY: z.string().optional(),
 });

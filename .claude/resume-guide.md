@@ -66,7 +66,7 @@ npm run dev
 
 ### Key Port Numbers
 
-- API (Hono): 3001
+- API (Hono): 5006
 - Web (Next.js): 3000
 
 ### Key Technologies (DO NOT change these)
@@ -130,5 +130,5 @@ All values must be in `.env` (gitignored). See `.env.example` for where to get e
 - `MONGODB_URI` → https://cloud.mongodb.com (free M0 cluster)
 - `JWT_SECRET` → Any 64-char random string
 - `TAVILY_API_KEY` → https://tavily.com (free tier, optional)
-- `PORT` → 3001
+- `PORT` → 5006
 - `NEXT_PUBLIC_API_URL` → http://localhost:5006

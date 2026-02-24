@@ -141,10 +141,10 @@
 
 ## Decision 10: Port Assignments
 
-- **API (Hono)**: Port 3001
+- **API (Hono)**: Port 5006
 - **Web (Next.js)**: Port 3000
-- **Why 3001 for API**: Next.js defaults to 3000, so API gets 3001 to avoid conflicts
-- **In .env**: `PORT=3001`, `NEXT_PUBLIC_API_URL=http://localhost:5006`
+- **Why 5006 for API**: Next.js defaults to 3000, so API gets 5006 to avoid conflicts
+- **In .env**: `PORT=5006`, `NEXT_PUBLIC_API_URL=http://localhost:5006`
 
 ## Decision 11: Flexible Content Generation (3 Modes) — 2026-02-21
 

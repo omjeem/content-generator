@@ -62,7 +62,7 @@ GEMINI_API_KEY=          # https://ai.google.dev — free, no credit card
 MONGODB_URI=             # https://cloud.mongodb.com — Atlas free M0 cluster
 JWT_SECRET=              # Any 64-char random string: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
 TAVILY_API_KEY=          # https://tavily.com — free tier, 1000 searches/month
-PORT=3001                # Backend port
+PORT=5006                # Backend port
 NEXT_PUBLIC_API_URL=http://localhost:5006  # Frontend → Backend URL
 ```
 
@@ -277,4 +277,4 @@ NEXT_PUBLIC_API_URL=http://localhost:5006  # Frontend → Backend URL
 7. **Puppeteer for LinkedIn** — with fallback to manual paste
 8. **MongoDB collection names**: `users`, `user_personas`, `chat_sessions`, `content_suggestions`
 9. **JWT stored in httpOnly cookies** on frontend for security
-10. **All ports**: API=3001, Web=3000
+10. **All ports**: API=5006, Web=3000

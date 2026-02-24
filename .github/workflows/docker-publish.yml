@@ -133,7 +133,7 @@
 #       # Build and push the Web Docker image
 #       # NOTE: NEXT_PUBLIC_API_URL is baked into the bundle at build time.
 #       # Set the NEXT_PUBLIC_API_URL secret in your GitHub repository to your
-#       # production API URL (e.g. http://your-server-ip:3001)
+#       # production API URL (e.g. http://your-server-ip:5006)
 #       - name: Build and push Web image
 #         uses: docker/build-push-action@v5
 #         with:

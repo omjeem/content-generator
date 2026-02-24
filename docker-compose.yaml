@@ -22,10 +22,10 @@ services:
     image: content-generator-api
     container_name: content-generator-api
     ports:
-      - "3001:3001"
+      - "5006:5006"
     environment:
       - NODE_ENV=production
-      - PORT=3001
+      - PORT=5006
       - MONGODB_URI=${MONGODB_URI}
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
@@ -48,7 +48,7 @@ services:
       args:
         # IMPORTANT: This must be the URL your BROWSER will use to reach the API.
         # On the same server: use the server's IP or domain, e.g.:
-        #   http://YOUR_SERVER_IP:3001
+        #   http://YOUR_SERVER_IP:5006
         #   https://api.yourdomain.com
         # This value is baked into the Next.js bundle at build time.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5006}

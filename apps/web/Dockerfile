@@ -33,7 +33,7 @@ COPY apps/web ./apps/web
 
 # NEXT_PUBLIC_API_URL is baked into the Next.js bundle at build time.
 # It must be the externally accessible URL of your API server
-# (e.g. http://your-server-ip:3001 or https://api.yourdomain.com)
+# (e.g. http://your-server-ip:5006 or https://api.yourdomain.com)
 ARG NEXT_PUBLIC_API_URL=http://localhost:5006
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 

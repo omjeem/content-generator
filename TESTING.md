@@ -14,7 +14,7 @@ Before running tests, ensure:
    GEMINI_API_KEY=<your-key>
    MONGODB_URI=<your-connection-string>
    JWT_SECRET=<32+-char-secret>
-   PORT=3001
+   PORT=5006
    NEXT_PUBLIC_API_URL=http://localhost:5006
    ```
 3. **Generate a JWT secret** if you haven't:
@@ -27,11 +27,11 @@ Before running tests, ensure:
 ## Starting the Servers
 
 ```bash
-# From repo root — starts both API (3001) and Web (3000) in parallel
+# From repo root — starts both API (5006) and Web (3000) in parallel
 npm run dev
 
 # Or start individually:
-cd apps/api  && npm run dev   # Express API on :3001
+cd apps/api  && npm run dev   # Express API on :5006
 cd apps/web  && npm run dev   # Next.js  on :3000
 ```
 

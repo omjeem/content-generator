@@ -43,7 +43,7 @@ content-generator/
 ├── package.json                       ← Root workspace (npm workspaces)
 ├── tsconfig.base.json                 ← Shared TypeScript config
 ├── apps/
-│   ├── api/                           ← Express + TypeScript backend (port 3001)
+│   ├── api/                           ← Express + TypeScript backend (port 5006)
 │   │   ├── package.json
 │   │   ├── tsconfig.json
 │   │   ├── nodemon.json
@@ -153,6 +153,6 @@ content-generator/
 - Scraper: **Puppeteer** (with manual paste fallback)
 - Trends: **google-trends-api** (no API key needed)
 - Auth: **JWT in httpOnly cookies**
-- Ports: API=**3001**, Web=**3000**
+- Ports: API=**5006**, Web=**3000**
 - Secrets: Always via `process.env.VAR` — never hardcoded
 - MongoDB collections: `users`, `user_personas`, `chat_sessions`, `content_suggestions`

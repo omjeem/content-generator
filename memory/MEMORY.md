@@ -19,7 +19,7 @@
 
 ## Project Ports
 
-- API (Express): 3001
+- API (Express): 5006
 - Web (Next.js): 3000
 
 ## Tech Stack (immutable decisions)

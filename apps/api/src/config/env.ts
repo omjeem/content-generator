@@ -6,7 +6,7 @@ const envSchema = z.object({
   GOOGLE_GENERATIVE_AI_API_KEY: z
     .string()
     .min(1, "GOOGLE_GENERATIVE_AI_API_KEY is required"),
-  PORT: z.string().default("3001"),
+  PORT: z.string().default("5006"),
   NEXT_PUBLIC_API_URL: z.string().default("http://localhost:3000"),
   // Optional — fallback for trend research
   TAVILY_API_KEY: z.string().optional(),

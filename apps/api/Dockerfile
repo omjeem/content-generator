@@ -72,7 +72,7 @@ COPY package.json ./root-package.json
 # Install ONLY production dependencies
 RUN npm install --omit=dev --ignore-scripts
 
-EXPOSE 3001
+EXPOSE 5006
 
 # Health check so docker compose / orchestrators know when ready
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=5 \
