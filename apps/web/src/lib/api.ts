@@ -23,24 +23,17 @@ import type {
   ITokenRequest,
 } from "@repo/shared-types";
 
-// In production, Next.js rewrites /api/* → the Express backend (same domain).
-// This means cookies are set on the frontend's domain and the middleware can
-// read them — fixing the cross-origin cookie redirect bug.
+// ── Base URLs ─────────────────────────────────────────────────────────────────
 //
-// We use a relative base URL so all API calls go through the Next.js rewrite
-// proxy in both local dev and production. NEXT_PUBLIC_API_URL is only used by
-// next.config.mjs to configure the rewrite destination.
+// All regular calls use BASE_URL="" (relative) so they go through the Next.js
+// rewrite proxy (/api/* → Express). Cookies are then same-origin and always
+// forwarded correctly in both dev and production.
+//
+// Long-running AI calls (30–90 s) use DIRECT_API_URL to bypass the proxy's
+// ~60 s timeout. In production NEXT_PUBLIC_API_URL points to the public API
+// host. In dev it falls back to "" so they also go through the proxy (the
+// Next.js dev server has no timeout, so this is safe in dev).
 const BASE_URL = "";
-
-// For long-running AI endpoints (30–90 s) we bypass the Next.js rewrite proxy
-// and call the Express API directly from the browser. The proxy has a platform
-// default timeout (~60 s on most hosts) that drops long connections before the
-// AI pipeline finishes — producing a spurious 500 on the client even though the
-// backend completed successfully. Direct calls avoid the proxy entirely.
-//
-// NEXT_PUBLIC_API_URL must be set to the publicly accessible API base
-// (e.g. https://api.yourdomain.com). Falls back to relative path in dev when
-// the env var is absent (Next.js dev server has no proxy timeout).
 const DIRECT_API_URL =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 
@@ -58,13 +51,51 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...options,
+// ── Silent token refresh ──────────────────────────────────────────────────────
+// Access tokens expire after 15 min. Rather than kicking the user to /login on
+// every expiry, we silently call /api/auth/refresh (which rotates the refresh
+// token and issues a new access token cookie) and retry the original request.
+// Only one refresh is attempted per original call — if refresh also fails we
+// redirect to /login so the user can log back in.
+//
+// The refresh call always goes through BASE_URL (the Next.js proxy) because
+// the refreshToken cookie has path:"/api/auth" — the browser only sends it to
+// that path prefix, which works correctly via the proxy rewrite.
+
+let _refreshing: Promise<void> | null = null; // deduplicate concurrent refreshes
+
+async function silentRefresh(): Promise<void> {
+  if (_refreshing) return _refreshing; // piggyback on an in-flight refresh
+
+  _refreshing = (async () => {
+    const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!res.ok) {
+      // Refresh token expired / invalid — redirect to login
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new ApiError(401, "Session expired. Please log in again.");
+    }
+  })().finally(() => {
+    _refreshing = null;
+  });
+
+  return _refreshing;
+}
+
+// ── Low-level fetchers ────────────────────────────────────────────────────────
+
+/** Execute a fetch and parse JSON, throwing ApiError on non-2xx. */
+async function execute<T>(url: string, init: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...options.headers,
+      ...init.headers,
     },
   });
 
@@ -81,33 +112,45 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return data as T;
 }
 
-// Like `request` but goes directly to the Express API (no Next.js proxy) and
-// uses an AbortSignal timeout so the browser does not give up prematurely.
+// ── request — goes through Next.js rewrite proxy (same-origin, no timeout) ──
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  try {
+    return await execute<T>(`${BASE_URL}${path}`, options);
+  } catch (err) {
+    // On 401: silently refresh the access token and retry once
+    if (err instanceof ApiError && err.status === 401) {
+      await silentRefresh(); // throws if refresh fails → surfaces to caller
+      return execute<T>(`${BASE_URL}${path}`, options);
+    }
+    throw err;
+  }
+}
+
+// ── requestDirect — bypasses proxy for long AI calls (AbortSignal timeout) ──
+//
+// In production, calls NEXT_PUBLIC_API_URL directly from the browser.
+// Cookies are sameSite:"none" + secure in production so they are forwarded
+// correctly for cross-origin requests.
+//
+// In dev, DIRECT_API_URL falls back to "" (same as BASE_URL) so all calls
+// go through the Next.js dev proxy — no cross-origin cookie issues.
 async function requestDirect<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const res = await fetch(`${DIRECT_API_URL}${path}`, {
-    ...options,
-    credentials: "include",
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  const url = `${DIRECT_API_URL}${path}`;
+  const init: RequestInit = { ...options, signal: AbortSignal.timeout(AI_TIMEOUT_MS) };
 
-  const data = await res.json().catch(() => ({ error: "Request failed" }));
-
-  if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      (data as { error?: string }).error || `HTTP ${res.status}`,
-      (data as { details?: string }).details,
-    );
+  try {
+    return await execute<T>(url, init);
+  } catch (err) {
+    // On 401: silently refresh then retry
+    if (err instanceof ApiError && err.status === 401) {
+      await silentRefresh();
+      return execute<T>(url, { ...init, signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+    }
+    throw err;
   }
-
-  return data as T;
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
