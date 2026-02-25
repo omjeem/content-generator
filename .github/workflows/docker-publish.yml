@@ -1,4 +1,4 @@
-name: Build & Push Docker Images
+name: Build, Push & Deploy
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Triggers:
@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: 'Custom image tag (defaults to "latest")'
+        description: 'Custom image tag (defaults to sha-<short-sha>)'
         required: false
-        default: 'latest'
+        default: ''
 
 # Cancel in-progress runs of the same workflow when a new push arrives
 concurrency:
@@ -22,8 +22,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Change these to your Docker Hub username and desired image names
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
   API_IMAGE_NAME: content-generator-api
   WEB_IMAGE_NAME: content-generator-web
 
@@ -37,6 +36,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      # Short SHA tag produced by metadata-action (e.g. "sha-a1b2c3d")
+      # Used by the deploy job to pull the exact image that was just built.
+      image_tag: ${{ steps.meta-api.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -54,22 +57,23 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Generate image tags and labels automatically
+      # Generate image tags and labels automatically.
       # Tags produced:
       #   - latest (on main branch)
-      #   - sha-<short-git-sha> (always — for rollbacks)
+      #   - sha-<short-git-sha>  ← pinned tag used by deploy job
       #   - YYYY.MM.DD (calendar versioning)
       - name: Extract metadata for API image
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKERHUB_USERNAME }}/${{ env.API_IMAGE_NAME }}
+          images: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.API_IMAGE_NAME }}
+          # The first tag listed becomes `steps.meta-api.outputs.version`
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
             type=schedule,pattern={{date 'YYYY.MM.DD'}}
           labels: |
             org.opencontainers.image.title=Content Generator API
@@ -99,6 +103,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.meta-web.outputs.version }}
 
     steps:
       - name: Checkout repository
@@ -113,27 +119,27 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Extract metadata for Web image
         id: meta-web
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKERHUB_USERNAME }}/${{ env.WEB_IMAGE_NAME }}
+          images: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.WEB_IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
             type=schedule,pattern={{date 'YYYY.MM.DD'}}
           labels: |
             org.opencontainers.image.title=Content Generator Web
             org.opencontainers.image.description=Next.js 14 frontend for LinkedIn AI Content Generator
             org.opencontainers.image.vendor=${{ github.repository_owner }}
 
-      # Build and push the Web Docker image
-      # NOTE: NEXT_PUBLIC_API_URL is baked into the bundle at build time.
-      # Set the NEXT_PUBLIC_API_URL secret in your GitHub repository to your
-      # production API URL (e.g. http://your-server-ip:5006)
+      # Build and push the Web Docker image.
+      # NOTE: NEXT_PUBLIC_API_URL is the rewrite proxy destination baked into
+      # the Next.js bundle at build time — set it to your server's API URL,
+      # e.g. http://YOUR_SERVER_IP:5006  (used only inside next.config rewrites).
       - name: Build and push Web image
         uses: docker/build-push-action@v5
         with:
@@ -149,28 +155,59 @@ jobs:
           cache-to: type=gha,mode=max,scope=web
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Job 3: Summary — runs after both builds succeed
+  # Job 3: SSH Deploy — pull new images and restart containers on the server
+  # Runs only after BOTH build jobs succeed.
   # ───────────────────────────────────────────────────────────────────────────
-  summary:
-    name: Deployment Summary
+  deploy:
+    name: Deploy to Production Server
     runs-on: ubuntu-latest
     needs: [build-api, build-web]
+    # Only deploy on pushes to main (not on manual dispatch unless you want it)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: SSH into server and run deploy.sh
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          # Pass the exact sha tag so the server pulls the image built in this run.
+          # IMAGE_TAG is forwarded to deploy.sh which exports it for docker-compose.
+          envs: IMAGE_TAG
+          script: |
+            set -euo pipefail
+            cd ~/apps/content-gen
+            # Pull latest repo changes so docker-compose files are up to date
+            git pull --ff-only origin main
+            # Run deploy script with the pinned SHA tag
+            IMAGE_TAG=${{ needs.build-api.outputs.image_tag }} bash ./deploy.sh
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 4: Summary — always runs last, shows status of all jobs
+  # ───────────────────────────────────────────────────────────────────────────
+  summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [build-api, build-web, deploy]
     if: always()
 
     steps:
       - name: Write summary
         run: |
-          echo "## 🚀 Docker Build & Push Complete" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Build, Push & Deploy Pipeline" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Image | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| \`${{ env.DOCKERHUB_USERNAME }}/${{ env.API_IMAGE_NAME }}:latest\` | ${{ needs.build-api.result == 'success' && '✅ Pushed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`${{ env.DOCKERHUB_USERNAME }}/${{ env.WEB_IMAGE_NAME }}:latest\` | ${{ needs.build-web.result == 'success' && '✅ Pushed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build API | ${{ needs.build-api.result == 'success' && '✅ Success' || needs.build-api.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Web | ${{ needs.build-web.result == 'success' && '✅ Success' || needs.build-web.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy    | ${{ needs.deploy.result == 'success' && '✅ Deployed' || needs.deploy.result == 'skipped' && '⏭️ Skipped (not main push)' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Git SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Image tag:** \`${{ needs.build-api.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Deploy to your server:" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker compose -f docker-compose.yaml -f docker-compose.prod.yaml pull" >> $GITHUB_STEP_SUMMARY
-          echo "docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "### Images pushed:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/${{ secrets.API_IMAGE_NAME }}:${{ needs.build-api.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/${{ secrets.WEB_IMAGE_NAME }}:${{ needs.build-web.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Both also tagged \`:latest\`" >> $GITHUB_STEP_SUMMARY
