@@ -357,3 +357,89 @@ export const feedbackApi = {
 
 // Re-export for type access in components
 export type { FeedbackRating, FeedbackAction, ISuggestionFeedback };
+
+// ── Drafts ─────────────────────────────────────────────────────────────────────
+
+import type {
+  IPostDraft,
+  IDraftBrief,
+  DraftStatus,
+  DraftPlatform,
+} from "@repo/shared-types";
+
+export const draftsApi = {
+  /** Create a new draft (optionally from a suggestion brief) */
+  create: (body: {
+    title: string;
+    platform?: DraftPlatform;
+    sourceSuggestionSetId?: string;
+    sourceSuggestionIndex?: number;
+    content?: string;
+    brief?: IDraftBrief;
+  }) =>
+    request<{ draft: IPostDraft }>("/api/drafts", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** List drafts with optional status filter and pagination */
+  list: (params?: { status?: DraftStatus; page?: number; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.page) qs.set("page", String(params.page));
+    if (params?.limit) qs.set("limit", String(params.limit));
+    const query = qs.toString() ? `?${qs.toString()}` : "";
+    return request<IPaginatedResponse<IPostDraft>>(`/api/drafts${query}`);
+  },
+
+  /** Get a single draft by ID */
+  get: (id: string) => request<{ draft: IPostDraft }>(`/api/drafts/${id}`),
+
+  /** Update draft content, title, or status */
+  update: (
+    id: string,
+    body: { content?: string; title?: string; status?: DraftStatus; changeNote?: string },
+  ) =>
+    request<{ draft: IPostDraft }>(`/api/drafts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  /** Delete a draft */
+  delete: (id: string) =>
+    request<{ message: string }>(`/api/drafts/${id}`, { method: "DELETE" }),
+
+  /**
+   * Chat with the AI post editor for a specific draft.
+   * Use message "__INIT__" to auto-generate the first draft.
+   * If applyContent=true and AI returns postContent, it's auto-saved.
+   */
+  chat: (
+    id: string,
+    body: { message: string; applyContent?: boolean },
+  ) =>
+    requestAI<{
+      reply: string;
+      sessionId: string;
+      postContent?: string;
+      charCount?: number;
+      changeExplanation?: string;
+    }>(`/api/drafts/${id}/chat`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Get the chat history for a draft's editor session */
+  getHistory: (id: string) =>
+    request<{ messages: { role: string; content: string; timestamp: string }[]; sessionId: string }>(
+      `/api/drafts/${id}/chat/history`,
+    ),
+
+  /** Publish a draft and register it as a positive feedback signal */
+  publish: (id: string) =>
+    request<{ message: string; draft: IPostDraft }>(`/api/drafts/${id}/publish`, {
+      method: "POST",
+    }),
+};
+
+export type { IPostDraft, IDraftBrief, DraftStatus, DraftPlatform };

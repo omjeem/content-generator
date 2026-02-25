@@ -12,6 +12,7 @@ import {
   generateContentIdeas,
 } from "./contentGenerator";
 import { personaChatAgent } from "./personaChat";
+import { postEditorAgent } from "./postEditor";
 import { UserPersona } from "../models/UserPersona";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
@@ -26,6 +27,7 @@ export const mastra = new Mastra({
     trendResearch: trendResearchAgent,
     contentGenerator: contentGeneratorAgent,
     personaChat: personaChatAgent,
+    postEditor: postEditorAgent,
   },
 });
 

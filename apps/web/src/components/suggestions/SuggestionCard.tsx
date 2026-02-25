@@ -1,11 +1,12 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ISuggestion } from "@repo/shared-types";
-import { feedbackApi } from "@/lib/api";
+import { feedbackApi, draftsApi, ApiError } from "@/lib/api";
 import type { FeedbackRating, FeedbackAction } from "@/lib/api";
 
 interface SuggestionCardProps {
@@ -47,10 +48,15 @@ export function SuggestionCard({
   index,
   suggestionSetId,
 }: SuggestionCardProps) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [briefExpanded, setBriefExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const [briefCopied, setBriefCopied] = useState(false);
+
+  // Write This Post state
+  const [creatingDraft, setCreatingDraft] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
 
   // Feedback state
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -115,6 +121,37 @@ export function SuggestionCard({
       setTimeout(() => setBriefCopied(false), 2000);
     } catch {
       // clipboard not available
+    }
+  }
+
+  async function handleWritePost() {
+    if (creatingDraft) return;
+    setCreatingDraft(true);
+    setDraftError(null);
+
+    try {
+      const res = await draftsApi.create({
+        title: suggestion.topic,
+        platform: suggestion.platform === "twitter" ? "twitter" : "linkedin",
+        sourceSuggestionSetId: suggestionSetId,
+        sourceSuggestionIndex: index,
+        content: "",
+        brief: {
+          topic: suggestion.topic,
+          angle: suggestion.angle,
+          format: suggestion.format,
+          hook: suggestion.hook,
+          postPointers: suggestion.postPointers ?? [],
+          callToAction: suggestion.callToAction ?? "",
+          seoKeywords: suggestion.seoKeywords ?? [],
+        },
+      });
+      router.push(`/dashboard/editor?draftId=${res.draft._id}`);
+    } catch (err) {
+      setDraftError(
+        err instanceof ApiError ? err.message : "Failed to create draft.",
+      );
+      setCreatingDraft(false);
     }
   }
 
@@ -309,6 +346,21 @@ export function SuggestionCard({
             )}
           </div>
         )}
+
+        {/* ── Write This Post button (#27) ──────────────────────────────────── */}
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          {draftError && (
+            <p className="text-xs text-red-500 mb-2">{draftError}</p>
+          )}
+          <Button
+            size="sm"
+            className="w-full text-xs bg-indigo-600 hover:bg-indigo-700 text-white"
+            onClick={() => void handleWritePost()}
+            disabled={creatingDraft}
+          >
+            {creatingDraft ? "Creating draft…" : "✏️ Write This Post"}
+          </Button>
+        </div>
 
         {/* ── Feedback Section (#17) ─────────────────────────────────────────── */}
         {suggestionSetId && (

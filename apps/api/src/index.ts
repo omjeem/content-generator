@@ -16,6 +16,7 @@ import suggestionsRoutes from "./routes/suggestions";
 import personaChatRoutes from "./routes/personaChat";
 import tokenUsageRoutes from "./routes/tokenUsage";
 import feedbackRoutes from "./routes/feedback";
+import draftsRoutes from "./routes/drafts";
 
 // Services
 import { seedDefaultTokenLimit } from "./services/tokenUsage";
@@ -132,6 +133,8 @@ app.use("/api/suggestions/generate", requestTimeout(AI_TIMEOUT_MS));
 app.use("/api/persona/analyze", requestTimeout(AI_TIMEOUT_MS));
 app.use("/api/onboarding/chat", requestTimeout(AI_TIMEOUT_MS));
 app.use("/api/persona-chat/chat", requestTimeout(AI_TIMEOUT_MS));
+// Post editor chat is AI-heavy (LLM call per turn)
+app.use("/api/drafts/:id/chat", requestTimeout(AI_TIMEOUT_MS));
 // All other routes get the short timeout
 app.use("/api", requestTimeout(DEFAULT_TIMEOUT_MS));
 
@@ -145,6 +148,7 @@ app.use("/api/persona-chat", personaChatRoutes);
 app.use("/api/tokens", tokenUsageRoutes);
 // Feedback routes: handles /api/suggestions/:setId/feedback and /api/feedback/summary
 app.use("/api", feedbackRoutes);
+app.use("/api/drafts", draftsRoutes);
 
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use("/api/docs", createSwaggerRouter());
