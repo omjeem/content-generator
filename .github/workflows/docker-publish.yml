@@ -38,8 +38,8 @@ jobs:
 
       - name: Debug secrets
         run: |
-          echo "Username length: ${#DOCKER_USER}"
-          echo "Password length: ${#DOCKER_PASS}"
+          echo "Username length: ${#DOCKER_USERNAME}"
+          echo "Password length: ${#DOCKER_PASSWORD}"
         env:
           DOCKER_USER: ${{ secrets.DOCKER_USERNAME }}
           DOCKER_PASS: ${{ secrets.DOCKER_PASSWORD }}
