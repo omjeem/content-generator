@@ -332,8 +332,8 @@ router.post(
       // Snapshot before update
       const snapshot = createPersonaSnapshot(existing);
 
-      // Merge new analysis into existing persona
-      const mergedFields = mergePersonaAnalysis(existing, analysis);
+      // Merge new analysis into existing persona — pass newPostCount for weighted blending (#4)
+      const mergedFields = mergePersonaAnalysis(existing, analysis, uniqueNewPosts.length);
 
       const batchId = crypto.randomUUID();
       const now = new Date();

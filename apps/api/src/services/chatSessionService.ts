@@ -13,7 +13,7 @@ import type { IChatSessionDocument } from "../models/ChatSession";
 
 // ── Agent type alias ─────────────────────────────────────────────────────────
 
-export type AgentType = "onboarding" | "persona-chat";
+export type AgentType = "onboarding" | "persona-chat" | "post-editor";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,27 +30,51 @@ export interface SessionHistory {
 // ── findOrCreate ──────────────────────────────────────────────────────────────
 
 /**
- * Load the chat session for a user+agent pair, or create a new one if it
- * doesn't exist yet. This is the primary entry point used by both agents.
+ * Load the chat session for a user+agent pair, or create a new one atomically.
+ *
+ * Uses findOneAndUpdate with upsert=true to prevent duplicate sessions under
+ * concurrent requests (#56). $setOnInsert only runs on document creation.
+ *
+ * @param userId      The user's string ID
+ * @param agentType   The agent type key
+ * @param sessionIdOverride  Optional custom sessionId (used for post-editor per-draft sessions)
  */
 export async function findOrCreateSession(
   userId: string,
   agentType: AgentType,
+  sessionIdOverride?: string,
 ): Promise<IChatSessionDocument> {
   const userObjectId = new mongoose.Types.ObjectId(userId);
+  const sessionId = sessionIdOverride ?? `${agentType}-${userId}`;
 
-  let session = await ChatSession.findOne({ userId: userObjectId, agentType });
-
-  if (!session) {
-    session = await ChatSession.create({
-      userId: userObjectId,
-      sessionId: `${agentType}-${userId}`,
-      agentType,
-      messages: [],
-    });
-  }
+  const session = await ChatSession.findOneAndUpdate(
+    { sessionId },
+    {
+      $setOnInsert: {
+        userId: userObjectId,
+        sessionId,
+        agentType,
+        messages: [],
+      },
+    },
+    { upsert: true, new: true },
+  );
 
   return session;
+}
+
+// ── findOrCreateEditorSession ─────────────────────────────────────────────────
+
+/**
+ * Load or create a post-editor chat session scoped to a specific draft.
+ * Each draft gets its own isolated session so conversations don't bleed
+ * between different posts.
+ */
+export async function findOrCreateEditorSession(
+  userId: string,
+  draftId: string,
+): Promise<IChatSessionDocument> {
+  return findOrCreateSession(userId, "post-editor", `post-editor-${draftId}`);
 }
 
 // ── persistMessages ───────────────────────────────────────────────────────────

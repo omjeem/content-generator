@@ -125,7 +125,7 @@ app.use("/api", generalApiLimiter);
 // Long timeout (180 s) for AI-heavy endpoints that run multi-step LLM pipelines.
 // Must be registered BEFORE the route handlers so it fires first.
 const AI_TIMEOUT_MS = 180_000; // 3 minutes — well beyond any LLM pipeline duration
-const DEFAULT_TIMEOUT_MS = 180_000; // 30 s for all other routes
+const DEFAULT_TIMEOUT_MS = 30_000; // 30 s for all other (non-AI) routes (#3)
 
 app.use("/api/suggestions/generate", requestTimeout(AI_TIMEOUT_MS));
 app.use("/api/persona/analyze", requestTimeout(AI_TIMEOUT_MS));

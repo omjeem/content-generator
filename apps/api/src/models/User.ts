@@ -1,10 +1,14 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 import bcrypt from "bcryptjs";
 
+export type UserRole = "user" | "admin";
+
 export interface IUserDocument extends Document {
   email: string;
   password: string;
   name: string;
+  role: UserRole;
+  requiresSetup: boolean;
   tokensUsed: number;
   tokenLimit: number | null;
   createdAt: Date;
@@ -32,6 +36,15 @@ const userSchema = new Schema<IUserDocument>(
       required: [true, "Name is required"],
       trim: true,
       maxlength: [100, "Name too long"],
+    },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+    requiresSetup: {
+      type: Boolean,
+      default: false,
     },
     tokensUsed: {
       type: Number,

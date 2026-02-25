@@ -1,6 +1,7 @@
 import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { authenticate, AuthRequest } from "../middleware/auth";
+import { requireAdmin } from "../middleware/adminAuth";
 import { checkTokenQuota } from "../services/tokenUsage";
 import { TokenUsageLog } from "../models/TokenUsageLog";
 import { TokenRequest } from "../models/TokenRequest";
@@ -264,8 +265,7 @@ router.get(
 
 // ── GET /api/tokens/admin/requests ────────────────────────────────────────────
 // Admin-only: list all token increase requests across all users.
-// No auth middleware beyond the existing `authenticate` — you control access
-// by only sharing these endpoints with yourself / not exposing them publicly.
+// Protected by requireAdmin — only users with role='admin' can access this.
 /**
  * @swagger
  * /api/tokens/admin/requests:
@@ -285,9 +285,12 @@ router.get(
  *     responses:
  *       200:
  *         description: List of all token increase requests with user info
+ *       403:
+ *         description: Admin access required
  */
 router.get(
   "/admin/requests",
+  requireAdmin,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const status = req.query["status"] as string | undefined;
@@ -315,6 +318,7 @@ router.get(
 // ── PATCH /api/tokens/admin/requests/:id ─────────────────────────────────────
 // Admin-only: approve or reject a token increase request.
 // On approval, automatically updates User.tokenLimit to newLimit.
+// Protected by requireAdmin — only users with role='admin' can access this.
 /**
  * @swagger
  * /api/tokens/admin/requests/{id}:
@@ -352,6 +356,8 @@ router.get(
  *         description: Request updated and user limit changed if approved
  *       400:
  *         description: Invalid input
+ *       403:
+ *         description: Admin access required
  *       404:
  *         description: Request not found
  */
@@ -369,6 +375,7 @@ const adminResolveSchema = z.discriminatedUnion("action", [
 
 router.patch(
   "/admin/requests/:id",
+  requireAdmin,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       if (!mongoose.Types.ObjectId.isValid(req.params["id"] ?? "")) {

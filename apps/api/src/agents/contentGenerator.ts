@@ -180,6 +180,15 @@ Return ONLY the JSON object with the ideas array.`;
       );
       const ideas = ContentIdeasSchema.parse(raw);
 
+      // ── Post-parse minimum count check (#5) ────────────────────────────────
+      // ContentIdeasSchema requires min(5) via Zod, but guard against edge cases
+      // where only a few ideas survive individual field validation.
+      if (ideas.ideas.length < 3) {
+        throw new Error(
+          `Only ${ideas.ideas.length} valid ideas generated — expected at least 3. Retrying.`,
+        );
+      }
+
       if (attempt > 1) {
         console.log(
           `[contentGenerator] ✓ Succeeded on retry attempt ${attempt}`,

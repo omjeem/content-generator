@@ -35,6 +35,8 @@ export interface PipelineInput {
   userId: string;
   linkedinUrl?: string;
   manualPosts?: string;
+  /** Pre-split array of post strings — takes priority over linkedinUrl/manualPosts (#2) */
+  postsArray?: string[];
   forceReanalyze?: boolean;
   context?: IGenerateContextOptions; // optional flexible generation context
 }
@@ -81,22 +83,31 @@ export async function runContentPipeline(
   try {
     const needsAnalysis = !personaAfterStep1 || input.forceReanalyze;
 
-    if (needsAnalysis && (input.linkedinUrl || input.manualPosts)) {
+    if (needsAnalysis && (input.postsArray?.length || input.linkedinUrl || input.manualPosts)) {
       console.log("[pipeline] Step 1: Running persona analysis...");
 
-      const { posts, scrapingBlocked, errorMessage } =
-        await resolvePostsFromInput({
-          linkedinUrl: input.linkedinUrl,
-          manualPosts: input.manualPosts,
-        });
+      let posts: string[];
 
-      if (scrapingBlocked) {
-        return {
-          status: "scraping_blocked",
-          message:
-            "LinkedIn scraping was blocked. Please paste your posts manually.",
-          scrapingError: errorMessage,
-        };
+      // postsArray takes priority — avoids double-parsing and resolvePostsFromInput overhead
+      if (input.postsArray?.length) {
+        posts = input.postsArray;
+      } else {
+        const { posts: resolvedPosts, scrapingBlocked, errorMessage } =
+          await resolvePostsFromInput({
+            linkedinUrl: input.linkedinUrl,
+            manualPosts: input.manualPosts,
+          });
+
+        if (scrapingBlocked) {
+          return {
+            status: "scraping_blocked",
+            message:
+              "LinkedIn scraping was blocked. Please paste your posts manually.",
+            scrapingError: errorMessage,
+          };
+        }
+
+        posts = resolvedPosts;
       }
 
       if (posts.length === 0) {

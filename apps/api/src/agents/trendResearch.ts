@@ -7,6 +7,11 @@ import {
   getDailyTrends,
 } from "../services/trends";
 import type { RawTrendItem } from "../services/trends";
+import {
+  buildTrendCacheKey,
+  getCachedTrends,
+  setCachedTrends,
+} from "../services/trendCache";
 import { extractJSON } from "../utils/extractJSON";
 import { scoreAndRankTrends, selectBalancedTrends } from "../utils/scoring";
 import type { ScoredTrendItem } from "../utils/scoring";
@@ -103,26 +108,39 @@ export async function researchTrendsForUser(input: {
     .slice(0, 6);
   const contentPillars = input.contentPillars ?? input.topics.slice(0, 3);
 
-  console.log(
-    `[trendResearch] Starting real-API trend fetch | keywords=[${keywords.join(", ")}] geo=${geo}`,
-  );
-
-  // ── Step 1: Fetch REAL trending content from live APIs ────────────────────
+  // ── Step 1: Fetch REAL trending content from live APIs (with 30-min cache) ─
   // Tier 1: Tavily (if key set) + HN Algolia + RSS feeds in parallel
   // Tier 2: HN Algolia + RSS feeds (no keys required)
+  const cacheKey = buildTrendCacheKey(keywords, input.industry, geo);
   let rawItems: RawTrendItem[] = [];
 
-  try {
-    rawItems = await fetchRealTrendingContent(keywords, input.industry, geo);
+  // Check cache first — avoids duplicate API calls within a 30-min window (#13)
+  const cachedItems = getCachedTrends(cacheKey);
+  if (cachedItems) {
     console.log(
-      `[trendResearch] Got ${rawItems.length} real items from APIs`,
-      `(sources: ${[...new Set(rawItems.map((i) => i.source))].join(", ")})`,
+      `[trendResearch] Cache HIT for key=${cacheKey} (${cachedItems.length} items)`,
     );
-  } catch (err) {
-    console.warn(
-      "[trendResearch] fetchRealTrendingContent failed:",
-      (err as Error).message,
+    rawItems = cachedItems;
+  } else {
+    console.log(
+      `[trendResearch] Cache MISS — fetching from APIs | keywords=[${keywords.join(", ")}] geo=${geo}`,
     );
+    try {
+      rawItems = await fetchRealTrendingContent(keywords, input.industry, geo);
+      console.log(
+        `[trendResearch] Got ${rawItems.length} real items from APIs`,
+        `(sources: ${[...new Set(rawItems.map((i) => i.source))].join(", ")})`,
+      );
+      // Cache successful results
+      if (rawItems.length > 0) {
+        setCachedTrends(cacheKey, rawItems);
+      }
+    } catch (err) {
+      console.warn(
+        "[trendResearch] fetchRealTrendingContent failed:",
+        (err as Error).message,
+      );
+    }
   }
 
   // ── Fallback if all APIs fail ─────────────────────────────────────────────

@@ -9,7 +9,7 @@ export interface IMessageDocument {
 export interface IChatSessionDocument extends Document {
   userId: mongoose.Types.ObjectId;
   sessionId: string;
-  agentType: "onboarding" | "orchestrator" | "persona-chat";
+  agentType: "onboarding" | "orchestrator" | "persona-chat" | "post-editor";
   messages: IMessageDocument[];
   contextSummary?: string;
   createdAt: Date;
@@ -48,7 +48,7 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
     },
     agentType: {
       type: String,
-      enum: ["onboarding", "orchestrator", "persona-chat"],
+      enum: ["onboarding", "orchestrator", "persona-chat", "post-editor"],
       required: true,
     },
     messages: {
@@ -60,9 +60,13 @@ const chatSessionSchema = new Schema<IChatSessionDocument>(
   { timestamps: true },
 );
 
-// Compound index: one session per user per agent type
+// Compound unique index: one session per user per agent type.
+// Made unique to prevent duplicate sessions under concurrent requests (#56).
+// Note: post-editor sessions use a sessionId suffix for per-draft isolation,
+// so the (userId, agentType) pair is NOT unique for post-editor — only for
+// the standard session types. For post-editor, use sessionId directly.
 chatSessionSchema.index({ userId: 1, agentType: 1 });
-chatSessionSchema.index({ sessionId: 1 });
+chatSessionSchema.index({ sessionId: 1 }, { unique: true });
 
 export const ChatSession: Model<IChatSessionDocument> =
   mongoose.model<IChatSessionDocument>("ChatSession", chatSessionSchema);

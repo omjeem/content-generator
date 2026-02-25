@@ -4,10 +4,16 @@
 
 // --- User ---
 
+export type UserRole = "user" | "admin";
+
 export interface IUser {
   _id: string;
   email: string;
   name: string;
+  role?: UserRole;
+  requiresSetup?: boolean;
+  tokensUsed?: number;
+  tokenLimit?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +52,18 @@ export interface IPersonaSnapshot {
   summary?: string;
 }
 
+// Feedback profile — auto-updated by persona learning service
+export interface IFeedbackProfile {
+  preferredTopics: string[];
+  avoidTopics: string[];
+  formatPreferences: Record<string, number>; // e.g. { carousel: 0.4, "text-post": 0.3 }
+  tonePreference?: string;
+  averageRating: number; // 1-4 scale
+  totalFeedbackCount: number;
+  lastFeedbackAt?: string;
+  averageContentLength?: number;
+}
+
 export interface IUserPersona {
   _id: string;
   userId: string;
@@ -70,6 +88,9 @@ export interface IUserPersona {
   postingFrequency?: string;
   platformGoal?: PlatformGoal;
   interviewComplete: boolean;
+  // Continuous learning signals
+  feedbackProfile?: IFeedbackProfile;
+  lastLearningUpdate?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -86,7 +107,7 @@ export interface IChatSession {
   _id: string;
   userId: string;
   sessionId: string;
-  agentType: "onboarding" | "orchestrator" | "persona-chat"; // ← added persona-chat
+  agentType: "onboarding" | "orchestrator" | "persona-chat" | "post-editor";
   messages: IMessage[];
   contextSummary?: string;
   createdAt: string;
@@ -100,7 +121,14 @@ export type PostFormat =
   | "text-post"
   | "poll"
   | "video-script"
-  | "list";
+  | "list"
+  | "tweet"
+  | "thread"
+  | "quote-tweet"
+  | "image-tweet";
+
+/** Platform a suggestion or draft targets */
+export type SuggestionPlatform = "linkedin" | "twitter";
 
 export interface ISuggestion {
   topic: string;
@@ -113,6 +141,10 @@ export interface ISuggestion {
   clickbaitHooks: string[]; // 2-3 bolder alternative hook variants
   postPointers: string[]; // 4-6 bullet points of content to write
   callToAction: string; // suggested CTA to close the post
+  /** Platform this suggestion is targeted for (#36) */
+  platform?: SuggestionPlatform;
+  /** Individual tweets for thread format (Twitter only) */
+  threadContent?: string[];
 }
 
 export interface IContentSuggestion {
@@ -214,6 +246,8 @@ export interface IGenerateContextOptions {
   platformGoal?: PlatformGoal;
   contentMix?: ContentMixPreference;
   chatRefinementContext?: string; // summary from pre-gen chat, mode='chat-refined'
+  /** Target platforms for this generation run (#36) */
+  platforms?: SuggestionPlatform[];
 }
 
 export interface ISuggestionsGenerateResponse {
@@ -347,4 +381,173 @@ export interface ITokenRequest {
   resolvedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Feature: Suggestion Feedback Loop (#B-6) ---
+
+export type FeedbackRating = "loved" | "good" | "meh" | "bad";
+export type FeedbackAction = "saved" | "draft" | "published" | "dismissed";
+
+export interface ISuggestionFeedback {
+  _id: string;
+  userId: string;
+  suggestionSetId: string; // ContentSuggestion._id
+  suggestionIndex: number; // 0-based index within the set
+  rating?: FeedbackRating;
+  action?: FeedbackAction;
+  feedbackText?: string; // optional free-text note (max 1000 chars)
+  /** Signals extracted by the learning service */
+  parsedSignals?: Record<string, unknown>;
+  /** Snapshot of the suggestion at time of feedback */
+  suggestionSnapshot?: {
+    topic: string;
+    angle: string;
+    format: PostFormat;
+    hook: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IFeedbackRequest {
+  rating?: FeedbackRating;
+  action?: FeedbackAction;
+  feedbackText?: string;
+}
+
+// --- Feature: Post Draft / Co-Writing Editor (#B-7) ---
+
+export type DraftStatus = "drafting" | "ready" | "published";
+export type DraftPlatform = "linkedin" | "twitter";
+
+export interface IDraftContentHistory {
+  content: string;
+  editedAt: string;
+  editedBy: "user" | "ai";
+  changeNote?: string;
+}
+
+export interface IDraftBrief {
+  topic: string;
+  angle: string;
+  format: PostFormat;
+  hook: string;
+  postPointers: string[];
+  callToAction: string;
+  seoKeywords: string[];
+}
+
+export interface ITwitterTweet {
+  tweetIndex: number;
+  content: string;
+  charCount: number;
+}
+
+export interface IPostDraft {
+  _id: string;
+  userId: string;
+  sourceSuggestionSetId?: string;
+  sourceSuggestionIndex?: number;
+  platform: DraftPlatform;
+  title?: string;
+  content: string;
+  contentHistory: IDraftContentHistory[];
+  brief?: IDraftBrief;
+  twitterThread?: ITwitterTweet[];
+  status: DraftStatus;
+  charCount: number;
+  chatSessionId?: string;
+  publishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ICreateDraftRequest {
+  suggestionSetId?: string;
+  suggestionIndex?: number;
+  platform?: DraftPlatform;
+  title?: string;
+  content?: string;
+  brief?: IDraftBrief;
+}
+
+export interface IUpdateDraftRequest {
+  content?: string;
+  title?: string;
+  status?: DraftStatus;
+  changeNote?: string;
+}
+
+export interface IDraftListItem {
+  _id: string;
+  title?: string;
+  platform: DraftPlatform;
+  status: DraftStatus;
+  charCount: number;
+  updatedAt: string;
+  brief?: Pick<IDraftBrief, "topic" | "format">;
+}
+
+// --- Feature: Admin Dashboard (#B-8) ---
+
+/** Admin-facing user record (includes usage stats) */
+export interface IAdminUser {
+  _id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  requiresSetup: boolean;
+  tokensUsed: number;
+  tokenLimit: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Platform-wide analytics snapshot for admin overview */
+export interface IAdminAnalyticsOverview {
+  totalUsers: number;
+  activeUsersLast7Days: number;
+  totalTokensConsumed: number;
+  totalSuggestionsGenerated: number;
+  totalDraftsCreated: number;
+  pendingTokenRequests: number;
+  /** Per-agent token breakdown */
+  tokensByAgent: Record<AgentName, number>;
+}
+
+export interface IAdminAuditLogEntry {
+  _id: string;
+  adminId: string;
+  action: string;
+  targetUserId?: string;
+  details?: Record<string, unknown>;
+  ip?: string;
+  userAgent?: string;
+  createdAt: string;
+}
+
+// --- Feature: Continuous Persona Learning (#B-10) ---
+
+/** A single learning signal derived from user feedback */
+export interface ILearningSignal {
+  userId: string;
+  feedbackId: string;
+  rating: FeedbackRating;
+  topic: string;
+  format: PostFormat;
+  platform?: SuggestionPlatform;
+  signalStrength: number; // 1.0 (loved) → 0.25 (bad)
+  createdAt: string;
+}
+
+/** Result returned by the persona learning aggregation service */
+export interface IPersonaLearningResult {
+  userId: string;
+  signalsProcessed: number;
+  feedbackProfileUpdated: boolean;
+  changes: {
+    topicsAdded: string[];
+    topicsRemoved: string[];
+    formatsAdjusted: Record<string, number>;
+  };
 }

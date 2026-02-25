@@ -64,17 +64,50 @@ export function deduplicatePosts(
 // ── Persona merge ─────────────────────────────────────────────────────────────
 
 /**
+ * Weighted blend for text fields (writingStyle, tone).
+ *
+ * When the existing persona was built from many more posts than the new batch,
+ * it should dominate the merged result. A small new batch should not erase the
+ * signal accumulated from 20+ posts.
+ *
+ * - existingWeight > 0.7: existing dominates → append new as "emerging tendencies"
+ * - existingWeight ≤ 0.7: new batch is large enough to be representative → use new
+ *
+ * @param existing    The current field value on the persona
+ * @param incoming    The value from the newly-analysed posts
+ * @param existingWeight  existingPostCount / totalPostCount (0–1)
+ */
+function blendTextFields(
+  existing: string | undefined,
+  incoming: string,
+  existingWeight: number,
+): string {
+  if (!existing) return incoming;
+  if (existingWeight > 0.7) {
+    // Existing signal is dominant — surface the new tendency without overwriting
+    return `${existing} — with emerging ${incoming} tendencies`;
+  }
+  // New batch is large enough to be the primary signal
+  return incoming;
+}
+
+/**
  * Merge a new analysis result into an existing persona document.
  *
  * Strategy:
  * - topics: union of existing + new, deduplicated, capped at 15
  * - postFormats: union, deduplicated
- * - writingStyle / tone / summary: replace with new (more data = better signal)
+ * - writingStyle / tone: weighted blend — small new batch does not erase existing signal (#4)
  * - estimatedPostFrequency → postingFrequency: only update if currently empty
+ *
+ * @param existing     The current persona document
+ * @param newAnalysis  The analysis of the newly-added posts
+ * @param newPostCount How many new posts were just analysed (used for weight calculation)
  */
 export function mergePersonaAnalysis(
   existing: IUserPersonaDocument,
   newAnalysis: PersonaAnalysis,
+  newPostCount = 0,
 ): Partial<IUserPersonaDocument> {
   const mergedTopics = deduplicateStrings([
     ...(existing.topics ?? []),
@@ -86,9 +119,14 @@ export function mergePersonaAnalysis(
     ...(newAnalysis.postFormats ?? []),
   ]);
 
+  // Compute how dominant the existing persona is relative to the new batch (#4)
+  const existingPostCount = existing.totalPostsAnalyzed ?? existing.scrapedPosts?.length ?? 0;
+  const totalCount = existingPostCount + newPostCount;
+  const existingWeight = totalCount > 0 ? existingPostCount / totalCount : 0;
+
   return {
-    writingStyle: newAnalysis.writingStyle,
-    tone: newAnalysis.tone,
+    writingStyle: blendTextFields(existing.writingStyle, newAnalysis.writingStyle, existingWeight),
+    tone: blendTextFields(existing.tone, newAnalysis.tone, existingWeight),
     topics: mergedTopics,
     postFormats: mergedFormats,
     // Only update postingFrequency if the persona doesn't have one yet

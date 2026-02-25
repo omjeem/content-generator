@@ -21,6 +21,19 @@ export interface IPersonaSnapshot {
   summary?: string;
 }
 
+// ── Feedback profile — auto-updated by personaLearning service ───────────────
+
+export interface IFeedbackProfile {
+  preferredTopics: string[]; // topics rated 'loved' or 'good'
+  avoidTopics: string[]; // topics rated 'bad' multiple times
+  formatPreferences: Record<string, number>; // percentage distribution e.g. {carousel: 0.4}
+  tonePreference?: string; // extracted from feedback patterns
+  averageRating: number; // rolling average of last 20 ratings (1-4)
+  totalFeedbackCount: number;
+  lastFeedbackAt?: Date;
+  averageContentLength?: number; // avg char count from published drafts
+}
+
 export interface IUserPersonaDocument extends Document {
   userId: mongoose.Types.ObjectId;
   linkedinUrl?: string;
@@ -51,6 +64,11 @@ export interface IUserPersonaDocument extends Document {
     | "hiring"
     | "community-building";
   interviewComplete: boolean;
+
+  // ── Continuous learning signals (Phase B #10) ──────────────────────────────
+  feedbackProfile?: IFeedbackProfile; // auto-updated by personaLearning service
+  lastLearningUpdate?: Date; // when feedbackProfile was last aggregated
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -122,6 +140,24 @@ const userPersonaSchema = new Schema<IUserPersonaDocument>(
       ],
     },
     interviewComplete: { type: Boolean, default: false },
+
+    // Continuous learning — updated by personaLearning service (#10)
+    feedbackProfile: {
+      type: new Schema(
+        {
+          preferredTopics: { type: [String], default: [] },
+          avoidTopics: { type: [String], default: [] },
+          formatPreferences: { type: Schema.Types.Mixed, default: {} },
+          tonePreference: { type: String },
+          averageRating: { type: Number, default: 0 },
+          totalFeedbackCount: { type: Number, default: 0 },
+          lastFeedbackAt: { type: Date },
+          averageContentLength: { type: Number },
+        },
+        { _id: false },
+      ),
+    },
+    lastLearningUpdate: { type: Date },
   },
   { timestamps: true },
 );
