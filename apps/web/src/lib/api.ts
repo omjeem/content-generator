@@ -21,6 +21,9 @@ import type {
   ITokenUsageLog,
   IPersonaPostsResponse,
   ITokenRequest,
+  FeedbackRating,
+  FeedbackAction,
+  ISuggestionFeedback,
 } from "@repo/shared-types";
 
 // ── Base URL ──────────────────────────────────────────────────────────────────
@@ -296,3 +299,61 @@ export const personaChatApi = {
   getPersona: () =>
     request<{ persona: IUserPersona }>("/api/persona-chat/persona"),
 };
+
+// ── Feedback ───────────────────────────────────────────────────────────────────
+
+export const feedbackApi = {
+  /**
+   * Submit feedback on one suggestion within a set.
+   * @param setId  ContentSuggestion._id
+   * @param body   { suggestionIndex, action, rating?, feedbackText? }
+   */
+  submit: (
+    setId: string,
+    body: {
+      suggestionIndex: number;
+      action: FeedbackAction;
+      rating?: FeedbackRating;
+      feedbackText?: string;
+    },
+  ) =>
+    request<{ message: string; feedbackId: string }>(
+      `/api/suggestions/${setId}/feedback`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  /**
+   * Retrieve all feedback submitted by this user for a specific suggestion set.
+   * Returns a map keyed by suggestionIndex for fast lookup.
+   */
+  getForSet: (setId: string) =>
+    request<{
+      feedbacks: Record<
+        number,
+        {
+          feedbackId: string;
+          rating?: FeedbackRating;
+          action: FeedbackAction;
+          feedbackText?: string;
+        }
+      >;
+      total: number;
+    }>(`/api/suggestions/${setId}/feedback`),
+
+  /**
+   * Get aggregated feedback summary for the current user.
+   * Used on the dashboard to show preferred topics, format distribution, etc.
+   */
+  getSummary: () =>
+    request<{
+      totalFeedback: number;
+      preferredTopics: string[];
+      avoidTopics: string[];
+      formatDistribution: Record<string, number>;
+      ratingDistribution: Record<string, number>;
+      averageRating: number;
+    }>("/api/feedback/summary"),
+};
+
+// Re-export for type access in components
+export type { FeedbackRating, FeedbackAction, ISuggestionFeedback };

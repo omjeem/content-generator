@@ -13,6 +13,11 @@ const formatColors: Record<PostFormat, string> = {
   poll: "bg-green-100 text-green-700",
   "video-script": "bg-red-100 text-red-700",
   list: "bg-orange-100 text-orange-700",
+  // Twitter formats
+  tweet: "bg-sky-100 text-sky-700",
+  thread: "bg-sky-100 text-sky-700",
+  "quote-tweet": "bg-sky-100 text-sky-700",
+  "image-tweet": "bg-sky-100 text-sky-700",
 };
 
 export function Badge({

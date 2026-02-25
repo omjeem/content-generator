@@ -103,6 +103,52 @@ Return ONLY a valid JSON object (no markdown, no extra text):
 }`,
 });
 
+// ── Feedback signals section (#19) ────────────────────────────────────────────
+// Appended to the prompt when the user has ≥3 feedback records.
+// Guides the LLM to produce ideas more aligned with what the user has responded
+// well to in the past and away from topics/formats they've dismissed.
+
+function buildFeedbackSection(persona: IUserPersonaDocument): string {
+  const fp = persona.feedbackProfile;
+  if (!fp || fp.totalFeedbackCount < 3) return "";
+
+  const lines: string[] = ["\n## USER FEEDBACK SIGNALS"];
+  lines.push(
+    `(Based on ${fp.totalFeedbackCount} past rating${fp.totalFeedbackCount === 1 ? "" : "s"}, avg satisfaction: ${fp.averageRating}/4)`,
+  );
+
+  if (fp.preferredTopics.length > 0) {
+    lines.push(
+      `Topics they engage with most: ${fp.preferredTopics.slice(0, 5).join(", ")}`,
+    );
+    lines.push("→ Prioritise ideas within or adjacent to these topics.");
+  }
+
+  if (fp.avoidTopics.length > 0) {
+    lines.push(
+      `Topics they consistently dismiss: ${fp.avoidTopics.slice(0, 5).join(", ")}`,
+    );
+    lines.push("→ Avoid ideas centred on these topics.");
+  }
+
+  // Format preferences — show only those ≥10%
+  const preferredFormats = Object.entries(fp.formatPreferences)
+    .filter(([, pct]) => pct >= 0.1)
+    .sort((a, b) => b[1] - a[1])
+    .map(([fmt, pct]) => `${fmt} (${Math.round(pct * 100)}%)`);
+
+  if (preferredFormats.length > 0) {
+    lines.push(`Format preferences: ${preferredFormats.join(", ")}`);
+    lines.push("→ Skew format choices to reflect these preferences.");
+  }
+
+  if (fp.tonePreference) {
+    lines.push(`Tone preference: ${fp.tonePreference}`);
+  }
+
+  return lines.join("\n");
+}
+
 // ── Compressed persona summary (#23) ─────────────────────────────────────────
 // Produces a 5-bullet summary instead of per-field verbose listing.
 // Saves ~150 tokens per generation call without losing signal.
@@ -150,6 +196,11 @@ export async function generateContentIdeas(input: {
   // 5-bullet summary instead of verbose field listing — saves ~150 tokens/call.
   const personaSummary = buildPersonaSummary(persona);
 
+  // ── Feedback signals section (#19) ───────────────────────────────────────
+  // Only appended if the user has ≥3 feedback records — signals are too noisy
+  // with fewer data points and add unnecessary tokens.
+  const feedbackSection = buildFeedbackSection(persona);
+
   const prompt = `Generate 5-10 authentic LinkedIn post ideas for this creator.
 Each idea MUST include all fields: topic, angle, format, hook, whyItFits, seoKeywords (3-5), clickbaitHooks (2-3), postPointers (4-6), callToAction.
 
@@ -158,6 +209,7 @@ ${personaSummary}
 
 ## CURRENT TRENDS IN THEIR NICHE
 ${trendsList}
+${feedbackSection}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`;
 

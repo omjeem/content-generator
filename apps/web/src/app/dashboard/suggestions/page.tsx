@@ -179,7 +179,12 @@ export default function SuggestionsHistoryPage() {
                 <CardContent className="pt-0 pb-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 items-start">
                     {set.suggestions.map((s, i) => (
-                      <SuggestionCard key={String(s._id ?? s.hook ?? i)} suggestion={s} index={i} />
+                      <SuggestionCard
+                        key={String(s.hook ?? i)}
+                        suggestion={s}
+                        index={i}
+                        suggestionSetId={set._id}
+                      />
                     ))}
                   </div>
                 </CardContent>

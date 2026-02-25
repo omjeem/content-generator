@@ -32,6 +32,7 @@ export default function DashboardPage() {
   const [generateState, setGenerateState] = useState<GenerateState>("idle");
   const [loadingStep, setLoadingStep] = useState(0);
   const [suggestions, setSuggestions] = useState<ISuggestion[]>([]);
+  const [currentSuggestionSetId, setCurrentSuggestionSetId] = useState<string | null>(null);
   const [trendsUsed, setTrendsUsed] = useState<string[]>([]);
   const [trendSource, setTrendSource] = useState<"live" | "fallback" | null>(
     null,
@@ -74,6 +75,7 @@ export default function DashboardPage() {
       try {
         const result = await suggestionsApi.generate({ context });
         setSuggestions(result.suggestions);
+        setCurrentSuggestionSetId(result.id);
         setTrendsUsed(result.trendsUsed);
         setTrendSource(result.trendSource ?? "live");
         setGenerateState("done");
@@ -349,9 +351,10 @@ export default function DashboardPage() {
               // for a different suggestion — this prevents the briefExpanded state
               // leaking from one card to the adjacent one when toggling.
               <SuggestionCard
-                key={String(s._id ?? s.hook ?? i)}
+                key={String(s.hook ?? i)}
                 suggestion={s}
                 index={i}
+                suggestionSetId={currentSuggestionSetId ?? undefined}
               />
             ))}
           </div>

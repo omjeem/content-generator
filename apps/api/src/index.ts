@@ -15,6 +15,7 @@ import trendsRoutes from "./routes/trends";
 import suggestionsRoutes from "./routes/suggestions";
 import personaChatRoutes from "./routes/personaChat";
 import tokenUsageRoutes from "./routes/tokenUsage";
+import feedbackRoutes from "./routes/feedback";
 
 // Services
 import { seedDefaultTokenLimit } from "./services/tokenUsage";
@@ -142,6 +143,8 @@ app.use("/api/trends", trendsRoutes);
 app.use("/api/suggestions", suggestionsRoutes);
 app.use("/api/persona-chat", personaChatRoutes);
 app.use("/api/tokens", tokenUsageRoutes);
+// Feedback routes: handles /api/suggestions/:setId/feedback and /api/feedback/summary
+app.use("/api", feedbackRoutes);
 
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use("/api/docs", createSwaggerRouter());
