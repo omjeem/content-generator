@@ -61,7 +61,7 @@ export function ChatInterface({
             )}
           >
             {msg.role === "assistant" && (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linkedin text-white text-xs font-bold mr-2 mt-1">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold mr-2 mt-1">
                 AI
               </div>
             )}
@@ -69,7 +69,7 @@ export function ChatInterface({
               className={cn(
                 "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
                 msg.role === "user"
-                  ? "bg-linkedin text-white rounded-br-sm"
+                  ? "bg-indigo-600 text-white rounded-br-sm"
                   : "bg-gray-100 text-gray-900 rounded-bl-sm",
               )}
             >
@@ -81,7 +81,7 @@ export function ChatInterface({
         {/* Typing indicator */}
         {loading && (
           <div className="flex justify-start">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-linkedin text-white text-xs font-bold mr-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-white text-xs font-bold mr-2">
               AI
             </div>
             <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-3">

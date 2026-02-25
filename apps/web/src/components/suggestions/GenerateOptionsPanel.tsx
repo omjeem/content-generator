@@ -29,7 +29,7 @@ function ChatBubble({
       <div
         className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
-            ? "bg-linkedin text-white rounded-br-sm"
+            ? "bg-indigo-600 text-white rounded-br-sm"
             : "bg-gray-100 text-gray-800 rounded-bl-sm"
         }`}
       >
@@ -404,7 +404,7 @@ function ModeCard({
       className={`text-left rounded-xl border-2 p-5 transition-all duration-150 ${
         disabled
           ? "border-gray-100 bg-gray-50 opacity-50 cursor-not-allowed"
-          : "border-gray-200 bg-white hover:border-linkedin hover:shadow-md cursor-pointer"
+          : "border-gray-200 bg-white hover:border-indigo-600 hover:shadow-md cursor-pointer"
       }`}
     >
       <div className="text-3xl mb-3">{icon}</div>

@@ -46,12 +46,12 @@ export default function RegisterPage() {
     <main className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-linkedin mb-3">
-            <span className="text-white font-bold text-xl">in</span>
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 mb-3">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9  5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+            </svg>
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            LinkedIn Content AI
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">PostMind AI</h1>
           <p className="text-gray-500 text-sm mt-1">
             Start generating content ideas in minutes
           </p>
@@ -120,7 +120,7 @@ export default function RegisterPage() {
               Already have an account?{" "}
               <Link
                 href="/login"
-                className="text-linkedin font-medium hover:underline"
+                className="text-indigo-600 font-medium hover:underline"
               >
                 Sign in
               </Link>

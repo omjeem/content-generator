@@ -166,7 +166,7 @@ export default function OnboardingPage() {
                   className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors
                   ${
                     step === s
-                      ? "bg-linkedin text-white"
+                      ? "bg-indigo-600 text-white"
                       : s < step ||
                           (s === "complete" && interviewComplete)
                         ? "bg-green-500 text-white"
@@ -197,7 +197,7 @@ export default function OnboardingPage() {
                   step === s
                     ? s === "complete"
                       ? "text-green-600 font-medium"
-                      : "text-linkedin font-medium"
+                      : "text-indigo-600 font-medium"
                     : ""
                 }
               >
@@ -269,7 +269,7 @@ export default function OnboardingPage() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-bold text-linkedin">
+                    <div className="text-2xl font-bold text-indigo-600">
                       {questionsAnswered}/5
                     </div>
                     <div className="text-xs text-gray-500">answered</div>
@@ -278,7 +278,7 @@ export default function OnboardingPage() {
                 {/* Progress bar */}
                 <div className="mt-3 h-1.5 rounded-full bg-gray-100">
                   <div
-                    className="h-full rounded-full bg-linkedin transition-all duration-500"
+                    className="h-full rounded-full bg-indigo-600 transition-all duration-500"
                     style={{ width: `${(questionsAnswered / 5) * 100}%` }}
                   />
                 </div>
@@ -313,8 +313,12 @@ export default function OnboardingPage() {
                 <Button size="lg" onClick={() => router.push("/dashboard")}>
                   Generate Content Ideas →
                 </Button>
-                <Button variant="outline" size="lg" asChild>
-                  <Link href="/onboarding">Update Posts</Link>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  onClick={() => setStep("profile-input")}
+                >
+                  Update Posts
                 </Button>
               </div>
             </CardContent>

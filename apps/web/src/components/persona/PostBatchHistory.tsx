@@ -141,7 +141,7 @@ export function PostBatchHistory({
             {/* Timeline dot */}
             <span
               className={`absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-white ${
-                idx === 0 ? "bg-linkedin" : "bg-gray-300"
+                idx === 0 ? "bg-indigo-600" : "bg-gray-300"
               }`}
             />
             <div className="flex items-start justify-between gap-2">
@@ -162,7 +162,7 @@ export function PostBatchHistory({
                 </div>
               </div>
               {idx === 0 && (
-                <span className="text-xs font-semibold text-linkedin bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
+                <span className="text-xs font-semibold text-indigo-600 bg-blue-50 px-1.5 py-0.5 rounded shrink-0">
                   Latest
                 </span>
               )}

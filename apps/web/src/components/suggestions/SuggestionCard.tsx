@@ -23,6 +23,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [briefExpanded, setBriefExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [briefCopied, setBriefCopied] = useState(false);
 
   const hasRichContent = !!(
     suggestion.seoKeywords?.length ||
@@ -70,8 +71,8 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
       }
 
       await navigator.clipboard.writeText(lines.join("\n"));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setBriefCopied(true);
+      setTimeout(() => setBriefCopied(false), 2000);
     } catch {
       // clipboard not available
     }
@@ -104,7 +105,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
         </div>
 
         {/* Hook — the scroll-stopper */}
-        <blockquote className="text-base font-semibold text-gray-900 leading-snug mb-3 border-l-4 border-linkedin pl-3">
+        <blockquote className="text-base font-semibold text-gray-900 leading-snug mb-3 border-l-4 border-indigo-600 pl-3">
           &ldquo;{suggestion.hook}&rdquo;
         </blockquote>
 
@@ -123,7 +124,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
         {/* Expandable "Why it fits" */}
         <button
           onClick={() => setExpanded((e) => !e)}
-          className="text-xs text-linkedin hover:underline font-medium"
+          className="text-xs text-indigo-600 hover:underline font-medium"
         >
           {expanded ? "▲ Hide" : "▼ Why this fits your voice"}
         </button>
@@ -138,7 +139,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
         {hasRichContent && (
           <div className="mt-3 border-t border-gray-100 pt-3">
             <button
-              onClick={() => setBriefExpanded((e) => !e)}
+              onClick={(e) => { e.stopPropagation(); setBriefExpanded((prev) => !prev); }}
               className="flex items-center justify-between w-full text-xs font-semibold text-gray-700 hover:text-gray-900 group"
             >
               <span className="flex items-center gap-1.5">
@@ -165,7 +166,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
                             key={i}
                             className="flex gap-2 text-sm text-gray-700"
                           >
-                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-linkedin/10 text-linkedin text-xs font-semibold flex items-center justify-center mt-0.5">
+                            <span className="flex-shrink-0 w-5 h-5 rounded-full bg-indigo-600/10 text-indigo-600 text-xs font-semibold flex items-center justify-center mt-0.5">
                               {i + 1}
                             </span>
                             <span className="leading-relaxed">{point}</span>
@@ -222,7 +223,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
                         {suggestion.seoKeywords.map((kw, i) => (
                           <span
                             key={i}
-                            className="inline-flex items-center rounded-full bg-linkedin/10 text-linkedin text-xs font-medium px-2.5 py-0.5"
+                            className="inline-flex items-center rounded-full bg-indigo-600/10 text-indigo-600 text-xs font-medium px-2.5 py-0.5"
                           >
                             {kw}
                           </span>
@@ -238,7 +239,7 @@ export function SuggestionCard({ suggestion, index }: SuggestionCardProps) {
                   className="w-full text-xs"
                   onClick={handleCopyBrief}
                 >
-                  {copied ? "✓ Brief Copied!" : "📋 Copy Full Brief"}
+                  {briefCopied ? "✓ Brief Copied!" : "📋 Copy Full Brief"}
                 </Button>
               </div>
             )}

@@ -38,7 +38,7 @@ export function Navbar({ userName }: NavbarProps) {
   function getBarColor(percent: number): string {
     if (percent >= 100) return "bg-red-500";
     if (percent >= 80) return "bg-amber-500";
-    return "bg-[#0A66C2]";
+    return "bg-indigo-600";
   }
 
   return (
@@ -46,41 +46,43 @@ export function Navbar({ userName }: NavbarProps) {
       <div className="flex h-16 items-center justify-between px-6">
         {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linkedin">
-            <span className="text-white font-bold text-sm">in</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600">
+            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" />
+            </svg>
           </div>
-          <span className="font-semibold text-gray-900">Content AI</span>
+          <span className="font-semibold text-gray-900">PostMind AI</span>
         </Link>
 
         {/* Nav links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
           <Link
             href="/dashboard"
-            className="text-gray-600 hover:text-linkedin transition-colors"
+            className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             Dashboard
           </Link>
           <Link
             href="/dashboard/suggestions"
-            className="text-gray-600 hover:text-linkedin transition-colors"
+            className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             History
           </Link>
           <Link
             href="/dashboard/profile"
-            className="text-gray-600 hover:text-linkedin transition-colors"
+            className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             My Profile
           </Link>
           <Link
             href="/onboarding"
-            className="text-gray-600 hover:text-linkedin transition-colors"
+            className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             Profile Setup
           </Link>
           <Link
             href="/dashboard/usage"
-            className="text-gray-600 hover:text-linkedin transition-colors"
+            className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             Token Usage
           </Link>

@@ -39,14 +39,17 @@ const refreshLimiter = rateLimit({
 });
 
 // ── Token configuration ──────────────────────────────────────────────────────
-// Access token: short-lived (15 min) — minimises exposure window if leaked
-// Refresh token: long-lived (30 days) — stored in httpOnly cookie + DB
+// Access token: 2 hours — long enough to avoid frequent silent refreshes while
+//   still limiting exposure if a token is leaked. The silent-refresh interceptor
+//   in the frontend handles the occasional background rotation transparently.
+// Refresh token: 90 days — users stay logged in for a full quarter unless they
+//   explicitly log out or their refresh token is revoked.
 //
 // On every /refresh call, the old refresh token is rotated (deleted + new issued)
 // to prevent replay attacks.
 
-const ACCESS_TOKEN_TTL = "15m";
-const REFRESH_TOKEN_TTL_DAYS = 30;
+const ACCESS_TOKEN_TTL = "2h";
+const REFRESH_TOKEN_TTL_DAYS = 90;
 const REFRESH_TOKEN_TTL_MS = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
 
 // ── Cookie SameSite strategy ──────────────────────────────────────────────────
@@ -63,7 +66,7 @@ const ACCESS_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: isProduction,
   sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
-  maxAge: 15 * 60 * 1000, // 15 minutes
+  maxAge: 2 * 60 * 60 * 1000, // 2 hours — matches ACCESS_TOKEN_TTL
 };
 
 const REFRESH_COOKIE_OPTIONS = {

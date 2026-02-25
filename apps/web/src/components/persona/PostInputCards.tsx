@@ -156,7 +156,7 @@ export function PostInputCards({
             setBulkText("");
             setBulkPreview([]);
           }}
-          className="text-xs text-linkedin hover:underline font-medium"
+          className="text-xs text-indigo-600 hover:underline font-medium"
         >
           {bulkMode ? "← Card mode" : "Bulk paste →"}
         </button>
@@ -179,8 +179,8 @@ export function PostInputCards({
             )}
           />
           {bulkPreview.length > 0 && (
-            <div className="rounded-lg border border-linkedin/20 bg-blue-50 p-3 space-y-1">
-              <p className="text-xs font-medium text-linkedin">
+            <div className="rounded-lg border border-indigo-600/20 bg-blue-50 p-3 space-y-1">
+              <p className="text-xs font-medium text-indigo-600">
                 Preview — {bulkPreview.length} post
                 {bulkPreview.length !== 1 ? "s" : ""} detected:
               </p>
@@ -200,7 +200,7 @@ export function PostInputCards({
                 variant="outline"
                 onClick={applyBulkPaste}
                 disabled={loading}
-                className="mt-2 text-linkedin border-linkedin hover:bg-linkedin/5"
+                className="mt-2 text-indigo-600 border-indigo-600 hover:bg-indigo-600/5"
               >
                 Use these {bulkPreview.length} posts →
               </Button>
@@ -277,7 +277,7 @@ export function PostInputCards({
               disabled={loading}
               className={cn(
                 "w-full rounded-xl border-2 border-dashed border-gray-200 py-3 text-sm text-gray-400",
-                "hover:border-linkedin hover:text-linkedin transition-colors",
+                "hover:border-indigo-600 hover:text-indigo-600 transition-colors",
                 "disabled:opacity-40 disabled:cursor-not-allowed",
               )}
             >

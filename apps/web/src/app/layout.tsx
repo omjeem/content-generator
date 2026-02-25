@@ -5,9 +5,9 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "LinkedIn Content Generator",
+  title: "PostMind AI",
   description:
-    "AI-powered LinkedIn content suggestions personalized to your voice",
+    "AI-powered content ideas personalised to your voice and trending topics",
 };
 
 export default function RootLayout({

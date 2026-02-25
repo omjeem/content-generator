@@ -68,7 +68,7 @@ export default function SuggestionsHistoryPage() {
         </div>
         <Link
           href="/dashboard"
-          className="text-sm text-linkedin hover:underline font-medium"
+          className="text-sm text-indigo-600 hover:underline font-medium"
         >
           ← Back to Dashboard
         </Link>
@@ -177,9 +177,9 @@ export default function SuggestionsHistoryPage() {
               {/* Expandable suggestions */}
               {expandedId === set._id && (
                 <CardContent className="pt-0 pb-5">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 items-start">
                     {set.suggestions.map((s, i) => (
-                      <SuggestionCard key={i} suggestion={s} index={i} />
+                      <SuggestionCard key={String(s._id ?? s.hook ?? i)} suggestion={s} index={i} />
                     ))}
                   </div>
                 </CardContent>

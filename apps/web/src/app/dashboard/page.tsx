@@ -121,7 +121,7 @@ export default function DashboardPage() {
         </div>
         <Link
           href="/dashboard/suggestions"
-          className="text-sm text-linkedin hover:underline font-medium"
+          className="text-sm text-indigo-600 hover:underline font-medium"
         >
           View History →
         </Link>
@@ -227,7 +227,7 @@ export default function DashboardPage() {
                   <p className="mt-3 text-sm text-gray-500">
                     <Link
                       href="/onboarding"
-                      className="text-linkedin hover:underline"
+                      className="text-indigo-600 hover:underline"
                     >
                       Complete your onboarding
                     </Link>{" "}
@@ -252,7 +252,7 @@ export default function DashboardPage() {
             <Card>
               <CardContent className="p-8 text-center">
                 <div className="space-y-4">
-                  <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-linkedin/10 mb-2">
+                  <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600/10 mb-2">
                     <span className="text-2xl animate-spin">⚙️</span>
                   </div>
                   <p className="text-gray-700 font-medium">
@@ -260,7 +260,7 @@ export default function DashboardPage() {
                   </p>
                   <div className="mx-auto max-w-xs h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-linkedin rounded-full animate-pulse"
+                      className="h-full bg-indigo-600 rounded-full animate-pulse"
                       style={{ width: "60%" }}
                     />
                   </div>
@@ -343,16 +343,23 @@ export default function DashboardPage() {
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             {suggestions.map((s, i) => (
-              <SuggestionCard key={i} suggestion={s} index={i} />
+              // Use a stable unique key so React never reuses a card's DOM node
+              // for a different suggestion — this prevents the briefExpanded state
+              // leaking from one card to the adjacent one when toggling.
+              <SuggestionCard
+                key={String(s._id ?? s.hook ?? i)}
+                suggestion={s}
+                index={i}
+              />
             ))}
           </div>
 
           <div className="text-center pt-4">
             <Link
               href="/dashboard/suggestions"
-              className="text-sm text-linkedin hover:underline"
+              className="text-sm text-indigo-600 hover:underline"
             >
               View all past suggestion sets →
             </Link>
@@ -399,7 +406,7 @@ function StatusCard({
         {action && (
           <Link
             href={action.href}
-            className="mt-2 block text-xs text-linkedin hover:underline"
+            className="mt-2 block text-xs text-indigo-600 hover:underline"
           >
             {action.label} →
           </Link>

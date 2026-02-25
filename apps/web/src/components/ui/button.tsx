@@ -31,7 +31,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variants = {
       default:
-        "bg-linkedin text-white hover:bg-linkedin-dark focus-visible:ring-linkedin",
+        "bg-indigo-600 text-white hover:bg-indigo-700 focus-visible:ring-indigo-600",
       outline:
         "border border-gray-300 bg-white text-gray-900 hover:bg-gray-50 focus-visible:ring-gray-300",
       ghost: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
