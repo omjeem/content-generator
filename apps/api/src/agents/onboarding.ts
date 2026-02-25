@@ -55,16 +55,16 @@ export const onboardingAgent = new Agent({
   id: "onboarding-interview",
   name: "onboarding-interview",
   model: google("gemini-2.5-flash"),
-  instructions: `You are a friendly LinkedIn content strategist conducting an onboarding interview.
+  instructions: `You are a friendly content strategist conducting an onboarding interview to understand a creator's posting strategy.
 
-Your job is to gather information about the user's LinkedIn content strategy by asking targeted questions ONE AT A TIME.
+Your job is to gather information by asking targeted questions ONE AT A TIME in a warm, conversational tone.
 
-The 5 questions you must cover (in a natural, conversational way — don't make it feel like a form):
-1. What are your main professional goals for posting on LinkedIn?
-2. Who is your target audience? (their role, industry, seniority level)
+The 5 questions you must cover:
+1. What are your main professional goals for posting content?
+2. Who is your target audience? (describe in a single plain sentence, e.g. "Early-career software engineers and tech leads")
 3. What industry or niche are you in?
 4. What are your 3 main content pillars — the topics you want to be known for?
-5. How often do you want to post on LinkedIn? (daily, 3x/week, weekly, etc.)
+5. How often do you want to post? (e.g. daily, 3x/week, weekly)
 
 Rules:
 - Ask ONLY ONE question at a time
@@ -73,19 +73,26 @@ Rules:
 - Track which questions have been answered based on conversation history
 - When ALL 5 questions are answered, end with: "Perfect! I have everything I need to start finding content ideas for you. Head back to your dashboard to generate your first batch of personalized content suggestions!"
 - Keep responses concise and friendly
+- NEVER show the JSON data block to the user — it must be completely hidden
 
-At the END of each response, include a JSON block like this (hidden in your response):
+CRITICAL — at the very END of EVERY response, after your conversational text, append this exact block (the user will never see it):
 <!--INTERVIEW_DATA
 {
-  "goals": "..or null if not yet answered",
-  "targetAudience": "..or null",
-  "industry": "..or null",
-  "contentPillars": [".."] or null,
-  "postingFrequency": "..or null",
+  "goals": "single plain string summarising goals, or null",
+  "targetAudience": "single plain string describing audience, or null — NEVER use an object or nested keys",
+  "industry": "single plain string, or null",
+  "contentPillars": ["topic1", "topic2", "topic3"] or null,
+  "postingFrequency": "single plain string, or null",
   "questionsAnswered": 0,
   "interviewComplete": false
 }
-INTERVIEW_DATA-->`,
+INTERVIEW_DATA-->
+
+IMPORTANT rules for the JSON block:
+- ALL values must be plain strings (or null, or an array of strings for contentPillars)
+- targetAudience MUST be a single plain string — NEVER an object like {"primary": ..., "secondary": ...}
+- Do NOT include the JSON block in the visible part of your response
+- The block must start with <!--INTERVIEW_DATA on its own line and end with INTERVIEW_DATA--> on its own line`,
 });
 
 // ── Chat with working memory from MongoDB ─────────────────────────────────────
@@ -144,10 +151,14 @@ export async function runOnboardingChat(
     metadata: { sessionId: session.sessionId },
   });
 
-  // Persist new messages to MongoDB
-  await persistMessages(session, message, reply);
+  // Strip the hidden data block BEFORE persisting to DB so it never
+  // re-appears in the conversation history fed back to the LLM on the next turn.
+  const cleanReply = stripInterviewDataBlock(reply);
 
-  // Parse the hidden data block from the agent's response
+  // Persist new messages to MongoDB — always store the clean reply
+  await persistMessages(session, message, cleanReply);
+
+  // Parse the hidden data block from the original (unstripped) agent response
   const extractedData = parseInterviewData(reply);
 
   // ── Deterministic escape hatch (P0 #4) ────────────────────────────────────
@@ -172,19 +183,22 @@ export async function runOnboardingChat(
     }
   }
 
-  // If interview is complete, persist interview answers to UserPersona
+  // If interview is complete, persist interview answers to UserPersona.
+  // Sanitize all fields before saving — the LLM sometimes returns objects
+  // (e.g. targetAudience as {primary: "...", secondary: "..."}) which would
+  // cause a Mongoose CastError since all fields are plain String in the schema.
   if (extractedData.interviewComplete) {
     await saveInterviewAnswers(userId, {
-      goals: extractedData.goals,
-      targetAudience: extractedData.targetAudience,
-      industry: extractedData.industry,
-      contentPillars: extractedData.contentPillars,
-      postingFrequency: extractedData.postingFrequency,
+      goals: coerceToString(extractedData.goals),
+      targetAudience: coerceToString(extractedData.targetAudience),
+      industry: coerceToString(extractedData.industry),
+      contentPillars: coerceToStringArray(extractedData.contentPillars),
+      postingFrequency: coerceToString(extractedData.postingFrequency),
     });
   }
 
   return {
-    reply: stripInterviewDataBlock(reply),
+    reply: cleanReply,
     sessionId: session.sessionId,
     interviewComplete: extractedData.interviewComplete ?? false,
     questionsAnswered: extractedData.questionsAnswered ?? 0,
@@ -207,9 +221,71 @@ function parseInterviewData(text: string): Partial<InterviewAnswers> {
 }
 
 function stripInterviewDataBlock(text: string): string {
-  return text
-    .replace(/<!--INTERVIEW_DATA[\s\S]*?INTERVIEW_DATA-->/g, "")
-    .trim();
+  return (
+    text
+      // Pattern 1: proper HTML comment wrapper <!--INTERVIEW_DATA ... INTERVIEW_DATA-->
+      .replace(/<!--INTERVIEW_DATA[\s\S]*?INTERVIEW_DATA-->/g, "")
+      // Pattern 2: bare block without comment markers (LLM forgets the <!-- -->)
+      .replace(/INTERVIEW_DATA[\s\S]*?INTERVIEW_DATA/g, "")
+      // Pattern 3: stray opening/closing tags left over after partial strips
+      .replace(/<!--INTERVIEW_DATA[\s\S]*/g, "")
+      .replace(/[\s\S]*?INTERVIEW_DATA-->/g, "")
+      // Pattern 4: any trailing JSON-like block that starts with { on its own line
+      // after the conversational text ends — catches raw JSON bleed-through
+      .replace(/\n\s*\{[\s\S]*?\}\s*$/g, (match) => {
+        // Only strip if it looks like our data block (contains known interview keys)
+        if (
+          match.includes('"goals"') ||
+          match.includes('"targetAudience"') ||
+          match.includes('"interviewComplete"') ||
+          match.includes('"questionsAnswered"')
+        ) {
+          return "";
+        }
+        return match;
+      })
+      .trim()
+  );
+}
+
+/**
+ * Coerce any LLM value to a plain string.
+ * If the LLM returns an object like {primary: "...", secondary: "..."},
+ * flatten it to a comma-joined string of its values.
+ */
+function coerceToString(
+  value: string | Record<string, unknown> | null | undefined,
+): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "string") return value.trim() || undefined;
+  if (typeof value === "object") {
+    // Flatten object values to a single readable string
+    const parts = Object.values(value)
+      .filter((v) => v != null && String(v).trim() !== "")
+      .map((v) => String(v).trim());
+    return parts.length > 0 ? parts.join("; ") : undefined;
+  }
+  return String(value).trim() || undefined;
+}
+
+/**
+ * Coerce any LLM value to a string array.
+ * Handles: string[], string (comma-split), or null/undefined.
+ */
+function coerceToStringArray(
+  value: string[] | string | null | undefined,
+): string[] | undefined {
+  if (value == null) return undefined;
+  if (Array.isArray(value))
+    return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === "string") {
+    const parts = value
+      .split(/[,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return parts.length > 0 ? parts : undefined;
+  }
+  return undefined;
 }
 
 // ── Check interview status (delegated to UserPersonaService) ─────────────────
