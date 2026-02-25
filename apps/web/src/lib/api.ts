@@ -43,7 +43,7 @@ const BASE_URL = "";
 // Browser timeout for long-running AI requests — matches Express middleware (3 min)
 const AI_TIMEOUT_MS = 180_000;
 // Browser timeout for regular requests (30 s)
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 80_000;
 
 export class ApiError extends Error {
   constructor(

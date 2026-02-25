@@ -23,7 +23,7 @@ If context runs out, come back here and:
 
 - [x] **#1 — Admin authorization middleware** (`middleware/adminAuth.ts` CREATE, `routes/tokenUsage.ts` MODIFY): Created `requireAdmin` middleware — fetches `User.findById(req.userId).select('role')`, returns `403` if not `'admin'`. Applied to both `GET /api/tokens/admin/requests` and `PATCH /api/tokens/admin/requests/:id` via inline `requireAdmin` argument. ✅ DONE
 - [x] **#2 — Fix `postsArray` gap in pipeline** (`agents/mastra.ts` MODIFY): Added `postsArray?: string[]` to `PipelineInput`. Step 1 now checks `input.postsArray?.length` first — if present, uses directly; otherwise falls through to `resolvePostsFromInput()`. ✅ DONE
-- [x] **#3 — Fix `DEFAULT_TIMEOUT_MS` value** (`index.ts` MODIFY): Changed from `180_000` to `30_000`. Comment updated to match. ✅ DONE
+- [x] **#3 — Fix `DEFAULT_TIMEOUT_MS` value** (`index.ts` MODIFY): Changed from `180_000` to `80_000`. Comment updated to match. ✅ DONE
 - [x] **#4 — Fix `mergePersonaAnalysis` overwrite bug** (`services/personaMerge.ts` MODIFY): Added `blendTextFields(existing, incoming, existingWeight)` helper. `mergePersonaAnalysis` now accepts `newPostCount` parameter; computes `existingWeight = existingCount / totalCount`; if `existingWeight > 0.7` appends `"— with emerging X tendencies"` instead of replacing. Updated call site in `routes/persona.ts` to pass `uniqueNewPosts.length`. ✅ DONE
 - [x] **#5 — Post-parse suggestion count check** (`agents/contentGenerator.ts` MODIFY): After `ContentIdeasSchema.parse(raw)`, throws if `ideas.ideas.length < 3` — triggers retry on the next attempt. ✅ DONE
 

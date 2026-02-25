@@ -123,7 +123,7 @@ const DEFAULT_TIMEOUT_MS = 180_000; // 30 s for all other routes
 
 The comment says "30 s for all other routes" but the value is `180_000` ms (3 minutes). This means non-AI routes like `GET /api/persona` or `GET /api/suggestions` also get a 3-minute timeout instead of the intended 30 seconds.
 
-**Fix**: Change to `30_000`.
+**Fix**: Change to `80_000`.
 
 ### 2.4 High: Trend Cache Missing (Phase 1 Unfixed)
 
@@ -1685,7 +1685,7 @@ This means every generation benefits from all accumulated learning signals.
 |---|--------|---------|-------|--------|
 | 1 | Add admin authorization middleware | §2.1, §7.3 | `middleware/adminAuth.ts` (CREATE), `routes/tokenUsage.ts` | 2 hours |
 | 2 | Fix pipeline `postsArray` gap | §2.2 | `agents/mastra.ts` | 30 min |
-| 3 | Fix `DEFAULT_TIMEOUT_MS` to 30_000 | §2.3 | `index.ts` | 5 min |
+| 3 | Fix `DEFAULT_TIMEOUT_MS` to 80_000 | §2.3 | `index.ts` | 5 min |
 | 4 | Fix `mergePersonaAnalysis` overwrite bug | §2.5 | `services/personaMerge.ts` | 1 hour |
 | 5 | Add post-parse suggestion count check | §2.6 | `agents/contentGenerator.ts` | 15 min |
 
