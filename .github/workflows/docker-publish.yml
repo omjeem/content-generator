@@ -1,22 +1,11 @@
 name: Build, Push & Deploy
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Triggers:
-#   - Every push to 'main' branch
-#   - Manual trigger via GitHub Actions UI (workflow_dispatch)
-# ─────────────────────────────────────────────────────────────────────────────
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      image_tag:
-        description: 'Custom image tag (defaults to sha-<short-sha>)'
-        required: false
-        default: ''
 
-# Cancel in-progress runs of the same workflow when a new push arrives
 concurrency:
   group: docker-publish-${{ github.ref }}
   cancel-in-progress: true
@@ -27,166 +16,130 @@ env:
   WEB_IMAGE_NAME: content-generator-web
 
 jobs:
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 1: Build & Push API image
-  # ───────────────────────────────────────────────────────────────────────────
+
+  # ─────────────────────────────────────────────
+  # 1️⃣ Build & Push API
+  # ─────────────────────────────────────────────
   build-api:
-    name: Build & Push API (Express)
+    name: Build & Push API
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+
     outputs:
-      # Short SHA tag produced by metadata-action (e.g. "sha-a1b2c3d")
-      # Used by the deploy job to pull the exact image that was just built.
-      image_tag: ${{ steps.meta-api.outputs.version }}
+      image_tag: ${{ steps.meta.outputs.version }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # Set up QEMU for multi-platform builds (linux/amd64 + linux/arm64)
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      # Set up Docker Buildx for advanced build features (cache, multi-platform)
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      # Log in to Docker Hub using repository secrets
-      - name: Log in to Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
+          username: ${{ env.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Generate image tags and labels automatically.
-      # Tags produced:
-      #   - latest (on main branch)
-      #   - sha-<short-git-sha>  ← pinned tag used by deploy job
-      #   - YYYY.MM.DD (calendar versioning)
-      - name: Extract metadata for API image
-        id: meta-api
+      - name: Extract metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.API_IMAGE_NAME }}
-          # The first tag listed becomes `steps.meta-api.outputs.version`
+          images: ${{ env.DOCKER_USERNAME }}/${{ env.API_IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable={{is_default_branch}}
-            type=schedule,pattern={{date 'YYYY.MM.DD'}}
-          labels: |
-            org.opencontainers.image.title=Content Generator API
-            org.opencontainers.image.description=Express + TypeScript API for LinkedIn AI Content Generator
-            org.opencontainers.image.vendor=${{ github.repository_owner }}
 
-      # Build and push the API Docker image
-      - name: Build and push API image
+      - name: Build & Push API image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: apps/api/Dockerfile
           push: true
-          tags: ${{ steps.meta-api.outputs.tags }}
-          labels: ${{ steps.meta-api.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64,linux/arm64
-          # GitHub Actions cache — speeds up subsequent builds significantly
           cache-from: type=gha,scope=api
           cache-to: type=gha,mode=max,scope=api
 
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 2: Build & Push Web image
-  # ───────────────────────────────────────────────────────────────────────────
+
+  # ─────────────────────────────────────────────
+  # 2️⃣ Build & Push Web
+  # ─────────────────────────────────────────────
   build-web:
-    name: Build & Push Web (Next.js)
+    name: Build & Push Web
     runs-on: ubuntu-latest
+    needs: build-api
     permissions:
       contents: read
       packages: write
+
     outputs:
-      image_tag: ${{ steps.meta-web.outputs.version }}
+      image_tag: ${{ steps.meta.outputs.version }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
+          username: ${{ env.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Extract metadata for Web image
-        id: meta-web
+      - name: Extract metadata
+        id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKER_USERNAME }}/${{ secrets.WEB_IMAGE_NAME }}
+          images: ${{ env.DOCKER_USERNAME }}/${{ env.WEB_IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable={{is_default_branch}}
-            type=schedule,pattern={{date 'YYYY.MM.DD'}}
-          labels: |
-            org.opencontainers.image.title=Content Generator Web
-            org.opencontainers.image.description=Next.js 14 frontend for LinkedIn AI Content Generator
-            org.opencontainers.image.vendor=${{ github.repository_owner }}
 
-      # Build and push the Web Docker image.
-      # NOTE: NEXT_PUBLIC_API_URL is the rewrite proxy destination baked into
-      # the Next.js bundle at build time — set it to your server's API URL,
-      # e.g. http://YOUR_SERVER_IP:5006  (used only inside next.config rewrites).
-      - name: Build and push Web image
+      - name: Build & Push Web image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: apps/web/Dockerfile
           push: true
-          tags: ${{ steps.meta-web.outputs.tags }}
-          labels: ${{ steps.meta-web.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64,linux/arm64
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 3: SSH Deploy — pull new images and restart containers on the server
-  # Runs only after BOTH build jobs succeed.
-  # ───────────────────────────────────────────────────────────────────────────
+
+  # ─────────────────────────────────────────────
+  # 3️⃣ Deploy to Server
+  # ─────────────────────────────────────────────
   deploy:
-    name: Deploy to Production Server
+    name: Deploy to Production
     runs-on: ubuntu-latest
     needs: [build-api, build-web]
-    # Only deploy on pushes to main (not on manual dispatch unless you want it)
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: SSH into server and run deploy.sh
+      - name: SSH Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VM_HOST }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          # Pass the exact sha tag so the server pulls the image built in this run.
-          # IMAGE_TAG is forwarded to deploy.sh which exports it for docker-compose.
-          envs: IMAGE_TAG
+          port: 22
           script: |
-            set -euo pipefail
+            set -e
             cd ~/apps/content-gen
-            # Pull latest repo changes so docker-compose files are up to date
             git pull --ff-only origin main
-            # Run deploy script with the pinned SHA tag
-            IMAGE_TAG=${{ needs.build-api.outputs.image_tag }} bash ./deploy.sh
+            docker compose -f docker-compose.yaml -f docker-compose.prod.yaml pull
+            docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --force-recreate
 
-  # ───────────────────────────────────────────────────────────────────────────
-  # Job 4: Summary — always runs last, shows status of all jobs
-  # ───────────────────────────────────────────────────────────────────────────
+
+  # ─────────────────────────────────────────────
+  # 4️⃣ Summary
+  # ─────────────────────────────────────────────
   summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
@@ -196,18 +149,10 @@ jobs:
     steps:
       - name: Write summary
         run: |
-          echo "## 🚀 Build, Push & Deploy Pipeline" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Build API | ${{ needs.build-api.result == 'success' && '✅ Success' || needs.build-api.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Web | ${{ needs.build-web.result == 'success' && '✅ Success' || needs.build-web.result == 'skipped' && '⏭️ Skipped' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Deploy    | ${{ needs.deploy.result == 'success' && '✅ Deployed' || needs.deploy.result == 'skipped' && '⏭️ Skipped (not main push)' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Git SHA:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Image tag:** \`${{ needs.build-api.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Images pushed:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ secrets.DOCKER_USERNAME }}/${{ secrets.API_IMAGE_NAME }}:${{ needs.build-api.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ secrets.DOCKER_USERNAME }}/${{ secrets.WEB_IMAGE_NAME }}:${{ needs.build-web.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Both also tagged \`:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Build API | ${{ needs.build-api.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Web | ${{ needs.build-web.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy    | ${{ needs.deploy.result }} |" >> $GITHUB_STEP_SUMMARY
