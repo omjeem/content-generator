@@ -112,7 +112,11 @@ export default function ProfilePage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Load persona + history in parallel
+  // Load persona + history in parallel on mount.
+  // Both calls go through the Next.js rewrite proxy (relative URLs) so the
+  // httpOnly token cookie is always sent correctly in both dev and production.
+  // Never use NEXT_PUBLIC_API_URL directly from the browser — that bypasses
+  // the proxy and the cookie is never sent to a different domain → 401.
   useEffect(() => {
     personaChatApi
       .getHistory()
@@ -123,18 +127,10 @@ export default function ProfilePage() {
       .catch(() => {})
       .finally(() => setHistoryLoading(false));
 
-    personaChatApi.applyChanges; // trigger fetch on mount via GET persona endpoint
-    fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/api/persona-chat/persona`,
-      {
-        credentials: "include",
-      },
-    )
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.persona) setPersona(d.persona as IUserPersona);
-      })
-      .catch(() => {})
+    personaChatApi
+      .getPersona()
+      .then(({ persona: p }) => setPersona(p))
+      .catch(() => {}) // persona stays null → "No persona found" message shown
       .finally(() => setPersonaLoading(false));
   }, []);
 

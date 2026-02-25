@@ -23,22 +23,24 @@ import type {
   ITokenRequest,
 } from "@repo/shared-types";
 
-// ── Base URLs ─────────────────────────────────────────────────────────────────
+// ── Base URL ──────────────────────────────────────────────────────────────────
 //
-// All regular calls use BASE_URL="" (relative) so they go through the Next.js
-// rewrite proxy (/api/* → Express). Cookies are then same-origin and always
-// forwarded correctly in both dev and production.
+// ALL requests go through the Next.js rewrite proxy (/api/* → Express).
+// This is non-negotiable: the httpOnly `token` cookie is set on the frontend
+// domain by the proxy, so it can only be sent back to the same domain.
+// Calling the Express API directly from the browser (a different domain/port)
+// means the cookie is never sent → 401 every time, regardless of sameSite.
 //
-// Long-running AI calls (30–90 s) use DIRECT_API_URL to bypass the proxy's
-// ~60 s timeout. In production NEXT_PUBLIC_API_URL points to the public API
-// host. In dev it falls back to "" so they also go through the proxy (the
-// Next.js dev server has no timeout, so this is safe in dev).
+// The proxy timeout concern is handled at the platform level (see README) and
+// by the Express requestTimeout middleware which sends 503 before the platform
+// drops the connection. AbortSignal.timeout() is set generously on AI calls so
+// the browser stays connected for the full pipeline duration.
 const BASE_URL = "";
-const DIRECT_API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 
-// Timeout for long-running AI requests (3 min — matches Express middleware)
+// Browser timeout for long-running AI requests — matches Express middleware (3 min)
 const AI_TIMEOUT_MS = 180_000;
+// Browser timeout for regular requests (30 s)
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class ApiError extends Error {
   constructor(
@@ -52,20 +54,17 @@ export class ApiError extends Error {
 }
 
 // ── Silent token refresh ──────────────────────────────────────────────────────
-// Access tokens expire after 15 min. Rather than kicking the user to /login on
-// every expiry, we silently call /api/auth/refresh (which rotates the refresh
-// token and issues a new access token cookie) and retry the original request.
-// Only one refresh is attempted per original call — if refresh also fails we
-// redirect to /login so the user can log back in.
+// Access tokens expire after 15 min. On any 401 we transparently call
+// /api/auth/refresh (rotating refresh token, 30-day TTL) to get a new access
+// token cookie and retry the original request — the user sees nothing.
 //
-// The refresh call always goes through BASE_URL (the Next.js proxy) because
-// the refreshToken cookie has path:"/api/auth" — the browser only sends it to
-// that path prefix, which works correctly via the proxy rewrite.
+// If refresh also fails (truly expired session) we redirect to /login.
+// Multiple concurrent 401s share a single in-flight refresh promise.
 
-let _refreshing: Promise<void> | null = null; // deduplicate concurrent refreshes
+let _refreshing: Promise<void> | null = null;
 
 async function silentRefresh(): Promise<void> {
-  if (_refreshing) return _refreshing; // piggyback on an in-flight refresh
+  if (_refreshing) return _refreshing;
 
   _refreshing = (async () => {
     const res = await fetch(`${BASE_URL}/api/auth/refresh`, {
@@ -73,7 +72,6 @@ async function silentRefresh(): Promise<void> {
       credentials: "include",
     });
     if (!res.ok) {
-      // Refresh token expired / invalid — redirect to login
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }
@@ -86,9 +84,8 @@ async function silentRefresh(): Promise<void> {
   return _refreshing;
 }
 
-// ── Low-level fetchers ────────────────────────────────────────────────────────
+// ── Core fetch wrapper ────────────────────────────────────────────────────────
 
-/** Execute a fetch and parse JSON, throwing ApiError on non-2xx. */
 async function execute<T>(url: string, init: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -112,45 +109,35 @@ async function execute<T>(url: string, init: RequestInit): Promise<T> {
   return data as T;
 }
 
-// ── request — goes through Next.js rewrite proxy (same-origin, no timeout) ──
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// ── request — all calls go through the Next.js rewrite proxy ─────────────────
+async function request<T>(
+  path: string,
+  options: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  const init: RequestInit = {
+    ...options,
+    signal: AbortSignal.timeout(timeoutMs),
+  };
+
   try {
-    return await execute<T>(`${BASE_URL}${path}`, options);
+    return await execute<T>(`${BASE_URL}${path}`, init);
   } catch (err) {
-    // On 401: silently refresh the access token and retry once
     if (err instanceof ApiError && err.status === 401) {
-      await silentRefresh(); // throws if refresh fails → surfaces to caller
-      return execute<T>(`${BASE_URL}${path}`, options);
+      await silentRefresh();
+      // Retry with a fresh signal (the old one may have already fired)
+      return execute<T>(`${BASE_URL}${path}`, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
     }
     throw err;
   }
 }
 
-// ── requestDirect — bypasses proxy for long AI calls (AbortSignal timeout) ──
-//
-// In production, calls NEXT_PUBLIC_API_URL directly from the browser.
-// Cookies are sameSite:"none" + secure in production so they are forwarded
-// correctly for cross-origin requests.
-//
-// In dev, DIRECT_API_URL falls back to "" (same as BASE_URL) so all calls
-// go through the Next.js dev proxy — no cross-origin cookie issues.
-async function requestDirect<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
-  const url = `${DIRECT_API_URL}${path}`;
-  const init: RequestInit = { ...options, signal: AbortSignal.timeout(AI_TIMEOUT_MS) };
-
-  try {
-    return await execute<T>(url, init);
-  } catch (err) {
-    // On 401: silently refresh then retry
-    if (err instanceof ApiError && err.status === 401) {
-      await silentRefresh();
-      return execute<T>(url, { ...init, signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
-    }
-    throw err;
-  }
+// Convenience wrapper for long-running AI endpoints
+function requestAI<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return request<T>(path, options, AI_TIMEOUT_MS);
 }
 
 // ── Auth ───────────────────────────────────────────────────────────────────────
@@ -177,9 +164,9 @@ export const authApi = {
 // ── Persona ───────────────────────────────────────────────────────────────────
 
 export const personaApi = {
-  // Direct call — persona analysis runs a full LLM pipeline (30–60 s)
+  // AI endpoint — full LLM pipeline (30–60 s), uses extended timeout
   analyze: (body: IPersonaAnalysisInput) =>
-    requestDirect<{ persona: IUserPersona; postsAnalyzed: number }>(
+    requestAI<{ persona: IUserPersona; postsAnalyzed: number }>(
       "/api/persona/analyze",
       {
         method: "POST",
@@ -201,9 +188,9 @@ export const personaApi = {
 // ── Onboarding ────────────────────────────────────────────────────────────────
 
 export const onboardingApi = {
-  // Direct call — onboarding chat runs an LLM agent (can take 30–60 s)
+  // AI endpoint — LLM agent (30–60 s), uses extended timeout
   chat: (body: IOnboardingMessage) =>
-    requestDirect<IOnboardingResponse>("/api/onboarding/chat", {
+    requestAI<IOnboardingResponse>("/api/onboarding/chat", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -225,15 +212,14 @@ export const onboardingApi = {
 // ── Suggestions ───────────────────────────────────────────────────────────────
 
 export const suggestionsApi = {
-  // Uses requestDirect (bypasses Next.js proxy) + AbortSignal.timeout(180s)
-  // to avoid the ~60 s proxy timeout that causes spurious 500s for long AI runs.
+  // AI endpoint — multi-step LLM pipeline (30–90 s), uses extended timeout
   generate: (body?: {
     linkedinUrl?: string;
     manualPosts?: string;
     forceReanalyze?: boolean;
     context?: IGenerateContextOptions;
   }) =>
-    requestDirect<ISuggestionsGenerateResponse>("/api/suggestions/generate", {
+    requestAI<ISuggestionsGenerateResponse>("/api/suggestions/generate", {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
@@ -286,9 +272,9 @@ export const tokenApi = {
 // ── Persona Chat ───────────────────────────────────────────────────────────────
 
 export const personaChatApi = {
-  // Direct call — persona chat runs an LLM agent (can take 30–60 s)
+  // AI endpoint — LLM agent (30–60 s), uses extended timeout
   chat: (body: IPersonaChatMessage) =>
-    requestDirect<IPersonaChatResponse>("/api/persona-chat/chat", {
+    requestAI<IPersonaChatResponse>("/api/persona-chat/chat", {
       method: "POST",
       body: JSON.stringify(body),
     }),
@@ -303,4 +289,10 @@ export const personaChatApi = {
     request<{ messages: IChatSession["messages"]; sessionId: string | null }>(
       "/api/persona-chat/history",
     ),
+
+  // Fetch the current user's full persona for the profile page display.
+  // Uses the proxy (relative URL) — never call NEXT_PUBLIC_API_URL directly
+  // from the browser or the httpOnly cookie won't be sent → 401 in production.
+  getPersona: () =>
+    request<{ persona: IUserPersona }>("/api/persona-chat/persona"),
 };

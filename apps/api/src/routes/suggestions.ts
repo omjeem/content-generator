@@ -381,7 +381,7 @@ When you have enough context (after 2-3 exchanges), output a special block at th
   "summary": "A 2-3 sentence brief describing: topic focus, target audience, and desired outcome",
   "topicFocus": "The main topic/niche focus (or null if not specified)",
   "targetAudienceOverride": "Specific audience description (or null)",
-  "platformGoal": "thought-leadership|lead-generation|personal-brand|hiring|community-building (or null)"
+  "platformGoal": "Pick EXACTLY ONE value from this list that best matches the creator's primary goal, or null if unclear: thought-leadership, lead-generation, personal-brand, hiring, community-building. Output only the single chosen value — never combine values with | or commas."
 }
 CONTEXT_SUMMARY-->
 
@@ -418,15 +418,37 @@ If you don't have enough context yet, do NOT include the summary block — just 
       let targetAudienceOverride: string | undefined;
       let platformGoal: string | undefined;
 
+      // Valid values that the Zod enum on /generate accepts
+      const VALID_PLATFORM_GOALS = [
+        "thought-leadership",
+        "lead-generation",
+        "personal-brand",
+        "hiring",
+        "community-building",
+      ] as const;
+
       if (summaryMatch) {
         try {
           const parsed = JSON.parse(summaryMatch[1]!);
           summary = parsed.summary;
           topicFocus = parsed.topicFocus ?? undefined;
           targetAudienceOverride = parsed.targetAudienceOverride ?? undefined;
-          platformGoal = parsed.platformGoal ?? undefined;
+
+          // Gemini sometimes outputs a pipe/comma-joined value like
+          // "lead-generation|thought-leadership" even when instructed not to.
+          // Sanitise: split on any separator, take the first token that is a
+          // valid enum value. This means a malformed AI response never reaches
+          // the Zod validator on /generate and causes a 422.
+          const rawGoal: string | undefined = parsed.platformGoal ?? undefined;
+          if (rawGoal) {
+            const tokens = rawGoal.split(/[|,\s]+/).map((t: string) => t.trim());
+            const validToken = tokens.find((t: string) =>
+              (VALID_PLATFORM_GOALS as readonly string[]).includes(t),
+            );
+            platformGoal = validToken ?? undefined;
+          }
         } catch {
-          // ignore parse error, just return the reply
+          // ignore parse error, just return the reply without structured context
         }
       }
 
