@@ -274,6 +274,8 @@ export async function runContentPipeline(
     userId: userObjectId,
     generatedAt: new Date(),
     trendsUsed: acceptedTrendTopics,
+    // Top-level trendSource for fast admin analytics queries (#57)
+    trendSource: trendIsLive ? "live" : "fallback",
     // Store generation mode + context for history/analytics (#17)
     generationMode: input.context?.mode ?? "profile",
     contextOptions: input.context,

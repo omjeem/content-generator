@@ -34,6 +34,8 @@ export interface IContentSuggestionDocument extends Document {
   userId: mongoose.Types.ObjectId;
   generatedAt: Date;
   trendsUsed: string[];
+  /** Top-level trendSource for fast querying in admin analytics (#57) */
+  trendSource?: "live" | "fallback";
   suggestions: ISuggestionItem[];
   // Generation metadata (#17)
   generationMode: GenerationMode;
@@ -95,6 +97,11 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
       default: Date.now,
     },
     trendsUsed: { type: [String], default: [] },
+    /** Top-level trendSource — duplicates generationMeta.trendSource for fast analytics queries (#57) */
+    trendSource: {
+      type: String,
+      enum: ["live", "fallback"],
+    },
     suggestions: { type: [suggestionItemSchema], required: true },
     // Generation metadata (#17) — defaults to 'profile' for backward-compat
     generationMode: {

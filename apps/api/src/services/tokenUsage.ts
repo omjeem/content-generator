@@ -186,7 +186,7 @@ export function trackTokenUsage(params: TrackTokenUsageParams): void {
 
   const userObjectId = new mongoose.Types.ObjectId(userId);
 
-  Promise.all([
+  Promise.allSettled([
     TokenUsageLog.create({
       userId: userObjectId,
       agent,
@@ -200,7 +200,24 @@ export function trackTokenUsage(params: TrackTokenUsageParams): void {
       { _id: userObjectId },
       { $inc: { tokensUsed: totalTokens } },
     ),
-  ]).catch((err: Error) => {
-    console.error("[tokenUsage] Tracking error (non-fatal):", err.message);
+  ]).then((results) => {
+    const logFailed = results[0].status === "rejected";
+    const userFailed = results[1].status === "rejected";
+
+    if (logFailed || userFailed) {
+      // Structured DESYNC warning — allows manual reconciliation via admin logs
+      console.error("[tokenUsage] DESYNC:", {
+        userId,
+        totalTokens,
+        logFailed,
+        userFailed,
+        logError: logFailed
+          ? (results[0] as PromiseRejectedResult).reason
+          : undefined,
+        userError: userFailed
+          ? (results[1] as PromiseRejectedResult).reason
+          : undefined,
+      });
+    }
   });
 }
