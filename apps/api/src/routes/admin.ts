@@ -9,6 +9,10 @@ import { UserPersona } from "../models/UserPersona";
 import { TokenRequest } from "../models/TokenRequest";
 import { TokenUsageLog } from "../models/TokenUsageLog";
 import { ContentSuggestion } from "../models/ContentSuggestion";
+import { SuggestionFeedback } from "../models/SuggestionFeedback";
+import { PostDraft } from "../models/PostDraft";
+import { ChatSession } from "../models/ChatSession";
+import { RefreshToken } from "../models/RefreshToken";
 import { AdminAuditLog } from "../models/AdminAuditLog";
 import { SystemConfig } from "../models/SystemConfig";
 import { ADMIN_CONFIG_KEYS } from "../services/adminSeed";
@@ -554,6 +558,175 @@ router.patch(
             ? `Request approved. User limit updated to ${body.newLimit!.toLocaleString()} tokens.`
             : "Request rejected.",
         request: tokenReq.toObject(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── DELETE /api/admin/users/:id ───────────────────────────────────────────────
+// Hard delete: removes the user row AND every related document across all
+// collections (UserPersona, ChatSession, ContentSuggestion, SuggestionFeedback,
+// PostDraft, TokenUsageLog, TokenRequest, RefreshToken, AdminAuditLog).
+
+router.delete(
+  "/users/:id",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params["id"] ?? "")) {
+        res.status(400).json({ error: "Invalid user ID" });
+        return;
+      }
+
+      const targetId = req.params["id"]!;
+
+      // Prevent admin from deleting themselves
+      if (targetId === req.userId) {
+        res.status(400).json({ error: "You cannot delete your own account." });
+        return;
+      }
+
+      const userId = new mongoose.Types.ObjectId(targetId);
+
+      const user = await User.findById(userId).select("email name role").lean();
+      if (!user) {
+        res.status(404).json({ error: "User not found." });
+        return;
+      }
+
+      // Prevent deleting another admin account
+      if (user.role === "admin") {
+        res
+          .status(400)
+          .json({ error: "Cannot delete an admin account." });
+        return;
+      }
+
+      // Delete all related data in parallel, then the user row
+      await Promise.all([
+        UserPersona.deleteMany({ userId }),
+        ChatSession.deleteMany({ userId }),
+        ContentSuggestion.deleteMany({ userId }),
+        SuggestionFeedback.deleteMany({ userId }),
+        PostDraft.deleteMany({ userId }),
+        TokenUsageLog.deleteMany({ userId }),
+        TokenRequest.deleteMany({ userId }),
+        RefreshToken.deleteMany({ userId }),
+        // Audit logs referencing this user as a target (keep admin's own audit trail)
+        AdminAuditLog.deleteMany({ targetUserId: userId }),
+      ]);
+
+      await User.deleteOne({ _id: userId });
+
+      logAudit(req, "delete_user", targetId, {
+        deletedEmail: user.email,
+        deletedName: user.name,
+      });
+
+      res.json({
+        message: `User "${user.name}" (${user.email}) and all related data permanently deleted.`,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/admin/users/:id/wipe-data ───────────────────────────────────────
+// Soft / data-only wipe: keeps the user account row (name, email, password,
+// role, createdAt) but deletes everything else — persona, chat sessions,
+// suggestions, feedback, drafts, token logs, token requests, refresh tokens.
+// Also resets tokensUsed → 0 on the user row.
+
+router.post(
+  "/users/:id/wipe-data",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(req.params["id"] ?? "")) {
+        res.status(400).json({ error: "Invalid user ID" });
+        return;
+      }
+
+      const targetId = req.params["id"]!;
+
+      // Prevent wiping own account data
+      if (targetId === req.userId) {
+        res
+          .status(400)
+          .json({ error: "You cannot wipe your own account data." });
+        return;
+      }
+
+      const userId = new mongoose.Types.ObjectId(targetId);
+
+      const user = await User.findById(userId).select("email name role").lean();
+      if (!user) {
+        res.status(404).json({ error: "User not found." });
+        return;
+      }
+
+      // Prevent wiping another admin account
+      if (user.role === "admin") {
+        res
+          .status(400)
+          .json({ error: "Cannot wipe data for an admin account." });
+        return;
+      }
+
+      // Delete all related data in parallel
+      const [
+        personaResult,
+        sessionsResult,
+        suggestionsResult,
+        feedbackResult,
+        draftsResult,
+        tokenLogsResult,
+        tokenRequestsResult,
+        refreshTokensResult,
+      ] = await Promise.all([
+        UserPersona.deleteMany({ userId }),
+        ChatSession.deleteMany({ userId }),
+        ContentSuggestion.deleteMany({ userId }),
+        SuggestionFeedback.deleteMany({ userId }),
+        PostDraft.deleteMany({ userId }),
+        TokenUsageLog.deleteMany({ userId }),
+        TokenRequest.deleteMany({ userId }),
+        RefreshToken.deleteMany({ userId }),
+      ]);
+
+      // Reset tokensUsed counter on the user row (data is gone, counter should match)
+      await User.updateOne(
+        { _id: userId },
+        { $set: { tokensUsed: 0 } },
+      );
+
+      logAudit(req, "wipe_user_data", targetId, {
+        targetEmail: user.email,
+        deleted: {
+          personas: personaResult.deletedCount,
+          chatSessions: sessionsResult.deletedCount,
+          suggestions: suggestionsResult.deletedCount,
+          feedback: feedbackResult.deletedCount,
+          drafts: draftsResult.deletedCount,
+          tokenLogs: tokenLogsResult.deletedCount,
+          tokenRequests: tokenRequestsResult.deletedCount,
+          refreshTokens: refreshTokensResult.deletedCount,
+        },
+      });
+
+      res.json({
+        message: `All data for "${user.name}" (${user.email}) wiped. Account credentials preserved.`,
+        deleted: {
+          personas: personaResult.deletedCount,
+          chatSessions: sessionsResult.deletedCount,
+          suggestions: suggestionsResult.deletedCount,
+          feedback: feedbackResult.deletedCount,
+          drafts: draftsResult.deletedCount,
+          tokenLogs: tokenLogsResult.deletedCount,
+          tokenRequests: tokenRequestsResult.deletedCount,
+          refreshTokens: refreshTokensResult.deletedCount,
+        },
       });
     } catch (err) {
       next(err);

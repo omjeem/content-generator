@@ -528,6 +528,37 @@ export const adminApi = {
       body: JSON.stringify(body),
     }),
 
+  /**
+   * Hard delete: permanently removes the user AND all related data
+   * (persona, sessions, suggestions, drafts, token logs, etc.)
+   */
+  deleteUser: (id: string) =>
+    request<{ message: string }>(`/api/admin/users/${id}`, {
+      method: "DELETE",
+    }),
+
+  /**
+   * Soft wipe: deletes all user data (persona, sessions, suggestions,
+   * drafts, token logs, etc.) but keeps the account credentials.
+   * Also resets tokensUsed → 0.
+   */
+  wipeUserData: (id: string) =>
+    request<{
+      message: string;
+      deleted: {
+        personas: number;
+        chatSessions: number;
+        suggestions: number;
+        feedback: number;
+        drafts: number;
+        tokenLogs: number;
+        tokenRequests: number;
+        refreshTokens: number;
+      };
+    }>(`/api/admin/users/${id}/wipe-data`, {
+      method: "POST",
+    }),
+
   // ── Token Requests ─────────────────────────────────────────────────────────
   getTokenRequests: (status?: "pending" | "approved" | "rejected", page = 1) => {
     const params = new URLSearchParams({ page: String(page), limit: "20" });
