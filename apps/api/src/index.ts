@@ -17,9 +17,11 @@ import personaChatRoutes from "./routes/personaChat";
 import tokenUsageRoutes from "./routes/tokenUsage";
 import feedbackRoutes from "./routes/feedback";
 import draftsRoutes from "./routes/drafts";
+import adminRoutes, { adminSetupRouter } from "./routes/admin";
 
 // Services
 import { seedDefaultTokenLimit } from "./services/tokenUsage";
+import { seedAdminAccount } from "./services/adminSeed";
 import { getHealthStatus } from "./services/healthCheck";
 
 const app = express();
@@ -149,6 +151,9 @@ app.use("/api/tokens", tokenUsageRoutes);
 // Feedback routes: handles /api/suggestions/:setId/feedback and /api/feedback/summary
 app.use("/api", feedbackRoutes);
 app.use("/api/drafts", draftsRoutes);
+app.use("/api/admin", adminRoutes);
+// Admin setup (one-time): auth required but NOT admin role (admin can't log in yet)
+app.use("/api/admin-setup", adminSetupRouter);
 
 // ── Swagger UI ────────────────────────────────────────────────────────────────
 app.use("/api/docs", createSwaggerRouter());
@@ -165,6 +170,7 @@ app.use(errorHandler);
 async function start() {
   await connectDB();
   await seedDefaultTokenLimit();
+  await seedAdminAccount();
   app.listen(PORT, () => {
     console.log(`[api] Server running on  http://localhost:${PORT}`);
     console.log(`[api] Health check:      http://localhost:${PORT}/api/health`);

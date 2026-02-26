@@ -77,8 +77,8 @@ const REFRESH_COOKIE_OPTIONS = {
   path: "/api/auth", // only sent to auth routes (reduces exposure surface)
 };
 
-function signAccessToken(userId: string, email: string): string {
-  return jwt.sign({ userId, email }, env.JWT_SECRET, {
+function signAccessToken(userId: string, email: string, role = "user"): string {
+  return jwt.sign({ userId, email, role }, env.JWT_SECRET, {
     expiresIn: ACCESS_TOKEN_TTL,
   });
 }
@@ -159,7 +159,7 @@ router.post(
       }
 
       const user = await User.create(body);
-      const token = signAccessToken(String(user._id), user.email);
+      const token = signAccessToken(String(user._id), user.email, user.role);
       const refreshRaw = await issueRefreshToken(
         String(user._id),
         req.ip ?? undefined,
@@ -224,7 +224,7 @@ router.post(
         return;
       }
 
-      const token = signAccessToken(String(user._id), user.email);
+      const token = signAccessToken(String(user._id), user.email, user.role);
       const refreshRaw = await issueRefreshToken(
         String(user._id),
         req.ip ?? undefined,
@@ -366,7 +366,7 @@ router.post(
       // ── Rotate: delete old token, issue new pair ──────────────────────────
       await storedToken.deleteOne();
 
-      const newAccessToken = signAccessToken(String(user._id), user.email);
+      const newAccessToken = signAccessToken(String(user._id), user.email, user.role);
       const newRefreshRaw = await issueRefreshToken(
         String(user._id),
         req.ip ?? undefined,

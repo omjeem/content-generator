@@ -443,3 +443,160 @@ export const draftsApi = {
 };
 
 export type { IPostDraft, IDraftBrief, DraftStatus, DraftPlatform };
+
+// ── Admin API ──────────────────────────────────────────────────────────────────
+
+export interface IAdminUserSummary {
+  _id: string;
+  email: string;
+  name: string;
+  role: "user" | "admin";
+  tokensUsed: number;
+  tokenLimit: number | null;
+  requiresSetup: boolean;
+  createdAt: string;
+}
+
+export interface IAdminTokenRequest {
+  _id: string;
+  userId: { _id: string; email: string; name: string; tokensUsed: number; tokenLimit: number | null } | string;
+  message?: string;
+  status: "pending" | "approved" | "rejected";
+  tokensUsed: number;
+  tokenLimit: number;
+  newLimit?: number;
+  adminNote?: string;
+  resolvedAt?: string;
+  createdAt: string;
+}
+
+export interface IAdminAnalyticsOverview {
+  totalUsers: number;
+  activeThisWeek: number;
+  activeThisMonth: number;
+  pendingRequests: number;
+  totalSuggestions: number;
+  totalTokensUsed: number;
+  recentActivity: {
+    _id: string;
+    userId: { email: string; name: string };
+    agent: string;
+    operation: string;
+    totalTokens: number;
+    createdAt: string;
+  }[];
+}
+
+export interface IAdminConfig {
+  _id: string;
+  key: string;
+  value: unknown;
+  description?: string;
+  updatedAt: string;
+}
+
+export const adminApi = {
+  // ── Users ──────────────────────────────────────────────────────────────────
+  getUsers: (page = 1, limit = 20, search?: string) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      limit: String(limit),
+    });
+    if (search) params.set("search", search);
+    return request<{
+      users: IAdminUserSummary[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(`/api/admin/users?${params.toString()}`);
+  },
+
+  getUser: (id: string) =>
+    request<{
+      user: IAdminUserSummary;
+      persona: Record<string, unknown> | null;
+      recentLogs: { agent: string; operation: string; totalTokens: number; createdAt: string }[];
+    }>(`/api/admin/users/${id}`),
+
+  updateUser: (
+    id: string,
+    body: { name?: string; role?: "user" | "admin"; tokenLimit?: number | null },
+  ) =>
+    request<{ user: IAdminUserSummary }>(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  // ── Token Requests ─────────────────────────────────────────────────────────
+  getTokenRequests: (status?: "pending" | "approved" | "rejected", page = 1) => {
+    const params = new URLSearchParams({ page: String(page), limit: "20" });
+    if (status) params.set("status", status);
+    return request<{
+      requests: IAdminTokenRequest[];
+      total: number;
+      page: number;
+      totalPages: number;
+    }>(`/api/admin/token-requests?${params.toString()}`);
+  },
+
+  updateTokenRequest: (
+    id: string,
+    body:
+      | { action: "approve"; newLimit: number; adminNote?: string }
+      | { action: "reject"; adminNote?: string },
+  ) =>
+    request<{ message: string; request: IAdminTokenRequest }>(
+      `/api/admin/token-requests/${id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+    ),
+
+  // ── Analytics ─────────────────────────────────────────────────────────────
+  getAnalyticsOverview: () =>
+    request<IAdminAnalyticsOverview>("/api/admin/analytics/overview"),
+
+  getTokensOverTime: () =>
+    request<{ daily: { _id: string; totalTokens: number; count: number }[] }>(
+      "/api/admin/analytics/tokens-over-time",
+    ),
+
+  // ── Config ────────────────────────────────────────────────────────────────
+  getConfig: () =>
+    request<{ configs: IAdminConfig[] }>("/api/admin/config"),
+
+  updateConfig: (key: string, value: unknown) =>
+    request<{ config: IAdminConfig }>(`/api/admin/config/${key}`, {
+      method: "PATCH",
+      body: JSON.stringify({ value }),
+    }),
+
+  // ── Profile ───────────────────────────────────────────────────────────────
+  getProfile: () =>
+    request<{ admin: IAdminUserSummary }>("/api/admin/profile"),
+
+  updateProfile: (body: {
+    name?: string;
+    email?: string;
+    currentPassword?: string;
+    newPassword?: string;
+  }) =>
+    request<{ admin: IAdminUserSummary }>("/api/admin/profile", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  // ── Setup (one-time) ──────────────────────────────────────────────────────
+  setup: (body: {
+    setupToken: string;
+    email: string;
+    password: string;
+    name?: string;
+  }) =>
+    request<{ message: string; email: string }>("/api/admin-setup", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+};
