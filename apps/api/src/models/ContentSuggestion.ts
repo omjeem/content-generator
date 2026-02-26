@@ -20,6 +20,16 @@ export interface ISuggestionItem {
   threadContent?: { tweetIndex: number; content: string; charCount: number }[];
 }
 
+/** Performance + cost metadata captured during runContentPipeline() (#54) */
+export interface IGenerationMeta {
+  pipelineDurationMs: number;
+  trendFetchDurationMs: number;
+  llmDurationMs: number;
+  tokenCost: { input: number; output: number; total: number };
+  trendSource: "live" | "fallback";
+  modelId: string;
+}
+
 export interface IContentSuggestionDocument extends Document {
   userId: mongoose.Types.ObjectId;
   generatedAt: Date;
@@ -28,6 +38,8 @@ export interface IContentSuggestionDocument extends Document {
   // Generation metadata (#17)
   generationMode: GenerationMode;
   contextOptions?: IGenerateContextOptions;
+  // Generation analytics (#54)
+  generationMeta?: IGenerationMeta;
   createdAt: Date;
 }
 
@@ -91,6 +103,30 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
       default: "profile",
     },
     contextOptions: { type: Schema.Types.Mixed },
+    // Generation analytics (#54) — optional, populated by runContentPipeline()
+    generationMeta: {
+      type: new Schema(
+        {
+          pipelineDurationMs: { type: Number },
+          trendFetchDurationMs: { type: Number },
+          llmDurationMs: { type: Number },
+          tokenCost: {
+            type: new Schema(
+              {
+                input: { type: Number, default: 0 },
+                output: { type: Number, default: 0 },
+                total: { type: Number, default: 0 },
+              },
+              { _id: false },
+            ),
+          },
+          trendSource: { type: String, enum: ["live", "fallback"] },
+          modelId: { type: String },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
   },
   { timestamps: true },
 );

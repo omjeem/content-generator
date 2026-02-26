@@ -29,6 +29,7 @@ import { runPostEditor } from "../agents/postEditor";
 import { findPersonaByUserId } from "../services/userPersonaService";
 import { ChatSession } from "../models/ChatSession";
 import { SuggestionFeedback } from "../models/SuggestionFeedback";
+import { aggregateAndUpdatePersona } from "../services/personaLearning";
 
 const router = Router();
 router.use(authenticate);
@@ -503,6 +504,13 @@ router.post(
       // Feed published post content back into persona pipeline — fire-and-forget (#31)
       // Strengthens the persona with the user's own published writing style.
       feedPublishedDraftToPersona(req.userId!, draft);
+
+      // A published post is the strongest learning signal — trigger immediate
+      // persona aggregation (includes averageContentLength from published drafts).
+      // Fire-and-forget (#52).
+      void aggregateAndUpdatePersona(req.userId!).catch((err) => {
+        console.error("[drafts] aggregateAndUpdatePersona failed (non-fatal):", err);
+      });
 
       res.json({
         message: "Draft published.",

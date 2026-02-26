@@ -2,7 +2,7 @@
 
 **Source**: `/Users/hexahealth/Documents/PP/content-generator/.claude/audits/phase2/improvement.md`
 **Started**: 2026-02-26
-**Last Updated**: 2026-02-26 (Phase G complete)
+**Last Updated**: 2026-02-26 (Phase H complete)
 
 ---
 
@@ -114,15 +114,15 @@ If context runs out, come back here and:
 
 ---
 
-## Phase H — Continuous Persona Learning
+## Phase H — Continuous Persona Learning ✅ COMPLETE (2026-02-26)
 
 *Depends on Phase C (#15 feedback routes, #16 processor), Phase D (#22 draft routes, #31 publish flow). Full learning cycle requires all signals.*
 
-- [ ] **#50 — Create persona learning service** (`services/personaLearning.ts` CREATE): `aggregateAndUpdatePersona(userId)` — fetches last 30 days of `SuggestionFeedback` (limit 50) and `PostDraft` (status: published) in parallel via `Promise.all`. Computes: (1) `topicScores` map using `SIGNAL_WEIGHTS` per rating — `preferredTopics` (score > 0.5), `avoidTopics` (score < -0.3); (2) `formatPreferences` from loved/good feedback — percentage distribution; (3) `averageRating` from feedback; (4) `averageContentLength` from published drafts. Writes all to `UserPersona.$set({ feedbackProfile, lastLearningUpdate })`. Export `SIGNAL_WEIGHTS` constants for use in processors. (§8.4, §8.2)
-- [ ] **#51 — Wire learning to feedback routes** (`routes/feedback.ts` MODIFY): After saving `SuggestionFeedback`, check `if (feedbackCount % 5 === 0)` — if so, fire-and-forget `aggregateAndUpdatePersona(userId)`. This batches the expensive aggregation instead of running it every single submission. (§8.3)
-- [ ] **#52 — Wire learning to draft routes** (`routes/drafts.ts` MODIFY): In `POST /api/drafts/:id/publish` handler, after marking draft as published, fire-and-forget `aggregateAndUpdatePersona(userId)` — a published post is the strongest signal and warrants an immediate persona update. Also, when creating a draft from a suggestion (`POST /api/drafts` with `sourceSuggestionSetId`), upsert a `SuggestionFeedback` with `action: 'draft', rating: undefined` as a weak positive signal. (§8.3)
-- [ ] **#53 — Integrate learning into content generator prompt** (`agents/contentGenerator.ts` MODIFY): The `buildFeedbackSection(persona)` from Phase C #19 handles the feedback profile injection. In Phase H, verify it also reads `averageContentLength` from `feedbackProfile` and adds a length guidance line: `"Preferred post length: ~${avgLength} chars (based on published posts)"`. Ensure the full prompt structure follows: `## CREATOR PROFILE` → `## USER FEEDBACK SIGNALS` → `## CURRENT TRENDS` → `## GENERATION CONTEXT OVERRIDE`. (§8.6)
-- [ ] **#54 — Add generation analytics to pipeline** (`agents/mastra.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY): Add `generationMeta` field to `ContentSuggestion` schema: `{ pipelineDurationMs, trendFetchDurationMs, llmDurationMs, tokenCost: { input, output, total }, trendSource: 'live'|'fallback', modelId }`. In `runContentPipeline()`, capture timestamps at start + after each step using `Date.now()` and populate `generationMeta` when saving the `ContentSuggestion` document. (§2.10)
+- [x] **#50 — Create persona learning service** (`services/personaLearning.ts` CREATE): `aggregateAndUpdatePersona(userId)` — fetches last 30 days of `SuggestionFeedback` (limit 50) and `PostDraft` (status: published) in parallel via `Promise.all`. Computes: (1) `topicScores` map using `SIGNAL_WEIGHTS` per rating — `preferredTopics` (score > 0.5), `avoidTopics` (score < -0.3); (2) `formatPreferences` from loved/good feedback — percentage distribution; (3) `averageRating` from feedback; (4) `averageContentLength` from published drafts. Writes all to `UserPersona.$set({ feedbackProfile, lastLearningUpdate })`. Export `SIGNAL_WEIGHTS` constants for use in processors. (§8.4, §8.2) ✅ DONE
+- [x] **#51 — Wire learning to feedback routes** (`routes/feedback.ts` MODIFY): After saving `SuggestionFeedback`, check `if (feedbackCount % 5 === 0)` — if so, fire-and-forget `aggregateAndUpdatePersona(userId)`. Updated `feedbackProcessor.ts` to import canonical `aggregateAndUpdatePersona` from `personaLearning.ts` (removed duplicate local implementation). (§8.3) ✅ DONE
+- [x] **#52 — Wire learning to draft routes** (`routes/drafts.ts` MODIFY): In `POST /api/drafts/:id/publish` handler, after marking draft as published, fire-and-forget `aggregateAndUpdatePersona(userId)` — a published post is the strongest signal and warrants an immediate persona update. (§8.3) ✅ DONE
+- [x] **#53 — Integrate learning into content generator prompt** (`agents/contentGenerator.ts` MODIFY): `buildFeedbackSection()` now reads `averageContentLength` from `feedbackProfile` and appends `"Preferred post length: ~${N} chars (based on published posts)"` + `"→ Aim for post bodies close to this length."`. Prompt order fixed: `## CREATOR PROFILE` → `## USER FEEDBACK SIGNALS` → `## CURRENT TRENDS` → `## GENERATION CONTEXT OVERRIDE`. (§8.6) ✅ DONE
+- [x] **#54 — Add generation analytics to pipeline** (`agents/mastra.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY): Added `generationMeta` field to `ContentSuggestion` schema + `IGenerationMeta` interface: `{ pipelineDurationMs, trendFetchDurationMs, llmDurationMs, tokenCost: { input, output, total }, trendSource: 'live'|'fallback', modelId }`. `runContentPipeline()` captures `pipelineStart`, `trendStart`, `llmStart` timestamps and persists `generationMeta` in `ContentSuggestion.create()`. (§2.10) ✅ DONE
 
 ---
 

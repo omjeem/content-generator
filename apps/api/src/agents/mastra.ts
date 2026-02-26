@@ -71,6 +71,9 @@ export async function runContentPipeline(
 ): Promise<PipelineResult> {
   const userObjectId = new mongoose.Types.ObjectId(input.userId);
 
+  // Capture pipeline start time for generationMeta (#54)
+  const pipelineStart = Date.now();
+
   // ── STEP 0: Token quota check ─────────────────────────────────────────────
   const quota = await checkTokenQuota(input.userId);
   if (!quota.allowed) {
@@ -190,8 +193,10 @@ export async function runContentPipeline(
   // of any further persona work so we can start it immediately. (#31)
   let trends;
   let trendIsLive = false;
+  let trendFetchDurationMs = 0;
   try {
     console.log("[pipeline] Step 3: Researching trends (parallel-ready)...");
+    const trendStart = Date.now();
     const {
       result: trendResult,
       usage: trendUsage,
@@ -201,6 +206,7 @@ export async function runContentPipeline(
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
       contentPillars: persona.contentPillars, // for balanced selection (#15)
     });
+    trendFetchDurationMs = Date.now() - trendStart;
     trends = trendResult;
     trendIsLive = isLive;
 
@@ -229,14 +235,17 @@ export async function runContentPipeline(
   // ── STEP 4: Content Generation (Agent 4) ─────────────────────────────────────
   let contentIdeas;
   let contentUsage = { inputTokens: 0, outputTokens: 0 };
+  let llmDurationMs = 0;
   try {
     console.log("[pipeline] Step 4: Generating content ideas...");
+    const llmStart = Date.now();
     const genResult = await generateContentIdeas({
       persona,
       trends,
       context: input.context,
       platforms: input.platforms,
     });
+    llmDurationMs = Date.now() - llmStart;
     contentIdeas = genResult.ideas;
     contentUsage = genResult.usage;
     console.log(
@@ -255,6 +264,12 @@ export async function runContentPipeline(
   // This makes trendsUsed accurate for historical analysis and the frontend display.
   const acceptedTrendTopics = trends.trends.map((t) => t.topic);
 
+  const pipelineDurationMs = Date.now() - pipelineStart;
+  const totalInputTokens =
+    contentUsage.inputTokens;
+  const totalOutputTokens =
+    contentUsage.outputTokens;
+
   const saved = await ContentSuggestion.create({
     userId: userObjectId,
     generatedAt: new Date(),
@@ -262,6 +277,19 @@ export async function runContentPipeline(
     // Store generation mode + context for history/analytics (#17)
     generationMode: input.context?.mode ?? "profile",
     contextOptions: input.context,
+    // Generation analytics (#54)
+    generationMeta: {
+      pipelineDurationMs,
+      trendFetchDurationMs,
+      llmDurationMs,
+      tokenCost: {
+        input: totalInputTokens,
+        output: totalOutputTokens,
+        total: totalInputTokens + totalOutputTokens,
+      },
+      trendSource: trendIsLive ? "live" : "fallback",
+      modelId: "gemini-2.5-flash",
+    },
     suggestions: contentIdeas.ideas.map((idea) => ({
       topic: idea.topic,
       angle: idea.angle,

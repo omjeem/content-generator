@@ -152,6 +152,14 @@ function buildFeedbackSection(persona: IUserPersonaDocument): string {
     lines.push(`Tone preference: ${fp.tonePreference}`);
   }
 
+  // Average content length from published posts — Phase H #53
+  if (fp.averageContentLength && fp.averageContentLength > 0) {
+    lines.push(
+      `Preferred post length: ~${fp.averageContentLength} chars (based on published posts)`,
+    );
+    lines.push("→ Aim for post bodies close to this length.");
+  }
+
   return lines.join("\n");
 }
 
@@ -274,10 +282,10 @@ Each idea MUST include all fields: topic, angle, format, hook, whyItFits, seoKey
 
 ## CREATOR PROFILE
 ${personaSummary}
+${feedbackSection}
 
 ## CURRENT TRENDS IN THEIR NICHE
 ${trendsList}
-${feedbackSection}
 ${platformSection}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`;
