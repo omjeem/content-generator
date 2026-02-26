@@ -6,7 +6,8 @@
  * The right pane of the editor page. Chat interface scoped to a draft:
  * - Shows conversation history with the Post Editor AI
  * - Sends messages to POST /api/drafts/:id/chat
- * - When AI returns postContent, shows an [Apply Edit] banner
+ * - When AI returns postContent, it is applied to the editor IMMEDIATELY
+ *   (no "Apply Edit" click required — content always goes straight to editor)
  * - Calls onApplyEdit(content) to push the new text into PostEditorPane
  * - autoInit=true auto-sends "__INIT__" to generate the first draft
  */
@@ -19,12 +20,8 @@ import { draftsApi, ApiError } from "@/lib/api";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
-}
-
-interface PendingEdit {
-  content: string;
-  charCount: number;
-  explanation?: string;
+  /** When true, show a subtle "✓ Applied to editor" badge below the bubble */
+  appliedToEditor?: boolean;
 }
 
 interface EditorChatPaneProps {
@@ -51,7 +48,6 @@ export function EditorChatPane({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Track whether auto-init has already been triggered
@@ -60,7 +56,7 @@ export function EditorChatPane({
   // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pendingEdit]);
+  }, [messages]);
 
   const sendMessage = useCallback(
     async (messageText: string) => {
@@ -69,7 +65,6 @@ export function EditorChatPane({
       const userMessage = messageText.trim();
       setInput("");
       setError(null);
-      setPendingEdit(null);
 
       // Optimistically add user message (skip for __INIT__ — it's an internal trigger)
       const isInit = userMessage === "__INIT__";
@@ -81,22 +76,28 @@ export function EditorChatPane({
       try {
         const result = await draftsApi.chat(draftId, {
           message: userMessage,
-          applyContent: false, // We let the user decide via the [Apply Edit] button
+          applyContent: true, // backend always persists; we also apply locally below
         });
 
-        // Add AI reply
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: result.reply },
-        ]);
-
-        // If AI returned post content, show the Apply banner
         if (result.postContent) {
-          setPendingEdit({
-            content: result.postContent,
-            charCount: result.charCount ?? result.postContent.length,
-            explanation: result.changeExplanation,
-          });
+          // AI produced / modified the post — apply to editor immediately.
+          // The reply in chat is always a SHORT acknowledgement (1-3 sentences).
+          // The post content goes straight into the editor — no extra click needed.
+          onApplyEdit(result.postContent);
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: result.reply,
+              appliedToEditor: true,
+            },
+          ]);
+        } else {
+          // Pure conversational reply — no post change
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: result.reply },
+          ]);
         }
       } catch (err) {
         const message =
@@ -114,7 +115,7 @@ export function EditorChatPane({
         setSending(false);
       }
     },
-    [draftId, sending],
+    [draftId, sending, onApplyEdit],
   );
 
   // Auto-init: trigger first-draft generation when content is empty and no history
@@ -125,12 +126,6 @@ export function EditorChatPane({
       void sendMessage("__INIT__");
     }
   }, [autoInit, sendMessage]);
-
-  function handleApplyEdit() {
-    if (!pendingEdit) return;
-    onApplyEdit(pendingEdit.content);
-    setPendingEdit(null);
-  }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -196,8 +191,8 @@ export function EditorChatPane({
           <div
             key={i}
             className={cn(
-              "flex",
-              msg.role === "user" ? "justify-end" : "justify-start",
+              "flex flex-col",
+              msg.role === "user" ? "items-end" : "items-start",
             )}
           >
             <div
@@ -210,6 +205,12 @@ export function EditorChatPane({
             >
               {msg.content}
             </div>
+            {/* "Applied to editor" badge — shown when AI wrote/edited the post */}
+            {msg.appliedToEditor && (
+              <p className="text-[10px] text-indigo-400 mt-0.5 ml-1 flex items-center gap-1">
+                <span>✓</span> Applied to editor
+              </p>
+            )}
           </div>
         ))}
 
@@ -226,36 +227,6 @@ export function EditorChatPane({
                   />
                 ))}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Apply Edit banner */}
-        {pendingEdit && (
-          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-            <p className="text-xs font-semibold text-indigo-700 mb-1">
-              ✨ AI updated the post
-            </p>
-            {pendingEdit.explanation && (
-              <p className="text-xs text-indigo-600 mb-2">
-                {pendingEdit.explanation}
-              </p>
-            )}
-            <p className="text-xs text-gray-500 mb-2">
-              {pendingEdit.charCount.toLocaleString()} chars
-            </p>
-            <div className="flex gap-2">
-              <Button size="sm" className="flex-1 text-xs h-7" onClick={handleApplyEdit}>
-                Apply Edit
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs h-7 text-gray-500"
-                onClick={() => setPendingEdit(null)}
-              >
-                Discard
-              </Button>
             </div>
           </div>
         )}

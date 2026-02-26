@@ -12,9 +12,13 @@
  *
  * On first load with empty content: auto-sends "__INIT__" to generate
  * the first draft from the content brief.
+ *
+ * NOTE: useSearchParams() must be inside a <Suspense> boundary in Next.js 14.
+ * The actual page content lives in EditorPageContent; EditorPage is a thin
+ * wrapper that provides the Suspense boundary.
  */
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PostEditorPane } from "@/components/editor/PostEditorPane";
@@ -28,7 +32,22 @@ interface ChatMessage {
   content: string;
 }
 
-export default function EditorPage() {
+// ── Loading fallback shown while useSearchParams resolves ─────────────────────
+
+function EditorLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center h-full py-20">
+      <div className="flex flex-col items-center gap-3">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
+        <p className="text-sm text-gray-500">Loading editor…</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Inner component — calls useSearchParams() safely inside Suspense ──────────
+
+function EditorPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const draftId = searchParams.get("draftId");
@@ -55,7 +74,7 @@ export default function EditorPage() {
   // Track if __INIT__ has been auto-sent
   const initSentRef = useRef(false);
 
-  // ── Load draft + chat history on mount ────────────────────────────────────
+  // ── Load draft + chat history on mount ──────────────────────────────────────
   useEffect(() => {
     if (!draftId) {
       setLoadError("No draft ID provided.");
@@ -100,7 +119,7 @@ export default function EditorPage() {
     })();
   }, [draftId]);
 
-  // ── Auto-send __INIT__ when draft has no content and no chat history ───────
+  // ── Auto-send __INIT__ when draft has no content and no chat history ─────────
   // We signal this to EditorChatPane via the autoInit prop.
   // EditorChatPane will call onApplyEdit when AI returns postContent.
   const shouldAutoInit =
@@ -114,7 +133,7 @@ export default function EditorPage() {
     initSentRef.current = true;
   }
 
-  // ── Save draft ─────────────────────────────────────────────────────────────
+  // ── Save draft ───────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!draftId || saving) return;
     setSaving(true);
@@ -136,7 +155,7 @@ export default function EditorPage() {
     }
   }, [draftId, content, title, saving]);
 
-  // ── Mark as ready ──────────────────────────────────────────────────────────
+  // ── Mark as ready ────────────────────────────────────────────────────────────
   const handleMarkReady = useCallback(async () => {
     if (!draftId || saving) return;
     setSaving(true);
@@ -159,7 +178,7 @@ export default function EditorPage() {
     }
   }, [draftId, content, title, saving]);
 
-  // ── Publish ────────────────────────────────────────────────────────────────
+  // ── Publish ──────────────────────────────────────────────────────────────────
   const handlePublish = useCallback(async () => {
     if (!draftId || publishing) return;
 
@@ -188,7 +207,7 @@ export default function EditorPage() {
     }
   }, [draftId, content, title, draft, publishing]);
 
-  // ── Apply AI edit (from EditorChatPane) ───────────────────────────────────
+  // ── Apply AI edit (from EditorChatPane) ─────────────────────────────────────
   const handleApplyEdit = useCallback(
     (newContent: string) => {
       setContent(newContent);
@@ -208,7 +227,7 @@ export default function EditorPage() {
     [draftId, title],
   );
 
-  // ── Render states ──────────────────────────────────────────────────────────
+  // ── Render states ────────────────────────────────────────────────────────────
 
   if (!draftId) {
     return (
@@ -227,14 +246,7 @@ export default function EditorPage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full py-20">
-        <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-2 border-indigo-600 border-t-transparent" />
-          <p className="text-sm text-gray-500">Loading editor…</p>
-        </div>
-      </div>
-    );
+    return <EditorLoadingFallback />;
   }
 
   if (loadError) {
@@ -253,7 +265,7 @@ export default function EditorPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: 0 }}>
-      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
+      {/* ── Toolbar ───────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-white shrink-0">
         {/* Left: back + title */}
         <div className="flex items-center gap-3 min-w-0">
@@ -323,7 +335,7 @@ export default function EditorPage() {
         </div>
       </div>
 
-      {/* ── Dual-pane editor ─────────────────────────────────────────────────── */}
+      {/* ── Dual-pane editor ──────────────────────────────────────────────────── */}
       <div className="flex flex-1 gap-0 overflow-hidden" style={{ minHeight: 0 }}>
         {/* Left pane — PostEditorPane */}
         <div className="flex-1 p-4 overflow-y-auto border-r border-gray-100" style={{ minHeight: 0 }}>
@@ -358,5 +370,15 @@ export default function EditorPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Page export — Suspense wrapper required by Next.js 14 for useSearchParams ──
+
+export default function EditorPage() {
+  return (
+    <Suspense fallback={<EditorLoadingFallback />}>
+      <EditorPageContent />
+    </Suspense>
   );
 }

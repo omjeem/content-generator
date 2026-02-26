@@ -34,6 +34,36 @@ import { aggregateAndUpdatePersona } from "../services/personaLearning";
 const router = Router();
 router.use(authenticate);
 
+// ── Write-intent detector ─────────────────────────────────────────────────────
+/**
+ * Returns true if the message looks like a write/edit/refine intent.
+ * Used as a heuristic for the inline-fallback: when the LLM puts the post
+ * text directly in the reply (skipping the POST_CONTENT block), we detect it
+ * and rescue the content rather than showing a wall of text in the chat.
+ */
+function isWriteIntent(message: string): boolean {
+  if (message === "__INIT__") return true;
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("write") ||
+    lower.includes("draft") ||
+    lower.includes("generate") ||
+    lower.includes("create") ||
+    lower.includes("article") ||
+    lower.includes("post") ||
+    lower.includes("help me") ||
+    lower.includes("shorten") ||
+    lower.includes("shorter") ||
+    lower.includes("refine") ||
+    lower.includes("improve") ||
+    lower.includes("edit") ||
+    lower.includes("rewrite") ||
+    lower.includes("hook") ||
+    lower.includes("punch") ||
+    lower.includes("update")
+  );
+}
+
 // ── Validation schemas ────────────────────────────────────────────────────────
 
 const briefSchema = z.object({
@@ -341,7 +371,7 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = chatSchema.parse(req.body);
-      const applyContent = req.body.applyContent === true;
+      // applyContent flag is no longer needed — AI content is always auto-applied server-side
 
       // Load draft and persona in parallel
       const [draft, persona] = await Promise.all([
@@ -368,8 +398,32 @@ router.post(
         persona,
       });
 
-      // If AI returned new content AND caller wants it auto-applied, save it
-      if (applyContent && editorOutput.postContent) {
+      // ── Inline-content fallback ──────────────────────────────────────────────
+      // If the LLM ignored the POST_CONTENT block instruction and wrote the
+      // post directly in the chat reply (a known Gemini failure mode), we
+      // detect it via: no postContent + long reply + write-intent message.
+      // We rescue the content and replace the reply with a short synthetic one.
+      const INLINE_FALLBACK_MIN_CHARS = 300;
+      if (
+        !editorOutput.postContent &&
+        editorOutput.reply.length > INLINE_FALLBACK_MIN_CHARS &&
+        isWriteIntent(body.message)
+      ) {
+        const rescued = editorOutput.reply;
+        editorOutput.postContent = rescued;
+        editorOutput.charCount = rescued.length;
+        editorOutput.changeExplanation = "Post written by AI";
+        editorOutput.reply =
+          "Done! Your post is ready in the editor — let me know if you'd like any changes.";
+        console.log(
+          `[drafts/chat] Inline-fallback: rescued ${rescued.length}-char reply as post content (no POST_CONTENT block found).`,
+        );
+      }
+
+      // ── Always persist AI content to the draft ──────────────────────────────
+      // Auto-apply whenever the AI produced content — frontend will also reflect
+      // the change immediately. Removes the need for applyContent flag.
+      if (editorOutput.postContent) {
         await applyAiContent(
           req.userId!,
           req.params.id!,
