@@ -23,6 +23,7 @@ import {
   applyAiContent,
   deleteDraft,
   publishDraft,
+  feedPublishedDraftToPersona,
 } from "../services/draftService";
 import { runPostEditor } from "../agents/postEditor";
 import { findPersonaByUserId } from "../services/userPersonaService";
@@ -499,9 +500,14 @@ router.post(
         });
       }
 
+      // Feed published post content back into persona pipeline — fire-and-forget (#31)
+      // Strengthens the persona with the user's own published writing style.
+      feedPublishedDraftToPersona(req.userId!, draft);
+
       res.json({
         message: "Draft published.",
         draft,
+        personaFeed: "queued", // signals to frontend that persona update is in progress
       });
     } catch (err) {
       next(err);
