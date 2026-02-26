@@ -181,10 +181,16 @@ export function SuggestionCard({
       <CardContent className="p-5">
         {/* Header row */}
         <div className="flex items-start justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-gray-400">
               #{index + 1}
             </span>
+            {/* Platform badge — only shown for Twitter suggestions (#37) */}
+            {suggestion.platform === "twitter" && (
+              <span className="inline-flex items-center rounded-full bg-sky-100 text-sky-700 px-2 py-0.5 text-xs font-medium">
+                𝕏 Twitter
+              </span>
+            )}
             <Badge variant="format" format={suggestion.format}>
               {formatLabels[suggestion.format] ?? suggestion.format}
             </Badge>

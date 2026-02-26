@@ -41,6 +41,8 @@ export interface PipelineInput {
   postsArray?: string[];
   forceReanalyze?: boolean;
   context?: IGenerateContextOptions; // optional flexible generation context
+  /** Target platforms for this generation run (#38) */
+  platforms?: string[];
 }
 
 export type PipelineStatus =
@@ -233,6 +235,7 @@ export async function runContentPipeline(
       persona,
       trends,
       context: input.context,
+      platforms: input.platforms,
     });
     contentIdeas = genResult.ideas;
     contentUsage = genResult.usage;
@@ -269,6 +272,7 @@ export async function runContentPipeline(
       clickbaitHooks: idea.clickbaitHooks ?? [],
       postPointers: idea.postPointers ?? [],
       callToAction: idea.callToAction ?? "",
+      platform: idea.platform ?? "linkedin",
     })),
   });
 

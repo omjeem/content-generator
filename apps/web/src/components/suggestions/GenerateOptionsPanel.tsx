@@ -3,10 +3,24 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { suggestionsApi, ApiError } from "@/lib/api";
-import type { IGenerateContextOptions, IMessage } from "@repo/shared-types";
+import type { IGenerateContextOptions, IMessage, SuggestionPlatform } from "@repo/shared-types";
 
 type Mode = "profile" | "topic-focus" | "chat-refined";
+
+// ── Platform option definitions ────────────────────────────────────────────────
+
+const PLATFORM_OPTIONS: {
+  value: SuggestionPlatform | "both";
+  label: string;
+  emoji: string;
+  description: string;
+}[] = [
+  { value: "linkedin", label: "LinkedIn", emoji: "in", description: "Professional long-form posts" },
+  { value: "twitter", label: "Twitter/X", emoji: "𝕏", description: "Tweets & threads (≤280 chars)" },
+  { value: "both", label: "Both", emoji: "⊕", description: "Mix of LinkedIn + Twitter ideas" },
+];
 
 interface GenerateOptionsPanelProps {
   disabled?: boolean;
@@ -47,6 +61,9 @@ export function GenerateOptionsPanel({
   onCancel,
 }: GenerateOptionsPanelProps) {
   const [mode, setMode] = useState<Mode | null>(null);
+
+  // Platform selector state (#35)
+  const [selectedPlatform, setSelectedPlatform] = useState<SuggestionPlatform | "both">("linkedin");
 
   // Topic focus state
   const [topicFocus, setTopicFocus] = useState("");
@@ -134,13 +151,21 @@ export function GenerateOptionsPanel({
     }
   };
 
+  // Resolve SuggestionPlatform[] from the selector value
+  function resolvePlatforms(): SuggestionPlatform[] {
+    if (selectedPlatform === "both") return ["linkedin", "twitter"];
+    return [selectedPlatform];
+  }
+
   const handleGenerate = () => {
+    const platforms = resolvePlatforms();
     if (mode === "profile") {
-      onGenerate({ mode: "profile" });
+      onGenerate({ mode: "profile", platforms });
     } else if (mode === "topic-focus") {
       onGenerate({
         mode: "topic-focus",
         topicFocus: topicFocus.trim() || undefined,
+        platforms,
       });
     } else if (mode === "chat-refined" && refinedContext) {
       onGenerate({
@@ -150,6 +175,7 @@ export function GenerateOptionsPanel({
         targetAudienceOverride: refinedContext.targetAudienceOverride,
         platformGoal:
           refinedContext.platformGoal as IGenerateContextOptions["platformGoal"],
+        platforms,
       });
     }
   };
@@ -166,7 +192,7 @@ export function GenerateOptionsPanel({
             Choose how to tailor this batch of content ideas.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
             <ModeCard
               icon="👤"
               title="Use My Profile"
@@ -187,6 +213,14 @@ export function GenerateOptionsPanel({
               description="Chat with AI to refine your angle, audience, and tone before generating."
               onClick={() => setMode("chat-refined")}
               disabled={disabled}
+            />
+          </div>
+
+          {/* Platform selector — shared across all modes (#35) */}
+          <div className="mb-5">
+            <PlatformSelector
+              selected={selectedPlatform}
+              onChange={setSelectedPlatform}
             />
           </div>
 
@@ -214,10 +248,16 @@ export function GenerateOptionsPanel({
           <h2 className="text-lg font-semibold mb-1">
             Generate from Your Profile
           </h2>
-          <p className="text-sm text-gray-500 mb-6 max-w-sm mx-auto">
+          <p className="text-sm text-gray-500 mb-5 max-w-sm mx-auto">
             We&apos;ll use your full persona — writing style, goals, content
             pillars, and trending topics in your niche.
           </p>
+          <div className="mb-6">
+            <PlatformSelector
+              selected={selectedPlatform}
+              onChange={setSelectedPlatform}
+            />
+          </div>
           <div className="flex gap-3 justify-center">
             <Button variant="outline" onClick={() => setMode(null)}>
               ← Back
@@ -244,7 +284,7 @@ export function GenerateOptionsPanel({
           <h2 className="text-lg font-semibold mb-1 text-center">
             Focus on a Specific Topic
           </h2>
-          <p className="text-sm text-gray-500 text-center mb-6 max-w-sm mx-auto">
+          <p className="text-sm text-gray-500 text-center mb-5 max-w-sm mx-auto">
             All ideas in this batch will focus on the topic or niche you
             specify.
           </p>
@@ -265,6 +305,10 @@ export function GenerateOptionsPanel({
                 }}
               />
             </div>
+            <PlatformSelector
+              selected={selectedPlatform}
+              onChange={setSelectedPlatform}
+            />
             <div className="flex gap-3 justify-center pt-2">
               <Button variant="outline" onClick={() => setMode(null)}>
                 ← Back
@@ -379,6 +423,52 @@ export function GenerateOptionsPanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ── Platform selector widget ───────────────────────────────────────────────────
+
+function PlatformSelector({
+  selected,
+  onChange,
+}: {
+  selected: SuggestionPlatform | "both";
+  onChange: (v: SuggestionPlatform | "both") => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-gray-600 text-center">Target platform</p>
+      <div className="flex gap-2 justify-center">
+        {PLATFORM_OPTIONS.map(({ value, label, emoji }) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => onChange(value)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors",
+              selected === value
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-400",
+            )}
+          >
+            <span className={cn("text-[10px] font-bold", selected === value ? "" : "opacity-60")}>
+              {emoji}
+            </span>
+            {label}
+          </button>
+        ))}
+      </div>
+      {selected === "twitter" && (
+        <p className="text-[10px] text-sky-600 text-center">
+          Ideas will be tweet &amp; thread formats (≤280 chars per tweet)
+        </p>
+      )}
+      {selected === "both" && (
+        <p className="text-[10px] text-gray-500 text-center">
+          ~50% LinkedIn ideas + ~50% Twitter/X ideas
+        </p>
+      )}
+    </div>
   );
 }
 

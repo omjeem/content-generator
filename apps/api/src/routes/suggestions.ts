@@ -35,6 +35,11 @@ const generateContextSchema = z
     platformGoal: platformGoalEnum.optional(),
     contentMix: contentMixEnum.optional(),
     chatRefinementContext: z.string().optional(),
+    /** Target platforms for this generation run (#38) */
+    platforms: z
+      .array(z.enum(["linkedin", "twitter"]))
+      .max(2)
+      .optional(),
   })
   .optional();
 
@@ -43,6 +48,8 @@ const generateSchema = z.object({
   manualPosts: z.string().optional(),
   forceReanalyze: z.boolean().optional().default(false),
   context: generateContextSchema,
+  /** Top-level platforms shortcut — passed directly to PipelineInput (#38) */
+  platforms: z.array(z.enum(["linkedin", "twitter"])).max(2).optional(),
 });
 
 // ── POST /api/suggestions/generate ───────────────────────────────────────────
@@ -111,12 +118,17 @@ router.post(
     try {
       const body = generateSchema.parse(req.body);
 
+      // Merge top-level platforms + context.platforms (top-level wins)
+      const effectivePlatforms =
+        body.platforms ?? body.context?.platforms?.map(String);
+
       const result = await runContentPipelineWithRetry({
         userId: req.userId!,
         linkedinUrl: body.linkedinUrl,
         manualPosts: body.manualPosts,
         forceReanalyze: body.forceReanalyze,
         context: body.context,
+        platforms: effectivePlatforms,
       });
 
       switch (result.status) {

@@ -6,6 +6,7 @@ import type { TrendResult } from "./trendResearch";
 import type { IGenerateContextOptions } from "@repo/shared-types";
 import type { TrendResearchResult } from "./trendResearch";
 import { extractJSON } from "../utils/extractJSON";
+import { getPlatformConfig } from "../config/platforms";
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -13,8 +14,8 @@ export const SuggestionSchema = z.object({
   topic: z.string().describe("What the post is about"),
   angle: z.string().describe("The unique perspective or spin on the topic"),
   format: z
-    .enum(["carousel", "text-post", "poll", "video-script", "list"])
-    .describe("Recommended LinkedIn post format"),
+    .enum(["carousel", "text-post", "poll", "video-script", "list", "tweet", "thread", "quote-tweet", "image-tweet"])
+    .describe("Recommended post format for the target platform"),
   hook: z
     .string()
     .max(200)
@@ -27,7 +28,7 @@ export const SuggestionSchema = z.object({
     .array(z.string())
     .min(3)
     .max(5)
-    .describe("3-5 LinkedIn hashtags / SEO keywords for this post"),
+    .describe("3-5 hashtags / SEO keywords for this post"),
   clickbaitHooks: z
     .array(z.string())
     .min(2)
@@ -45,6 +46,11 @@ export const SuggestionSchema = z.object({
     .describe(
       'A single suggested CTA to close the post (e.g. "What do you think? Drop a comment.")',
     ),
+  // Platform targeting (#34)
+  platform: z
+    .enum(["linkedin", "twitter"])
+    .default("linkedin")
+    .describe("Target platform for this suggestion"),
 });
 
 export const ContentIdeasSchema = z.object({
@@ -164,6 +170,51 @@ function buildPersonaSummary(persona: IUserPersonaDocument): string {
   return lines.join("\n");
 }
 
+// ── Platform requirements section (#34) ──────────────────────────────────────
+// Injected into the prompt when the user has requested specific platforms.
+// Empty string when only LinkedIn is requested (the default) to save tokens.
+
+function buildPlatformSection(platforms?: string[]): string {
+  if (!platforms || platforms.length === 0) return "";
+
+  // LinkedIn-only is the default — no section needed
+  if (platforms.length === 1 && platforms[0] === "linkedin") return "";
+
+  const lines: string[] = ["\n## PLATFORM REQUIREMENTS"];
+
+  const hasLinkedIn = platforms.includes("linkedin");
+  const hasTwitter = platforms.includes("twitter");
+
+  if (hasLinkedIn && hasTwitter) {
+    lines.push(
+      "Generate ideas for BOTH LinkedIn AND Twitter/X. Split evenly: ~50% per platform.",
+    );
+    lines.push('Each idea MUST have a "platform" field: "linkedin" or "twitter".');
+  } else if (hasTwitter) {
+    lines.push(
+      "Generate ALL ideas for Twitter/X only. No LinkedIn posts.",
+    );
+    lines.push('Set "platform": "twitter" on every idea.');
+  }
+
+  // Per-platform rules
+  for (const platformId of platforms) {
+    const cfg = getPlatformConfig(platformId);
+    lines.push(`\n${cfg.name} rules:`);
+    lines.push(`- Max chars: ${cfg.maxChars}`);
+    lines.push(`- Supported formats: ${cfg.formats.join(", ")}`);
+    lines.push(`- Hashtag strategy: ${cfg.hashtagStrategy}`);
+    lines.push(`- Best practices: ${cfg.bestPractices}`);
+    if (cfg.supportsThreads) {
+      lines.push(
+        `- Threads supported: yes (max ${cfg.threadMaxTweets ?? 25} tweets). Use format "thread" for multi-tweet ideas.`,
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
 // ── Usage tuple type ──────────────────────────────────────────────────────────
 
 export interface ContentGenerationResult {
@@ -177,8 +228,9 @@ export async function generateContentIdeas(input: {
   persona: IUserPersonaDocument;
   trends: TrendResult | TrendResearchResult["result"];
   context?: IGenerateContextOptions;
+  platforms?: string[];
 }): Promise<ContentGenerationResult> {
-  const { persona, trends, context } = input;
+  const { persona, trends, context, platforms } = input;
 
   const trendsList = trends.trends.length
     ? trends.trends
@@ -201,8 +253,24 @@ export async function generateContentIdeas(input: {
   // with fewer data points and add unnecessary tokens.
   const feedbackSection = buildFeedbackSection(persona);
 
-  const prompt = `Generate 5-10 authentic LinkedIn post ideas for this creator.
-Each idea MUST include all fields: topic, angle, format, hook, whyItFits, seoKeywords (3-5), clickbaitHooks (2-3), postPointers (4-6), callToAction.
+  // ── Platform requirements section (#34) ──────────────────────────────────
+  // Only appended when Twitter or multi-platform is requested.
+  // Passing context.platforms allows the dashboard to drive platform targeting.
+  const effectivePlatforms = platforms ?? context?.platforms?.map(String);
+  const platformSection = buildPlatformSection(effectivePlatforms);
+
+  // Adjust prompt intro based on platforms requested
+  const platformLabel =
+    effectivePlatforms?.includes("twitter") &&
+    !effectivePlatforms?.includes("linkedin")
+      ? "Twitter/X"
+      : effectivePlatforms?.includes("twitter") &&
+          effectivePlatforms?.includes("linkedin")
+        ? "LinkedIn + Twitter/X"
+        : "LinkedIn";
+
+  const prompt = `Generate 5-10 authentic ${platformLabel} post ideas for this creator.
+Each idea MUST include all fields: topic, angle, format, hook, whyItFits, seoKeywords (3-5), clickbaitHooks (2-3), postPointers (4-6), callToAction, platform.
 
 ## CREATOR PROFILE
 ${personaSummary}
@@ -210,6 +278,7 @@ ${personaSummary}
 ## CURRENT TRENDS IN THEIR NICHE
 ${trendsList}
 ${feedbackSection}
+${platformSection}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`;
 
@@ -298,7 +367,7 @@ function buildSimplifiedPrompt(
   return `Generate 5 LinkedIn post ideas for a ${persona.industry ?? "business"} professional.
 Topics: ${topTopics}. Recent trends: ${topTrends || "general industry trends"}.
 Return ONLY a JSON object:
-{"ideas":[{"topic":"...","angle":"...","format":"text-post","hook":"...","whyItFits":"...","seoKeywords":["#tag"],"clickbaitHooks":["...","..."],"postPointers":["...","...","...","..."],"callToAction":"..."}]}`;
+{"ideas":[{"topic":"...","angle":"...","format":"text-post","hook":"...","whyItFits":"...","seoKeywords":["#tag"],"clickbaitHooks":["...","..."],"postPointers":["...","...","...","..."],"callToAction":"...","platform":"linkedin"}]}`;
 }
 
 // ── Diversity validation (#22) ────────────────────────────────────────────────

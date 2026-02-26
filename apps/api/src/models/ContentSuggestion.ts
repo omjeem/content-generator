@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
-import type { PostFormat, IGenerateContextOptions } from "@repo/shared-types";
+import type { PostFormat, SuggestionPlatform, IGenerateContextOptions } from "@repo/shared-types";
 
 export type GenerationMode = "profile" | "topic-focus" | "chat-refined";
 
@@ -14,6 +14,10 @@ export interface ISuggestionItem {
   clickbaitHooks: string[];
   postPointers: string[];
   callToAction: string;
+  /** Platform this suggestion targets — defaults to 'linkedin' (#33) */
+  platform: SuggestionPlatform;
+  /** Individual tweets for thread format — Twitter only (#33) */
+  threadContent?: { tweetIndex: number; content: string; charCount: number }[];
 }
 
 export interface IContentSuggestionDocument extends Document {
@@ -33,7 +37,7 @@ const suggestionItemSchema = new Schema<ISuggestionItem>(
     angle: { type: String, required: true },
     format: {
       type: String,
-      enum: ["carousel", "text-post", "poll", "video-script", "list"],
+      enum: ["carousel", "text-post", "poll", "video-script", "list", "tweet", "thread", "quote-tweet", "image-tweet"],
       required: true,
     },
     hook: { type: String, required: true },
@@ -43,6 +47,26 @@ const suggestionItemSchema = new Schema<ISuggestionItem>(
     clickbaitHooks: { type: [String], default: [] },
     postPointers: { type: [String], default: [] },
     callToAction: { type: String, default: "" },
+    // Platform targeting (#33) — defaults to 'linkedin' for backward-compat
+    platform: {
+      type: String,
+      enum: ["linkedin", "twitter"],
+      default: "linkedin",
+    },
+    // Twitter thread content — only populated for thread-format suggestions (#33)
+    threadContent: {
+      type: [
+        new Schema(
+          {
+            tweetIndex: { type: Number, required: true },
+            content: { type: String, required: true },
+            charCount: { type: Number, required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
   },
   { _id: false },
 );
