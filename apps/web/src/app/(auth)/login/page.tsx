@@ -25,8 +25,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await authApi.login(form);
-      router.push("/dashboard");
+      const res = await authApi.login(form);
+      // Redirect admins to the admin dashboard, regular users to /dashboard
+      if (res.user?.role === "admin") {
+        router.push("/admin");
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err) {
       setError(
         err instanceof ApiError

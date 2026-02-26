@@ -235,7 +235,7 @@ router.post(
       res.cookie("refreshToken", refreshRaw, REFRESH_COOKIE_OPTIONS);
       res.json({
         message: "Login successful",
-        user: { id: user._id, email: user.email, name: user.name },
+        user: { id: user._id, email: user.email, name: user.name, role: user.role },
         token,
       });
     } catch (err) {

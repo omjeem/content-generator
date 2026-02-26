@@ -252,7 +252,7 @@ export default function EditorPage() {
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: 0 }}>
+    <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: 0 }}>
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-white shrink-0">
         {/* Left: back + title */}
@@ -338,8 +338,8 @@ export default function EditorPage() {
           />
         </div>
 
-        {/* Right pane — EditorChatPane */}
-        <div className="w-[360px] shrink-0 p-4 overflow-y-auto" style={{ minHeight: 0 }}>
+        {/* Right pane — EditorChatPane: flex column, no outer scroll */}
+        <div className="w-[360px] shrink-0 flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
           {historyLoaded && draftId ? (
             <EditorChatPane
               draftId={draftId}

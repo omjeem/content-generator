@@ -20,9 +20,9 @@ export default function DashboardLayout({
   }, [router]);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       <Navbar userName={userName} />
-      <div className="flex-1">{children}</div>
+      <div className="flex-1 min-h-0 overflow-auto">{children}</div>
     </div>
   );
 }

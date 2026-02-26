@@ -13,7 +13,7 @@ import { SystemConfig, CONFIG_KEYS } from "../models/SystemConfig";
 const GRACE_MULTIPLIER = 1.1;
 
 /** Hard-coded fallback if SystemConfig row is somehow missing */
-const FALLBACK_DEFAULT_LIMIT = 300_000;
+const FALLBACK_DEFAULT_LIMIT = 400_000;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -60,10 +60,11 @@ export async function seedDefaultTokenLimit(): Promise<void> {
       { upsert: true },
     );
 
-    // Migration: if the stored value is still the old 100K default, bump it to 300K.
-    // This runs safely on existing deployments without overwriting intentional admin edits.
+    // Migration: bump any old 100K or 300K default to the new 400K default.
+    // Only runs when the value exactly matches a previous default — preserves
+    // intentional admin edits above 400K.
     await SystemConfig.updateOne(
-      { key: CONFIG_KEYS.DEFAULT_TOKEN_LIMIT, value: 100_000 },
+      { key: CONFIG_KEYS.DEFAULT_TOKEN_LIMIT, value: { $in: [100_000, 300_000] } },
       { $set: { value: FALLBACK_DEFAULT_LIMIT } },
     );
 

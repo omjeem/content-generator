@@ -142,7 +142,7 @@ export function EditorChatPane({
   const isEmpty = messages.length === 0;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full p-4 overflow-hidden">
       {/* Chat header */}
       <div className="pb-2 mb-2 border-b border-gray-100">
         <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">

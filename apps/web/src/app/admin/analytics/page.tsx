@@ -110,6 +110,18 @@ export default function AdminAnalyticsPage() {
   const ops30d = daily.reduce((sum, d) => sum + d.count, 0);
   const avgPerOp = ops30d > 0 ? Math.round(tokens30d / ops30d) : 0;
 
+  // Gemini 2.5 Flash pricing estimate
+  // Input: $0.075 / 1M tokens · Output: $0.30 / 1M tokens
+  // Blended ~75% input / 25% output → ~$0.131 / 1M tokens
+  const COST_PER_M_TOKENS = 0.131;
+  const USD_TO_INR = 83.5; // approximate rate
+  const estimatedCostAllTime = ((overview?.totalTokensUsed ?? 0) / 1_000_000) * COST_PER_M_TOKENS;
+  const estimatedCost30d = (tokens30d / 1_000_000) * COST_PER_M_TOKENS;
+  const costPerOp30d = ops30d > 0 ? estimatedCost30d / ops30d : 0;
+  const costPerUser30d = (overview?.totalUsers ?? 0) > 0
+    ? estimatedCost30d / (overview?.totalUsers ?? 1)
+    : 0;
+
   return (
     <div className="space-y-8">
       <div>
@@ -154,6 +166,78 @@ export default function AdminAnalyticsPage() {
           label="Avg Tokens / Operation"
           value={avgPerOp.toLocaleString()}
         />
+      </div>
+
+      {/* ── Cost estimates ────────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h2 className="text-base font-semibold text-gray-900">
+            💰 Estimated API Cost (Gemini 2.5 Flash)
+          </h2>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1">
+              $0.075 input · $0.30 output per 1M tokens
+            </span>
+            <span className="text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-full px-2.5 py-1">
+              1 USD ≈ ₹{USD_TO_INR}
+            </span>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* All-time */}
+          <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-100">
+            <p className="text-xs text-emerald-600 font-medium mb-1">All-time estimated</p>
+            <p className="text-xl font-bold text-emerald-700 tabular-nums">
+              ${estimatedCostAllTime.toFixed(4)}
+            </p>
+            <p className="text-sm font-semibold text-emerald-600 tabular-nums">
+              ₹{(estimatedCostAllTime * USD_TO_INR).toFixed(2)}
+            </p>
+            <p className="text-xs text-emerald-500 mt-1">
+              {((overview?.totalTokensUsed ?? 0) / 1_000_000).toFixed(3)}M tokens
+            </p>
+          </div>
+          {/* Last 30 days */}
+          <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+            <p className="text-xs text-blue-600 font-medium mb-1">Last 30 days</p>
+            <p className="text-xl font-bold text-blue-700 tabular-nums">
+              ${estimatedCost30d.toFixed(4)}
+            </p>
+            <p className="text-sm font-semibold text-blue-600 tabular-nums">
+              ₹{(estimatedCost30d * USD_TO_INR).toFixed(2)}
+            </p>
+            <p className="text-xs text-blue-500 mt-1">
+              {(tokens30d / 1_000_000).toFixed(3)}M tokens
+            </p>
+          </div>
+          {/* Cost per operation */}
+          <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+            <p className="text-xs text-amber-600 font-medium mb-1">Cost per operation</p>
+            <p className="text-xl font-bold text-amber-700 tabular-nums">
+              ${(costPerOp30d * 100).toFixed(4)}¢
+            </p>
+            <p className="text-sm font-semibold text-amber-600 tabular-nums">
+              ₹{(costPerOp30d * USD_TO_INR).toFixed(4)}
+            </p>
+            <p className="text-xs text-amber-500 mt-1">avg per AI call (30d)</p>
+          </div>
+          {/* Cost per user/month */}
+          <div className="bg-violet-50 rounded-lg p-4 border border-violet-100">
+            <p className="text-xs text-violet-600 font-medium mb-1">Cost per user/month</p>
+            <p className="text-xl font-bold text-violet-700 tabular-nums">
+              ${costPerUser30d.toFixed(4)}
+            </p>
+            <p className="text-sm font-semibold text-violet-600 tabular-nums">
+              ₹{(costPerUser30d * USD_TO_INR).toFixed(2)}
+            </p>
+            <p className="text-xs text-violet-500 mt-1">
+              avg across {overview?.totalUsers ?? 0} users
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">
+          * Blended estimate ~75% input / ~25% output token split. Exchange rate: 1 USD = ₹{USD_TO_INR}. Actual costs may vary.
+        </p>
       </div>
 
       {/* ── Token usage over time chart ───────────────────────────────────────── */}

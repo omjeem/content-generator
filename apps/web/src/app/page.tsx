@@ -281,18 +281,36 @@ export default function LandingPage() {
             Powered by Gemini AI + real-time trends
           </div>
 
+          {/* Platform badges */}
+          <div className="flex items-center justify-center gap-3 mb-5">
+            <span className="inline-flex items-center gap-1.5 bg-[#0A66C2]/10 text-[#0A66C2] border border-[#0A66C2]/20 rounded-full px-3 py-1 text-sm font-semibold">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+              </svg>
+              LinkedIn
+            </span>
+            <span className="text-gray-300 text-lg font-light">+</span>
+            <span className="inline-flex items-center gap-1.5 bg-black/5 text-gray-800 border border-gray-200 rounded-full px-3 py-1 text-sm font-semibold">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.259 5.631 5.905-5.631zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+              </svg>
+              Twitter / X
+            </span>
+          </div>
+
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold text-gray-900 leading-tight mb-6">
-            LinkedIn content that
+            Content that sounds
             <span className="block text-transparent bg-clip-text bg-gradient-to-r from-[#6366f1] to-violet-500">
-              sounds exactly like you
+              exactly like you
             </span>
           </h1>
 
           <p className="text-lg md:text-xl text-gray-500 max-w-2xl mx-auto mb-8 leading-relaxed">
-            Paste 5–6 of your existing LinkedIn posts. PostMind AI reads them,
-            learns your unique voice and style, then combines it with today's
-            trending topics to suggest ideas that feel 100% authentic — not like
-            a generic AI wrote them.
+            Paste 5–6 of your existing posts. PostMind AI reads them, learns
+            your unique voice, then combines it with today&apos;s trending topics
+            to generate ideas for <strong className="text-gray-700">LinkedIn</strong> and{" "}
+            <strong className="text-gray-700">Twitter/X</strong> — that feel 100% authentic,
+            not like a generic AI wrote them.
           </p>
 
           {/* "how to start" hint box */}
@@ -324,7 +342,7 @@ export default function LandingPage() {
 
           {/* social proof strip */}
           <p className="mt-8 text-sm text-gray-400">
-            No credit card required &nbsp;·&nbsp; Free 300K token quota included
+            No credit card required &nbsp;·&nbsp; Free 400K token quota included
           </p>
 
           {/* mock paste-posts UI card */}
@@ -384,8 +402,8 @@ export default function LandingPage() {
       <section className="bg-gradient-to-r from-[#6366f1] to-violet-600 py-12">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
           <Stat value="5 AI" label="Specialist agents" />
-          <Stat value="6+" label="Trend sources" />
-          <Stat value="300K" label="Free tokens/user" />
+          <Stat value="2" label="Platforms (LinkedIn + X)" />
+          <Stat value="400K" label="Free tokens/user" />
           <Stat value="∞" label="Ideas, your voice" />
         </div>
       </section>
@@ -435,8 +453,8 @@ export default function LandingPage() {
             <Step
               number={4}
               icon={<IconSpark className="w-8 h-8" />}
-              title="You get 5 tailored ideas"
-              description="The Content Engine merges your voice + trends into ready-to-use post briefs."
+              title="5–10 ideas for LinkedIn & X"
+              description="The Content Engine merges your voice + trends into ready-to-use briefs for LinkedIn and Twitter/X."
               color="bg-gradient-to-br from-orange-400 to-rose-500"
               isLast
             />
@@ -532,6 +550,84 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Platform support section ── */}
+      <section className="py-16 md:py-20 bg-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <span className="text-sm font-semibold text-blue-600 uppercase tracking-wider">
+              Multi-platform
+            </span>
+            <h2 className="mt-2 text-3xl md:text-4xl font-extrabold text-gray-900">
+              One voice. Two platforms.
+            </h2>
+            <p className="mt-4 text-gray-500 max-w-xl mx-auto">
+              PostMind AI generates tailored content for both LinkedIn and Twitter/X from the same
+              persona — with the right format, length, and style for each platform.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* LinkedIn */}
+            <div className="rounded-2xl border-2 border-[#0A66C2]/20 bg-[#0A66C2]/5 p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#0A66C2] flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-[#0A66C2]">LinkedIn</h3>
+              </div>
+              <ul className="space-y-2.5 text-sm text-gray-700">
+                {[
+                  "Long-form text posts (up to 3,000 chars)",
+                  "Carousels with structured talking points",
+                  "Poll-style posts for engagement",
+                  "Video scripts optimised for LinkedIn",
+                  "Thought-leadership & story-format posts",
+                  "SEO hashtags for LinkedIn search",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="text-[#0A66C2] shrink-0 mt-0.5">✓</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Twitter / X */}
+            <div className="rounded-2xl border-2 border-gray-200 bg-gray-50 p-7">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-black flex items-center justify-center shrink-0">
+                  <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.259 5.631 5.905-5.631zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900">Twitter / X</h3>
+              </div>
+              <ul className="space-y-2.5 text-sm text-gray-700">
+                {[
+                  "Single tweets (max 280 chars)",
+                  "Multi-tweet threads (up to 25 tweets)",
+                  "Quote-tweet commentary angles",
+                  "Image-tweet captions & concepts",
+                  "Punchy hooks optimised for retweets",
+                  "Minimal hashtags — X algorithm friendly",
+                ].map((item) => (
+                  <li key={item} className="flex items-start gap-2">
+                    <span className="text-gray-800 shrink-0 mt-0.5">✓</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          <p className="text-center text-sm text-gray-400 mt-6">
+            Select your target platform(s) on the dashboard — or generate for both at once.
+          </p>
+        </div>
+      </section>
+
       {/* ── Features ── */}
       <section id="features" className="py-20 md:py-28 bg-gray-50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -540,7 +636,7 @@ export default function LandingPage() {
               Everything you need
             </span>
             <h2 className="mt-2 text-3xl md:text-4xl font-extrabold text-gray-900">
-              Built for serious LinkedIn creators
+              Built for serious content creators
             </h2>
           </div>
 
@@ -585,6 +681,16 @@ export default function LandingPage() {
               title="Full token usage dashboard"
               description="See exactly how many tokens you've used, request a limit increase with one click, and track your request history."
             />
+            <FeatureCard
+              icon={
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935 2.186 2.25 2.25 0 00-3.935-2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" />
+                </svg>
+              }
+              title="LinkedIn & Twitter/X in one place"
+              description="Generate ideas for LinkedIn posts, Twitter threads, quote-tweets, and more — all from the same persona. One voice, two platforms."
+              badge="Multi-platform"
+            />
           </div>
         </div>
       </section>
@@ -614,12 +720,12 @@ export default function LandingPage() {
               <ul className="flex-1 space-y-3">
                 {[
                   "5-agent AI pipeline fully included",
-                  "300,000 free tokens per account",
+                  "400,000 free tokens per account",
+                  "LinkedIn & Twitter/X multi-platform support",
                   "Real-time trend data from 6+ sources",
                   "Unlimited content generation sessions",
                   "Full persona editor + AI training chat",
                   "Rich content briefs with hooks & CTAs",
-                  "Token usage dashboard + increase requests",
                   "Suggestion history — never lose an idea",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-3 text-sm">

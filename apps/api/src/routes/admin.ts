@@ -194,7 +194,7 @@ router.get(
         tokenAgg,
         recentActivity,
       ] = await Promise.all([
-        User.countDocuments({ role: "user" }),
+        User.countDocuments({}),
         // Users who have token usage in the last 7 days
         TokenUsageLog.distinct("userId", { createdAt: { $gte: oneWeekAgo } }).then(
           (ids) => ids.length,
