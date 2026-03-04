@@ -195,7 +195,7 @@ function buildFeedbackSection(persona: IUserPersonaDocument): string {
 // Produces a 5-bullet summary instead of per-field verbose listing.
 // Saves ~150 tokens per generation call without losing signal.
 
-function buildPersonaSummary(persona: IUserPersonaDocument): string {
+export function buildPersonaSummary(persona: IUserPersonaDocument): string {
   const lines: string[] = [
     `• Industry/niche: ${persona.industry ?? "Business"} | Goal: ${persona.platformGoal ?? "thought-leadership"}`,
     `• Audience: ${persona.targetAudience ?? "Business professionals"}`,

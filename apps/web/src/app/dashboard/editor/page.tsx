@@ -23,6 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PostEditorPane } from "@/components/editor/PostEditorPane";
 import { EditorChatPane } from "@/components/editor/EditorChatPane";
+import { AiDetectorPanel } from "@/components/editor/AiDetectorPanel";
 import { draftsApi } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import type { IPostDraft, DraftStatus, DraftPlatform } from "@/lib/api";
@@ -337,7 +338,7 @@ function EditorPageContent() {
 
       {/* ── Dual-pane editor ──────────────────────────────────────────────────── */}
       <div className="flex flex-1 gap-0 overflow-hidden" style={{ minHeight: 0 }}>
-        {/* Left pane — PostEditorPane */}
+        {/* Left pane — PostEditorPane + AI Detector */}
         <div className="flex-1 p-4 overflow-y-auto border-r border-gray-100" style={{ minHeight: 0 }}>
           <PostEditorPane
             content={content}
@@ -348,6 +349,18 @@ function EditorPageContent() {
             onMarkReady={() => void handleMarkReady()}
             saving={saving}
           />
+
+          {/* AI Detection & Humanizer panel — below the editor */}
+          {draftId && (
+            <div className="mt-4">
+              <AiDetectorPanel
+                draftId={draftId}
+                content={content}
+                disabled={status === "published"}
+                onContentUpdated={handleApplyEdit}
+              />
+            </div>
+          )}
         </div>
 
         {/* Right pane — EditorChatPane: flex column, no outer scroll */}

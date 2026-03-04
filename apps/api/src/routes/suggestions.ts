@@ -5,12 +5,24 @@ import { runContentPipelineWithRetry } from "../agents/mastra";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { UserPersona } from "../models/UserPersona";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
-import { getSelectedTrends } from "../services/trendDiscoveryCache";
-import { generateContentIdeas } from "../agents/contentGenerator";
+import {
+  getSelectedTrends,
+  storeTopicDiscovery,
+  getTopicDiscovery,
+  getSelectedTopic,
+  generateTopicId,
+} from "../services/trendDiscoveryCache";
+import type { TopicDiscoveryItem } from "../services/trendDiscoveryCache";
+import {
+  generateContentIdeas,
+  buildPersonaSummary,
+} from "../agents/contentGenerator";
+import { PostDraft } from "../models/PostDraft";
 import mongoose from "mongoose";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMessage } from "../utils/sanitizeInput";
+import { extractJSON } from "../utils/extractJSON";
 import type { ISuggestion } from "@repo/shared-types";
 
 const router = Router();
@@ -33,7 +45,7 @@ const contentMixEnum = z.enum([
 
 const generateContextSchema = z
   .object({
-    mode: z.enum(["profile", "topic-focus", "chat-refined", "trend-selected"]),
+    mode: z.enum(["profile", "topic-focus", "chat-refined", "trend-selected", "persona-topics"]),
     topicFocus: z.string().optional(),
     targetAudienceOverride: z.string().optional(),
     platformGoal: platformGoalEnum.optional(),
@@ -356,6 +368,336 @@ router.post(
         id: String(saved._id),
         trendsUsed: acceptedTrendTopics,
         trendSource: "live" as const,
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── GET /api/suggestions/topic-ideas ──────────────────────────────────────────
+/**
+ * @swagger
+ * /api/suggestions/topic-ideas:
+ *   get:
+ *     tags: [Suggestions]
+ *     summary: Get AI-suggested topics from the user's persona (Phase 3 #28)
+ *     description: |
+ *       Generates 8-12 post topic ideas purely from the user's persona data —
+ *       content pillars, industry, feedback profile, and audience. No external
+ *       trends are used. Results are cached for 30 minutes.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: AI-suggested topics from persona
+ *       400:
+ *         description: Persona or interview incomplete
+ *       429:
+ *         description: Token quota exceeded
+ */
+router.get(
+  "/topic-ideas",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const userObjectId = new mongoose.Types.ObjectId(req.userId!);
+
+      // Check for cached topics first
+      const cached = getTopicDiscovery(req.userId!);
+      if (cached) {
+        res.json({
+          topics: cached,
+          basedOn: { contentPillars: [], topTopics: [], preferredFormats: [], avoidTopics: [] },
+          cached: true,
+        });
+        return;
+      }
+
+      // Quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      // Load persona
+      const persona = await UserPersona.findOne({ userId: userObjectId });
+      if (!persona) {
+        res.status(400).json({ error: "No persona found. Complete persona analysis first." });
+        return;
+      }
+      if (!persona.interviewComplete) {
+        res.status(400).json({ error: "Please complete the onboarding interview first." });
+        return;
+      }
+
+      // Load recently published draft topics to avoid repeats
+      const recentDrafts = await PostDraft.find({
+        userId: userObjectId,
+        status: "published",
+        publishedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      })
+        .select("title brief.topic")
+        .lean();
+
+      const recentTopics = recentDrafts
+        .map((d) => {
+          const doc = d as unknown as { title?: string; brief?: { topic?: string } };
+          return doc.title || doc.brief?.topic;
+        })
+        .filter(Boolean)
+        .slice(0, 10);
+
+      // Build feedback section
+      const fp = persona.feedbackProfile;
+      const feedbackLines: string[] = [];
+      if (fp && fp.totalFeedbackCount > 0) {
+        if (fp.preferredTopics.length > 0) {
+          feedbackLines.push(`Topics user loves: ${fp.preferredTopics.join(", ")}`);
+        }
+        if (fp.avoidTopics.length > 0) {
+          feedbackLines.push(`Topics user DISLIKES (avoid completely): ${fp.avoidTopics.join(", ")}`);
+        }
+        const preferredFormats = Object.entries(fp.formatPreferences)
+          .filter(([, pct]) => pct >= 0.1)
+          .sort((a, b) => b[1] - a[1])
+          .map(([fmt, pct]) => `${fmt} (${Math.round(pct * 100)}%)`);
+        if (preferredFormats.length > 0) {
+          feedbackLines.push(`Format preferences: ${preferredFormats.join(", ")}`);
+        }
+      }
+
+      const prompt = `Suggest 8-12 post TOPICS for this creator. Each topic should be a specific, actionable post idea — not a vague category.
+
+CREATOR PROFILE:
+${buildPersonaSummary(persona)}
+
+${feedbackLines.length > 0 ? `USER FEEDBACK SIGNALS:\n${feedbackLines.join("\n")}` : ""}
+
+${recentTopics.length > 0 ? `RECENTLY PUBLISHED (avoid repeating):\n${recentTopics.map((t) => `- ${t}`).join("\n")}` : ""}
+
+INSTRUCTIONS:
+- Base topics ONLY on this creator's expertise, audience, content pillars, and industry
+- Do NOT reference external trends — these should come from their knowledge domain
+- Each topic must be specific enough to write a post about immediately
+- Include variety: different angles, different content pillars, different formats
+- Assign a confidence score (0.0-1.0) based on how well it fits their profile
+
+Return ONLY valid JSON (no markdown):
+{
+  "topics": [
+    {
+      "title": "The 3 biggest mistakes first-time engineering managers make",
+      "category": "Leadership",
+      "reasoning": "Your audience is engineering leaders — this hits a common pain point",
+      "suggestedFormat": "carousel",
+      "confidence": 0.92
+    }
+  ]
+}`;
+
+      const { text, usage: genUsage } = await generateText({
+        model: google("gemini-2.5-flash"),
+        prompt,
+      });
+
+      // Track token usage — fire-and-forget
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "content-generator",
+        operation: "content_generation",
+        inputTokens: genUsage?.inputTokens ?? 0,
+        outputTokens: genUsage?.outputTokens ?? 0,
+        totalTokens: (genUsage?.inputTokens ?? 0) + (genUsage?.outputTokens ?? 0),
+      });
+
+      // Parse response
+      const raw = extractJSON<{ topics: TopicDiscoveryItem[] }>(text, "topic-ideas");
+      const topics: TopicDiscoveryItem[] = (raw.topics ?? []).map((t) => ({
+        ...t,
+        id: generateTopicId(t.title),
+      }));
+
+      // Cache for 30 minutes
+      storeTopicDiscovery(req.userId!, topics);
+
+      res.json({
+        topics,
+        basedOn: {
+          contentPillars: persona.contentPillars.slice(0, 5),
+          topTopics: persona.topics.slice(0, 5),
+          preferredFormats: persona.postFormats.slice(0, 4),
+          avoidTopics: fp?.avoidTopics?.slice(0, 5) ?? [],
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/suggestions/generate-from-topic ────────────────────────────────
+/**
+ * @swagger
+ * /api/suggestions/generate-from-topic:
+ *   post:
+ *     tags: [Suggestions]
+ *     summary: Generate content ideas from a single AI-suggested topic (Phase 3 #29)
+ *     description: |
+ *       Generates 5-7 content ideas focused on a single topic selected from
+ *       the /topic-ideas response. Bypasses trend research and uses the topic
+ *       as a synthetic "trend" to drive the content generator.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [topicId, topicTitle]
+ *             properties:
+ *               topicId:
+ *                 type: string
+ *               topicTitle:
+ *                 type: string
+ *               context:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Content ideas generated from selected topic
+ *       400:
+ *         description: Invalid topic or persona missing
+ *       429:
+ *         description: Token quota exceeded
+ */
+const generateFromTopicSchema = z.object({
+  topicId: z.string().min(1),
+  topicTitle: z.string().min(1).max(500),
+  context: generateContextSchema,
+});
+
+router.post(
+  "/generate-from-topic",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = generateFromTopicSchema.parse(req.body);
+      const userObjectId = new mongoose.Types.ObjectId(req.userId!);
+
+      // Quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      // Try to look up the topic from cache (resilient — fallback to topicTitle)
+      const cachedTopic = getSelectedTopic(req.userId!, body.topicId);
+      const topicTitle = cachedTopic?.title ?? body.topicTitle;
+      const topicCategory = cachedTopic?.category ?? "general";
+
+      // Load persona
+      const persona = await UserPersona.findOne({ userId: userObjectId });
+      if (!persona) {
+        res.status(400).json({ error: "No persona found. Complete persona analysis first." });
+        return;
+      }
+      if (!persona.interviewComplete) {
+        res.status(400).json({ error: "Please complete the onboarding interview first." });
+        return;
+      }
+
+      // Build a synthetic TrendResult from the topic
+      const syntheticTrend = {
+        trends: [
+          {
+            topic: topicTitle,
+            relevanceReason: `Selected by user from AI-suggested topics (${topicCategory})`,
+            contentAngle: `Multiple angles on: ${topicTitle}`,
+            source: "persona-topics",
+          },
+        ],
+        rawTrends: [topicTitle],
+      };
+
+      // Generate content ideas directly
+      const pipelineStart = Date.now();
+      const { ideas: contentIdeas, usage: contentUsage } =
+        await generateContentIdeas({
+          persona,
+          trends: syntheticTrend,
+          context: body.context
+            ? { ...body.context, mode: "persona-topics" as const }
+            : { mode: "persona-topics" as const },
+          platforms: body.context?.platforms?.map(String),
+        });
+      const llmDurationMs = Date.now() - pipelineStart;
+
+      // Persist results
+      const saved = await ContentSuggestion.create({
+        userId: userObjectId,
+        generatedAt: new Date(),
+        trendsUsed: [topicTitle],
+        trendSource: "fallback",
+        generationMode: "persona-topics",
+        contextOptions: {
+          ...(body.context ?? {}),
+          mode: "persona-topics",
+          topicFocus: topicTitle,
+        },
+        generationMeta: {
+          pipelineDurationMs: llmDurationMs,
+          trendFetchDurationMs: 0,
+          llmDurationMs,
+          tokenCost: {
+            input: contentUsage.inputTokens,
+            output: contentUsage.outputTokens,
+            total: contentUsage.inputTokens + contentUsage.outputTokens,
+          },
+          trendSource: "fallback",
+          modelId: "gemini-2.5-flash",
+        },
+        suggestions: contentIdeas.ideas.map((idea) => ({
+          topic: idea.topic,
+          angle: idea.angle,
+          format: idea.format,
+          hook: idea.hook,
+          whyItFits: idea.whyItFits,
+          seoKeywords: idea.seoKeywords ?? [],
+          clickbaitHooks: idea.clickbaitHooks ?? [],
+          postPointers: idea.postPointers ?? [],
+          callToAction: idea.callToAction ?? "",
+          platform: idea.platform ?? "linkedin",
+        })),
+      });
+
+      // Track token usage — fire-and-forget
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "content-generator",
+        operation: "content_generation",
+        inputTokens: contentUsage.inputTokens,
+        outputTokens: contentUsage.outputTokens,
+        totalTokens: contentUsage.inputTokens + contentUsage.outputTokens,
+        metadata: { suggestionId: String(saved._id) },
+      });
+
+      res.json({
+        suggestions: contentIdeas.ideas as ISuggestion[],
+        id: String(saved._id),
+        trendsUsed: [topicTitle],
+        trendSource: "fallback" as const,
         generatedAt: new Date().toISOString(),
       });
     } catch (err) {

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { SuggestionCard } from "@/components/suggestions/SuggestionCard";
 import { GenerateOptionsPanel } from "@/components/suggestions/GenerateOptionsPanel";
 import { TrendBrowser } from "@/components/trends/TrendBrowser";
+import { TopicBrowser } from "@/components/suggestions/TopicBrowser";
+import type { TopicItem } from "@/components/suggestions/TopicBrowser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { personaApi, suggestionsApi, trendsApi, tokenApi, ApiError } from "@/lib/api";
@@ -17,7 +19,7 @@ import type {
 } from "@repo/shared-types";
 
 type GenerateState = "idle" | "choosing" | "loading" | "done" | "error";
-type GenerateFlow = "one-shot" | "browse-trends";
+type GenerateFlow = "one-shot" | "browse-trends" | "browse-topics";
 
 const LOADING_STEPS = [
   "Analysing your LinkedIn persona\u2026",
@@ -29,6 +31,12 @@ const LOADING_STEPS = [
 const TREND_LOADING_STEPS = [
   "Generating personalised content ideas from your selected trends\u2026",
   "Crafting hooks and angles tailored to your voice\u2026",
+  "Finalising your suggestions\u2026",
+];
+
+const TOPIC_LOADING_STEPS = [
+  "Generating content ideas for your selected topic\u2026",
+  "Crafting unique angles and hooks\u2026",
   "Finalising your suggestions\u2026",
 ];
 
@@ -56,6 +64,11 @@ export default function DashboardPage() {
   const [trendBrowseLoading, setTrendBrowseLoading] = useState(false);
   const [trendGenerating, setTrendGenerating] = useState(false);
 
+  // Topic browsing state (Phase 3 #33)
+  const [topicIdeas, setTopicIdeas] = useState<TopicItem[]>([]);
+  const [topicBrowseLoading, setTopicBrowseLoading] = useState(false);
+  const [topicGenerating, setTopicGenerating] = useState(false);
+
   // Load persona + token quota on mount
   useEffect(() => {
     personaApi
@@ -75,7 +88,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (generateState !== "loading") return;
     setLoadingStep(0);
-    const steps = generateFlow === "browse-trends" ? TREND_LOADING_STEPS : LOADING_STEPS;
+    const steps = generateFlow === "browse-trends" ? TREND_LOADING_STEPS : generateFlow === "browse-topics" ? TOPIC_LOADING_STEPS : LOADING_STEPS;
     const interval = setInterval(() => {
       setLoadingStep((s) => (s + 1) % steps.length);
     }, 2500);
@@ -180,19 +193,81 @@ export default function DashboardPage() {
     [],
   );
 
+  // Browse Topics flow — Step 1: fetch AI-suggested topics from persona
+  const handleBrowseTopics = useCallback(async () => {
+    setTopicBrowseLoading(true);
+    setGenerateError("");
+    setGenerateFlow("browse-topics");
+    try {
+      const res = await suggestionsApi.getTopicIdeas();
+      setTopicIdeas(res.topics as TopicItem[]);
+      setGenerateState("choosing");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setQuotaExceeded(true);
+        return;
+      }
+      setGenerateError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to fetch topic suggestions. Please try again.",
+      );
+      setGenerateState("error");
+    } finally {
+      setTopicBrowseLoading(false);
+    }
+  }, []);
+
+  // Browse Topics flow — Step 2: generate from selected topic
+  const handleGenerateFromTopic = useCallback(
+    async (topicId: string, topicTitle: string) => {
+      setGenerateError("");
+      setTopicGenerating(true);
+      setGenerateState("loading");
+      setSuggestions([]);
+
+      try {
+        const result = await suggestionsApi.generateFromTopic(topicId, topicTitle);
+        setSuggestions(result.suggestions);
+        setCurrentSuggestionSetId(result.id);
+        setTrendsUsed(result.trendsUsed);
+        setTrendSource(result.trendSource ?? "fallback");
+        setGenerateState("done");
+        tokenApi.getUsage().then((u) => { setTokenUsage(u); if (!u.allowed) setQuotaExceeded(true); }).catch(() => {});
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 429) {
+          setQuotaExceeded(true);
+          setGenerateState("idle");
+          return;
+        }
+        setGenerateError(
+          err instanceof ApiError
+            ? err.message
+            : "Generation failed. Please try again.",
+        );
+        setGenerateState("error");
+      } finally {
+        setTopicGenerating(false);
+      }
+    },
+    [],
+  );
+
   // Reset to idle
   const handleReset = useCallback(() => {
     setGenerateState("idle");
     setGenerateFlow("one-shot");
     setTrendDiscovery(null);
     setTrendGenerating(false);
+    setTopicIdeas([]);
+    setTopicGenerating(false);
   }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const interviewComplete = persona?.interviewComplete ?? false;
   const personaReady = !personaLoading && persona !== null;
-  const currentLoadingSteps = generateFlow === "browse-trends" ? TREND_LOADING_STEPS : LOADING_STEPS;
+  const currentLoadingSteps = generateFlow === "browse-trends" ? TREND_LOADING_STEPS : generateFlow === "browse-topics" ? TOPIC_LOADING_STEPS : LOADING_STEPS;
 
   return (
     <main className="container max-w-5xl mx-auto px-4 py-8">
@@ -323,6 +398,15 @@ export default function DashboardPage() {
                   >
                     {trendBrowseLoading ? "Fetching Trends\u2026" : "Browse Trends First"}
                   </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={handleBrowseTopics}
+                    disabled={!interviewComplete || personaLoading || quotaExceeded || topicBrowseLoading}
+                    className="min-w-[200px]"
+                  >
+                    {topicBrowseLoading ? "Fetching Topics\u2026" : "AI Topic Suggestions"}
+                  </Button>
                 </div>
                 {!interviewComplete && personaReady && (
                   <p className="mt-3 text-sm text-gray-500">
@@ -354,6 +438,16 @@ export default function DashboardPage() {
               loading={trendGenerating}
               onGenerate={handleGenerateFromTrends}
               onRefresh={handleBrowseTrends}
+              onCancel={handleReset}
+            />
+          )}
+
+          {generateState === "choosing" && generateFlow === "browse-topics" && topicIdeas.length > 0 && (
+            <TopicBrowser
+              topics={topicIdeas}
+              loading={topicGenerating}
+              onSelect={handleGenerateFromTopic}
+              onRefresh={handleBrowseTopics}
               onCancel={handleReset}
             />
           )}

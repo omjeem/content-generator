@@ -159,3 +159,70 @@ export function getSelectedTrends(
     source: t.source,
   }));
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Topic Discovery Cache — Phase 3 #30
+// Reuses the same pattern as trend discovery for AI-suggested topics.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface TopicDiscoveryItem {
+  id: string;
+  title: string;
+  category: string;
+  reasoning: string;
+  suggestedFormat: string;
+  confidence: number;
+}
+
+interface TopicDiscoveryEntry {
+  userId: string;
+  topics: TopicDiscoveryItem[];
+  expiresAt: number;
+}
+
+const topicCache = new Map<string, TopicDiscoveryEntry>();
+
+/** Generate a deterministic topic ID from title */
+export function generateTopicId(title: string): string {
+  const input = title.toLowerCase().trim();
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash + input.charCodeAt(i)) | 0;
+  }
+  return `topic_${Math.abs(hash).toString(36)}`;
+}
+
+/** Store AI-suggested topics for a user (30-min TTL). */
+export function storeTopicDiscovery(
+  userId: string,
+  topics: TopicDiscoveryItem[],
+): void {
+  topicCache.set(userId, {
+    userId,
+    topics,
+    expiresAt: Date.now() + DISCOVERY_TTL_MS,
+  });
+}
+
+/** Retrieve cached topic discovery for a user. */
+export function getTopicDiscovery(
+  userId: string,
+): TopicDiscoveryItem[] | null {
+  const entry = topicCache.get(userId);
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    topicCache.delete(userId);
+    return null;
+  }
+  return entry.topics;
+}
+
+/** Look up a single topic by ID from the user's cache. */
+export function getSelectedTopic(
+  userId: string,
+  topicId: string,
+): TopicDiscoveryItem | null {
+  const topics = getTopicDiscovery(userId);
+  if (!topics) return null;
+  return topics.find((t) => t.id === topicId) ?? null;
+}

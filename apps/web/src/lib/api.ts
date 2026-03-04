@@ -22,6 +22,10 @@ import type {
   IPersonaPostsResponse,
   ITokenRequest,
   ITrendDiscoveryResponse,
+  ITopicIdeasResponse,
+  IAiCheckResponse,
+  IHumanizeResponse,
+  HumanizeIntensity,
   FeedbackRating,
   FeedbackAction,
   ISuggestionFeedback,
@@ -251,6 +255,24 @@ export const suggestionsApi = {
       },
     ),
 
+  /** Get AI-suggested topics from persona (Phase 3 #34) */
+  getTopicIdeas: () =>
+    requestAI<ITopicIdeasResponse>("/api/suggestions/topic-ideas"),
+
+  /** Generate content from a single AI-suggested topic (Phase 3 #34) */
+  generateFromTopic: (
+    topicId: string,
+    topicTitle: string,
+    context?: IGenerateContextOptions,
+  ) =>
+    requestAI<ISuggestionsGenerateResponse>(
+      "/api/suggestions/generate-from-topic",
+      {
+        method: "POST",
+        body: JSON.stringify({ topicId, topicTitle, context }),
+      },
+    ),
+
   refineContext: (body: {
     messages: { role: "user" | "assistant"; content: string }[];
   }) =>
@@ -463,6 +485,20 @@ export const draftsApi = {
   publish: (id: string) =>
     request<{ message: string; draft: IPostDraft }>(`/api/drafts/${id}/publish`, {
       method: "POST",
+    }),
+
+  /** Run AI detection on draft content (Phase 3 #41) */
+  aiCheck: (id: string, content?: string) =>
+    requestAI<IAiCheckResponse>(`/api/drafts/${id}/ai-check`, {
+      method: "POST",
+      body: JSON.stringify(content ? { content } : {}),
+    }),
+
+  /** Humanize AI-generated draft content (Phase 3 #41) */
+  humanize: (id: string, intensity: HumanizeIntensity = "moderate") =>
+    requestAI<IHumanizeResponse>(`/api/drafts/${id}/humanize`, {
+      method: "POST",
+      body: JSON.stringify({ intensity }),
     }),
 };
 

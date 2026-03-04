@@ -2,7 +2,7 @@
 
 **Source**: `/Users/hexahealth/Documents/PP/content-generator/.claude/audits/phase3/improvement.md`
 **Started**: 2026-03-04
-**Last Updated**: 2026-03-04 (Phase A + B COMPLETE ✅)
+**Last Updated**: 2026-03-04 (Phase A + B + C + D + E ALL COMPLETE ✅)
 
 ---
 
@@ -87,45 +87,45 @@ If context runs out, come back here and:
 
 ---
 
-## Phase D — AI-Suggested Topics from Persona (Section 4)
+## Phase D — AI-Suggested Topics from Persona (Section 4) ✅ COMPLETE (2026-03-04)
 
 *Priority: MEDIUM — new feature, not a fix. No hard dependencies (can start after Phase B).*
 
-- [ ] **#27 — Create `TopicIdeasSchema` and topic suggestion prompt** (`agents/contentGenerator.ts` MODIFY or new `agents/topicSuggester.ts` CREATE): Zod schema: `z.object({ topics: z.array(z.object({ title, category, reasoning, suggestedFormat: z.enum(["carousel","text-post","poll","video-script","list"]), confidence: z.number().min(0).max(1) })).min(5).max(15) })`. Prompt instructs Gemini to suggest 8-12 post TOPICS based purely on persona expertise — NOT referencing external trends. Uses full persona summary + feedbackProfile signals. (§4.2.2)
+- [x] **#27 — Create `TopicIdeasSchema` and topic suggestion prompt** (`routes/suggestions.ts` inline): Topic suggestion prompt built inline in the `GET /topic-ideas` handler. Instructs Gemini to suggest 8-12 post TOPICS based purely on persona expertise. Uses full persona summary + feedbackProfile signals (preferred/avoid topics, format preferences). Avoids recently published draft topics. ✅ DONE
 
-- [ ] **#28 — Add `GET /api/suggestions/topic-ideas` endpoint** (`routes/suggestions.ts` MODIFY): Loads `UserPersona` (including `feedbackProfile`), builds topic suggestion prompt, calls Gemini with `TopicIdeasSchema`, generates unique topic IDs, stores in discovery cache (reuse same pattern as trends), returns structured response with `topics[]` and `basedOn` metadata. Tracks token usage. (§4.2.2)
+- [x] **#28 — Add `GET /api/suggestions/topic-ideas` endpoint** (`routes/suggestions.ts` MODIFY): Loads `UserPersona` (including `feedbackProfile`), builds topic suggestion prompt with persona summary + feedback signals + recent published topics for dedup. Calls Gemini via `generateText()`, generates unique topic IDs via `generateTopicId()`, caches results via `storeTopicDiscovery()`. Returns `{ topics[], basedOn }`. Quota check + token tracking. ✅ DONE
 
-- [ ] **#29 — Add `POST /api/suggestions/generate-from-topic` endpoint** (`routes/suggestions.ts` MODIFY): Accepts `{ topicId, topicTitle, context }`. Looks up selected topic from cache (falls back to `topicTitle` if cache expired). Builds synthetic `TrendResult` with single trend derived from the topic. Calls `generateContentIdeas()` with this synthetic trend. Persists with `generationMode = "persona-topics"`. (§4.2.3)
+- [x] **#29 — Add `POST /api/suggestions/generate-from-topic` endpoint** (`routes/suggestions.ts` MODIFY): Accepts `{ topicId, topicTitle, context }`. Looks up selected topic from cache (falls back to `topicTitle` if cache expired). Builds synthetic `TrendResult` with single trend. Calls `generateContentIdeas()` directly. Persists with `generationMode = "persona-topics"`. Full token tracking + quota check. ✅ DONE
 
-- [ ] **#30 — Add topic discovery cache** (`services/trendDiscoveryCache.ts` MODIFY): Reuse the same cache service from #19 — add `storeTopicDiscovery(userId, topics)`, `getTopicDiscovery(userId)`, `getSelectedTopic(userId, topicId)` alongside the existing trend discovery functions. Same 30-min TTL. (§4.2.3)
+- [x] **#30 — Add topic discovery cache** (`services/trendDiscoveryCache.ts` MODIFY): Added `TopicDiscoveryItem` interface, `topicCache` Map, `generateTopicId()`, `storeTopicDiscovery()`, `getTopicDiscovery()`, `getSelectedTopic()` alongside existing trend discovery functions. Same 30-min TTL. ✅ DONE
 
-- [ ] **#31 — Add "persona-topics" to GenerationMode enum** (`models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `"persona-topics"` to `GenerationMode` type. (§4.2.1)
+- [x] **#31 — Add "persona-topics" to GenerationMode enum** (`models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Added `"persona-topics"` to `GenerationMode` type, Mongoose enum, and shared types `IGenerateContextOptions.mode` union. Also added `ITopicIdea`, `ITopicIdeasResponse` shared types. ✅ DONE
 
-- [ ] **#32 — Create `TopicBrowser.tsx` component** (`components/suggestions/TopicBrowser.tsx` CREATE): Shows AI-suggested topics as cards. Each card: title, category pill, reasoning text, format badge, confidence bar (0-100%). Click to select → "Generate Posts About This Topic" button. "Suggest More" button to re-run generation. Loading/error/empty states. (§4.3)
+- [x] **#32 — Create `TopicBrowser.tsx` component** (`components/suggestions/TopicBrowser.tsx` CREATE): Shows AI-suggested topics as cards with radio-style single selection. Each card: title, category pill, reasoning text, format badge with icon, confidence bar (0-100%). Category filter pills. "Generate Posts About This Topic" button. "Suggest More" to re-run. ✅ DONE
 
-- [ ] **#33 — Update dashboard with "AI Topic Suggestions" flow** (`app/dashboard/page.tsx` MODIFY): Add `"browse-topics"` to `generateFlow` state. Three-option generation UI: (a) "Quick Generate" (auto), (b) "Browse Trends" (select), (c) "AI Topic Suggestions" (persona). Shows `TopicBrowser` when in browse-topics mode. After topic selection → calls `POST /generate-from-topic` → same results flow. (§4.3)
+- [x] **#33 — Update dashboard with "AI Topic Suggestions" flow** (`app/dashboard/page.tsx` MODIFY): Added `"browse-topics"` to `GenerateFlow`. Three-option idle UI: "Quick Generate", "Browse Trends First", "AI Topic Suggestions". TopicBrowser shown in choosing state for browse-topics flow. `handleBrowseTopics()` + `handleGenerateFromTopic()` callbacks. Topic-specific loading step messages. ✅ DONE
 
-- [ ] **#34 — Add API client functions for topic suggestions** (`apps/web/src/lib/api.ts` MODIFY): Add `suggestionsApi.getTopicIdeas()` → `GET /api/suggestions/topic-ideas`. Add `suggestionsApi.generateFromTopic(topicId, topicTitle, context)` → `POST /api/suggestions/generate-from-topic`. (§4.3)
+- [x] **#34 — Add API client functions for topic suggestions** (`apps/web/src/lib/api.ts` MODIFY): Added `suggestionsApi.getTopicIdeas()` → `GET /api/suggestions/topic-ideas` (AI timeout). Added `suggestionsApi.generateFromTopic(topicId, topicTitle, context?)` → `POST /api/suggestions/generate-from-topic` (AI timeout). Imported `ITopicIdeasResponse`. ✅ DONE
 
 ---
 
-## Phase E — AI Detector + Humanizer (Section 5)
+## Phase E — AI Detector + Humanizer (Section 5) ✅ COMPLETE (2026-03-04)
 
 *Priority: MEDIUM — new editor feature. Depends on Drafts/Editor system (already implemented). Can start anytime.*
 
-- [ ] **#35 — Add `POST /api/drafts/:id/ai-check` endpoint** (`routes/drafts.ts` MODIFY): Loads draft content. Builds AI detection prompt evaluating 7 signals: sentence length variance, transitional phrase patterns, personal specificity, tonal consistency, vocabulary diversity, opening patterns, paragraph structure. Calls Gemini, returns `{ score: 0-100, verdict: "human"|"mixed"|"likely-ai", signals: string[], suggestions: string[] }`. Tracks token usage (~1,100 tokens). (§5.2.1, §5.2.2)
+- [x] **#35 — Add `POST /api/drafts/:id/ai-check` endpoint** (`routes/drafts.ts` MODIFY): Loads draft content (or accepts optional `content` in body). Validates minimum 50 chars. Calls `runAiDetection()` from `services/aiDetection.ts`. Returns `{ score, verdict, signals, suggestions }`. Quota check + token tracking. ✅ DONE
 
-- [ ] **#36 — Build AI detection prompt with 7-signal analysis** (`routes/drafts.ts` or new `services/aiDetection.ts` CREATE): Encapsulate detection prompt building: score 0-100, structured JSON output with signals/suggestions. Zod schema for response validation. Reusable by both ai-check endpoint and humanizer's before/after scoring. (§5.2.2)
+- [x] **#36 — Build AI detection prompt with 7-signal analysis** (`services/aiDetection.ts` CREATE): Created `runAiDetection()` with 7-signal prompt: sentence length variance, transitional phrases, personal specificity, tonal consistency, vocabulary diversity, opening patterns, paragraph structure. `AiCheckResultSchema` Zod validation. Returns `{ result, usage }`. ✅ DONE
 
-- [ ] **#37 — Add `POST /api/drafts/:id/humanize` endpoint** (`routes/drafts.ts` MODIFY): Loads draft + persona (for voice matching). Accepts `{ preserveCore: boolean, intensity: "light"|"moderate"|"aggressive" }`. Builds humanization prompt with persona voice + 8 humanization rules (personal details, sentence variance, contractions, colloquial expressions, etc.). Calls Gemini, auto-applies via `applyAiContent` pattern, returns `{ humanizedContent, charCount, changesSummary, beforeScore, afterScore }`. Tracks token usage (~2,700 tokens). (§5.3.1, §5.3.2)
+- [x] **#37 — Add `POST /api/drafts/:id/humanize` endpoint** (`routes/drafts.ts` MODIFY): Loads draft + persona in parallel. Accepts `{ intensity: "light"|"moderate"|"aggressive" }`. Runs AI detection + humanization in parallel for before/after scores. Auto-applies humanized content via `applyAiContent()`. Returns `{ humanizedContent, charCount, changesSummary, beforeScore, afterScore }`. Combined token tracking. ✅ DONE
 
-- [ ] **#38 — Build humanization prompt with persona voice matching** (`routes/drafts.ts` or `services/aiDetection.ts` MODIFY): Prompt uses `buildPersonaSummary(persona)`, writing style, tone. Three intensity levels: light (keep 80% wording), moderate (rewrite 50%, add personal touches), aggressive (complete rewrite, same core message). 8 specific humanization rules enforced. (§5.3.2)
+- [x] **#38 — Build humanization prompt with persona voice matching** (`services/aiDetection.ts` MODIFY): `runHumanizer()` uses `buildPersonaSummary(persona)` + writing style + tone. Three intensity levels with specific rules. 8 humanization rules: personal details, sentence variance, transitional phrases, fragments, contractions, colloquial expressions, register breaks, natural CTA. `HumanizeResultSchema` Zod validation. ✅ DONE
 
-- [ ] **#39 — Create `AiDetectorPanel.tsx` component** (`components/editor/AiDetectorPanel.tsx` CREATE): UI panel showing: score bar (green 0-30, yellow 31-60, red 61-100), verdict text, detected signals list (warning icons), improvement suggestions list (check icons), "Humanize This Post" button (shows intensity selector: light/moderate/aggressive), "Re-check" button for after manual edits. Loading states for both detection and humanization. Before/after score comparison after humanization. (§5.2.3, §5.3.3)
+- [x] **#39 — Create `AiDetectorPanel.tsx` component** (`components/editor/AiDetectorPanel.tsx` CREATE): Collapsible panel with: "Run AI Detection" button, score bar (green/yellow/red), signals list with ⚠ icons, suggestions list with ✓ icons, "Humanize Post" button with intensity selector (light/moderate/aggressive), "Re-check" button. Before/after score banner after humanization. Loading states for both operations. ✅ DONE
 
-- [ ] **#40 — Integrate AI detector panel into editor page** (`app/dashboard/editor/page.tsx` MODIFY): Add toggle button in the editor toolbar to show/hide `AiDetectorPanel`. Panel appears as a collapsible section above or alongside the PostEditorPane. "Humanize" action updates editor content via same `handleApplyEdit` callback. "Undo" restores pre-humanization content from `contentHistory`. (§5.3.3)
+- [x] **#40 — Integrate AI detector panel into editor page** (`app/dashboard/editor/page.tsx` MODIFY): Added `AiDetectorPanel` below `PostEditorPane` in the left pane. Receives `draftId`, `content`, `disabled` (when published), and `onContentUpdated` (reuses `handleApplyEdit` callback). Collapsible — starts collapsed as a slim button. ✅ DONE
 
-- [ ] **#41 — Add AI detection & humanizer API client functions** (`apps/web/src/lib/api.ts` MODIFY): Add `draftsApi.aiCheck(draftId, content?)` → `POST /api/drafts/:id/ai-check`. Add `draftsApi.humanize(draftId, { preserveCore, intensity })` → `POST /api/drafts/:id/humanize`. Both use `requestAI` (180s timeout). (§5.2.3, §5.3.3)
+- [x] **#41 — Add AI detection & humanizer API client functions** (`apps/web/src/lib/api.ts` MODIFY): Added `draftsApi.aiCheck(id, content?)` → `POST /api/drafts/:id/ai-check` (AI timeout). Added `draftsApi.humanize(id, intensity)` → `POST /api/drafts/:id/humanize` (AI timeout). Imported `IAiCheckResponse`, `IHumanizeResponse`, `HumanizeIntensity` from shared types. ✅ DONE
 
 ---
 

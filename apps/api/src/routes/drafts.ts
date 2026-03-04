@@ -30,6 +30,8 @@ import { findPersonaByUserId } from "../services/userPersonaService";
 import { ChatSession } from "../models/ChatSession";
 import { SuggestionFeedback } from "../models/SuggestionFeedback";
 import { aggregateAndUpdatePersona } from "../services/personaLearning";
+import { runAiDetection, runHumanizer } from "../services/aiDetection";
+import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
 
 const router = Router();
 router.use(authenticate);
@@ -570,6 +572,234 @@ router.post(
         message: "Draft published.",
         draft,
         personaFeed: "queued", // signals to frontend that persona update is in progress
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/drafts/:id/ai-check ────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/drafts/{id}/ai-check:
+ *   post:
+ *     tags: [Drafts]
+ *     summary: Check if draft content reads as AI-written (Phase 3 #35)
+ *     description: |
+ *       Runs a 7-signal AI detection analysis on the draft content.
+ *       Returns a score (0-100), verdict, detected signals, and actionable suggestions.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: string
+ *                 description: Optional — if omitted, uses draft.content
+ *     responses:
+ *       200:
+ *         description: AI detection result
+ *       400:
+ *         description: Draft has no content to check
+ *       404:
+ *         description: Draft not found
+ *       429:
+ *         description: Token quota exceeded
+ */
+const aiCheckSchema = z.object({
+  content: z.string().min(50).max(20000).optional(),
+});
+
+router.post(
+  "/:id/ai-check",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = aiCheckSchema.parse(req.body);
+
+      // Quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      // Load draft
+      const draft = await getDraft(req.userId!, req.params.id!);
+      if (!draft) {
+        res.status(404).json({ error: "Draft not found." });
+        return;
+      }
+
+      const contentToCheck = body.content ?? draft.content;
+      if (!contentToCheck || contentToCheck.trim().length < 50) {
+        res.status(400).json({
+          error: "Draft content is too short for AI detection (minimum 50 characters).",
+        });
+        return;
+      }
+
+      // Run AI detection
+      const { result, usage } = await runAiDetection(contentToCheck);
+
+      // Track token usage — fire-and-forget
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "content-generator",
+        operation: "content_generation",
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.inputTokens + usage.outputTokens,
+      });
+
+      res.json({
+        score: result.score,
+        verdict: result.verdict,
+        signals: result.signals,
+        suggestions: result.suggestions,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/drafts/:id/humanize ────────────────────────────────────────────
+/**
+ * @swagger
+ * /api/drafts/{id}/humanize:
+ *   post:
+ *     tags: [Drafts]
+ *     summary: Humanize AI-generated draft content (Phase 3 #37)
+ *     description: |
+ *       Rewrites the draft content to match the user's natural voice using
+ *       their persona data. Three intensity levels: light, moderate, aggressive.
+ *       Auto-applies the humanized content to the draft.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               intensity:
+ *                 type: string
+ *                 enum: [light, moderate, aggressive]
+ *                 default: moderate
+ *     responses:
+ *       200:
+ *         description: Humanized content
+ *       400:
+ *         description: Draft has no content
+ *       404:
+ *         description: Draft not found
+ *       429:
+ *         description: Token quota exceeded
+ */
+const humanizeSchema = z.object({
+  intensity: z.enum(["light", "moderate", "aggressive"]).default("moderate"),
+});
+
+router.post(
+  "/:id/humanize",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = humanizeSchema.parse(req.body);
+
+      // Quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      // Load draft + persona in parallel
+      const [draft, persona] = await Promise.all([
+        getDraft(req.userId!, req.params.id!),
+        findPersonaByUserId(req.userId!),
+      ]);
+
+      if (!draft) {
+        res.status(404).json({ error: "Draft not found." });
+        return;
+      }
+
+      if (!draft.content || draft.content.trim().length < 50) {
+        res.status(400).json({
+          error: "Draft content is too short for humanization (minimum 50 characters).",
+        });
+        return;
+      }
+
+      if (!persona) {
+        res.status(400).json({
+          error: "No persona found. Complete persona analysis first.",
+        });
+        return;
+      }
+
+      // Run AI detection on original content first (for beforeScore)
+      const [detectionResult, humanizeResult] = await Promise.all([
+        runAiDetection(draft.content),
+        runHumanizer(draft.content, persona, body.intensity),
+      ]);
+
+      // Auto-apply humanized content to the draft
+      await applyAiContent(
+        req.userId!,
+        req.params.id!,
+        humanizeResult.result.humanizedContent,
+        humanizeResult.result.humanizedContent.length,
+        `Humanized (${body.intensity})`,
+      );
+
+      // Track token usage — fire-and-forget (both calls)
+      const totalInput =
+        detectionResult.usage.inputTokens + humanizeResult.usage.inputTokens;
+      const totalOutput =
+        detectionResult.usage.outputTokens + humanizeResult.usage.outputTokens;
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "content-generator",
+        operation: "content_generation",
+        inputTokens: totalInput,
+        outputTokens: totalOutput,
+        totalTokens: totalInput + totalOutput,
+      });
+
+      res.json({
+        humanizedContent: humanizeResult.result.humanizedContent,
+        charCount: humanizeResult.result.humanizedContent.length,
+        changesSummary: humanizeResult.result.changesSummary,
+        beforeScore: detectionResult.result.score,
+        afterScore: humanizeResult.result.estimatedScore,
       });
     } catch (err) {
       next(err);

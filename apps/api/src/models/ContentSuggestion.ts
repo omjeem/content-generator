@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 import type { PostFormat, SuggestionPlatform, IGenerateContextOptions } from "@repo/shared-types";
 
-export type GenerationMode = "profile" | "topic-focus" | "chat-refined" | "trend-selected";
+export type GenerationMode = "profile" | "topic-focus" | "chat-refined" | "trend-selected" | "persona-topics";
 
 export interface ISuggestionItem {
   topic: string;
@@ -106,7 +106,7 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
     // Generation metadata (#17) — defaults to 'profile' for backward-compat
     generationMode: {
       type: String,
-      enum: ["profile", "topic-focus", "chat-refined", "trend-selected"],
+      enum: ["profile", "topic-focus", "chat-refined", "trend-selected", "persona-topics"],
       default: "profile",
     },
     contextOptions: { type: Schema.Types.Mixed },

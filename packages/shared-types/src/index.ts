@@ -240,7 +240,7 @@ export interface IOnboardingResponse {
 // --- Feature: Flexible Content Generation Context ---
 
 export interface IGenerateContextOptions {
-  mode: "profile" | "topic-focus" | "chat-refined" | "trend-selected";
+  mode: "profile" | "topic-focus" | "chat-refined" | "trend-selected" | "persona-topics";
   topicFocus?: string; // used when mode='topic-focus'
   targetAudienceOverride?: string;
   platformGoal?: PlatformGoal;
@@ -289,6 +289,47 @@ export interface ITrendDiscoveryResponse {
   fetchedAt: string;
   expiresAt: string;
   isLive: boolean;
+}
+
+// --- Feature: AI-Suggested Topics from Persona (Phase 3 #27) ---
+
+export interface ITopicIdea {
+  id: string;
+  title: string;
+  category: string;
+  reasoning: string;
+  suggestedFormat: "carousel" | "text-post" | "poll" | "video-script" | "list";
+  confidence: number;
+}
+
+export interface ITopicIdeasResponse {
+  topics: ITopicIdea[];
+  basedOn: {
+    contentPillars: string[];
+    topTopics: string[];
+    preferredFormats: string[];
+    avoidTopics: string[];
+  };
+}
+
+// --- Feature: AI Detector + Humanizer (Phase 3 #35) ---
+
+export type AiVerdict = "human" | "mixed" | "likely-ai";
+export type HumanizeIntensity = "light" | "moderate" | "aggressive";
+
+export interface IAiCheckResponse {
+  score: number;
+  verdict: AiVerdict;
+  signals: string[];
+  suggestions: string[];
+}
+
+export interface IHumanizeResponse {
+  humanizedContent: string;
+  charCount: number;
+  changesSummary: string;
+  beforeScore: number;
+  afterScore: number;
 }
 
 // --- Feature: Persona Chat (live profile update via AI) ---
