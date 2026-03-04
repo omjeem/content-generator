@@ -399,19 +399,49 @@ function buildHeuristicResult(
 
 // ── Fallback: always return something ────────────────────────────────────────
 
+// Evergreen angle templates — rotated by topic index + day to avoid repetition
+const EVERGREEN_ANGLES: ((topic: string, industry: string) => { topic: string; angle: string })[] = [
+  (topic, industry) => ({
+    topic: `Common ${topic} mistakes in ${industry}`,
+    angle: `The top 3 mistakes practitioners make — and what to do instead`,
+  }),
+  (topic, _industry) => ({
+    topic: `${topic}: what changed this year`,
+    angle: `How ${topic} has evolved — a practitioner's honest take`,
+  }),
+  (topic, _industry) => ({
+    topic: `${topic} for beginners vs experts`,
+    angle: `What beginners get wrong about ${topic} that experts take for granted`,
+  }),
+  (topic, industry) => ({
+    topic: `The future of ${topic} in ${industry}`,
+    angle: `3 shifts that will reshape how we think about ${topic}`,
+  }),
+  (topic, _industry) => ({
+    topic: `Unpopular opinion: ${topic}`,
+    angle: `A contrarian take on ${topic} that most people won't agree with`,
+  }),
+];
+
 function buildFallbackResult(
   industry: string,
   topics: string[],
   rawTrends: string[] = [],
 ): TrendResult {
   const pillars = topics.length ? topics : [industry];
+  const dayOfWeek = new Date().getDay();
+
   return {
-    trends: pillars.slice(0, 5).map((topic) => ({
-      topic: `${topic} in ${new Date().getFullYear()}`,
-      relevanceReason: `Core to your ${industry} audience`,
-      contentAngle: `Share your perspective on how ${topic} is evolving — what practitioners need to know now`,
-      source: "evergreen",
-    })),
+    trends: pillars.slice(0, 5).map((pillar, i) => {
+      const templateIdx = (i + dayOfWeek) % EVERGREEN_ANGLES.length;
+      const generated = EVERGREEN_ANGLES[templateIdx]!(pillar, industry);
+      return {
+        topic: generated.topic,
+        relevanceReason: `Core to your ${industry} audience`,
+        contentAngle: generated.angle,
+        source: "evergreen",
+      };
+    }),
     rawTrends: rawTrends.length ? rawTrends : pillars.map((t) => `${t} trends`),
   };
 }

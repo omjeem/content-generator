@@ -67,17 +67,28 @@ export const contentGeneratorAgent = new Agent({
   model: google("gemini-2.5-flash"),
   instructions: `You are an expert LinkedIn ghostwriter and content strategist.
 
-You will receive a user persona and trending topics. Your job is to generate
-5-10 LinkedIn post ideas that feel AUTHENTIC to this specific person's voice
-AND provide a full content brief so they can immediately write the post.
+You will receive a user persona AND a list of trending topics. Your job is to generate
+5-10 LinkedIn post ideas that:
+1. Are DIRECTLY ANCHORED to the provided trending topics — each idea MUST clearly relate to one of the listed trends
+2. Feel AUTHENTIC to this specific person's voice
+3. Provide a full content brief so they can immediately write the post
+
+CRITICAL RULE: Every generated idea MUST be based on or directly inspired by one of the
+provided trending topics. Do NOT generate ideas about random topics from the creator's
+general expertise. The trends section is your PRIMARY content source — the persona tells
+you HOW to write about those trends, not WHAT to write about.
+
+If the trending topics are about "Microservices vs Monoliths", your ideas must be about
+microservices, monoliths, and related architecture decisions — NOT about unrelated topics
+like AI costs or LLM hallucinations, even if the creator works in tech.
 
 Each idea MUST include ALL of these fields:
-- topic: what the post is about (concise noun phrase)
-- angle: the unique perspective or spin
+- topic: what the post is about — must clearly connect to one of the provided trends
+- angle: the unique perspective or spin the creator brings to this trend
 - format: exactly one of: carousel | text-post | poll | video-script | list
 - hook: opening line, scroll-stopping, under 15 words, sounds like THEM
 - whyItFits: why this matches their voice, audience and goals
-- seoKeywords: array of 3-5 LinkedIn hashtags / SEO keywords (e.g. ["#AILeadership", "#FutureOfWork"])
+- seoKeywords: array of 3-5 LinkedIn hashtags / SEO keywords
 - clickbaitHooks: array of 2-3 bolder hook alternatives (punchier variants of the main hook)
 - postPointers: array of 4-6 bullet points outlining the exact content to write in the post body
 - callToAction: one suggested CTA sentence to close the post
@@ -86,24 +97,24 @@ Return ONLY a valid JSON object (no markdown, no extra text):
 {
   "ideas": [
     {
-      "topic": "AI adoption in mid-size companies",
-      "angle": "The hidden cost no one talks about",
+      "topic": "Microservices migration pitfalls",
+      "angle": "The 3 questions nobody asks before rewriting",
       "format": "carousel",
-      "hook": "Your team adopted AI. Your culture didn't. Here's the gap.",
-      "whyItFits": "Matches their thought-leadership goal and tech-savvy audience",
-      "seoKeywords": ["#AIAdoption", "#ChangeManagement", "#FutureOfWork", "#Leadership"],
+      "hook": "Your monolith works fine. Here's why you shouldn't touch it yet.",
+      "whyItFits": "Matches their backend expertise and system design audience",
+      "seoKeywords": ["#Microservices", "#SystemDesign", "#BackendEngineering", "#SoftwareArchitecture"],
       "clickbaitHooks": [
-        "Most AI rollouts fail by month 3. Here's why.",
-        "You bought the tools. You forgot the humans. A lesson learned the hard way."
+        "We migrated to microservices. It was our most expensive mistake.",
+        "Monoliths aren't the problem. Your deployment pipeline is."
       ],
       "postPointers": [
-        "Open with a surprising stat about AI implementation failure rates",
-        "Describe the cultural resistance pattern you or your clients have seen",
-        "Explain the 3 root causes: speed mismatch, skill gap, trust deficit",
-        "Share one specific intervention that worked",
-        "Close with a reframe: AI success is an org-design problem, not a tech problem"
+        "Open with a real-world story of a premature microservices migration",
+        "Explain the 3 questions: Is it a scaling problem? A team boundary problem? A deployment problem?",
+        "Show how answering 'no' to all 3 means you should stay monolithic",
+        "Share a decision framework for when microservices actually make sense",
+        "Close with the counterintuitive take: most companies need a better monolith, not microservices"
       ],
-      "callToAction": "What's been the biggest blocker in your team's AI adoption? Share below."
+      "callToAction": "What's the worst microservices decision you've seen? Drop it below."
     }
   ]
 }`,
@@ -305,15 +316,22 @@ export async function generateContentIdeas(input: {
         ? "LinkedIn + Twitter/X"
         : "LinkedIn";
 
+  const hasTrends = trends.trends.length > 0;
+  const trendAnchorDirective = hasTrends
+    ? `\nCRITICAL: Every idea you generate MUST be directly based on one of the trending topics listed below. The creator's profile tells you their VOICE and STYLE — the trends tell you WHAT to write about. Do NOT invent unrelated topics from the creator's general expertise.`
+    : "";
+
   const prompt = `Generate 5-10 authentic ${platformLabel} post ideas for this creator.
 Each idea MUST include all fields: topic, angle, format, hook, whyItFits, seoKeywords (3-5), clickbaitHooks (2-3), postPointers (4-6), callToAction, platform.
+${trendAnchorDirective}
 
-## CREATOR PROFILE
+## CREATOR PROFILE (voice & style reference — NOT the topic source)
 ${personaSummary}
 ${feedbackSection}
 
-## CURRENT TRENDS IN THEIR NICHE
+## TRENDING TOPICS TO BASE IDEAS ON
 ${trendsList}
+${hasTrends ? "\nEach generated idea MUST clearly connect to one of these trends. Use the creator's voice to write about THESE topics." : ""}
 ${platformSection}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`;
@@ -400,8 +418,12 @@ function buildSimplifiedPrompt(
     .map((t) => t.topic)
     .join(", ");
 
+  const trendDirective = topTrends
+    ? `IMPORTANT: Each idea must be about one of these trends: ${topTrends}. Do NOT generate ideas on unrelated topics.`
+    : "";
+
   return `Generate 5 LinkedIn post ideas for a ${persona.industry ?? "business"} professional.
-Topics: ${topTopics}. Recent trends: ${topTrends || "general industry trends"}.
+Creator expertise: ${topTopics}. ${trendDirective}${!topTrends ? `Use general ${persona.industry ?? "business"} trends.` : ""}
 Return ONLY a JSON object:
 {"ideas":[{"topic":"...","angle":"...","format":"text-post","hook":"...","whyItFits":"...","seoKeywords":["#tag"],"clickbaitHooks":["...","..."],"postPointers":["...","...","...","..."],"callToAction":"...","platform":"linkedin"}]}`;
 }
