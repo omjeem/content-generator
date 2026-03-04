@@ -221,6 +221,7 @@ export async function runContentPipeline(
       industry: persona.industry ?? "business",
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
       contentPillars: persona.contentPillars, // for balanced selection (#15)
+      tone: persona.tone, // for domain-aware angle language
       recentTrends: recentTrends.length > 0 ? recentTrends : undefined, // #6
     });
     trendFetchDurationMs = Date.now() - trendStart;

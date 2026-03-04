@@ -75,6 +75,7 @@ router.get("/", async (req: AuthRequest, res: Response, next: NextFunction) => {
       industry: persona.industry ?? "business",
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
       geo,
+      tone: persona.tone, // for domain-aware angle language
     });
 
     res.json({
@@ -153,6 +154,7 @@ router.get(
         topics: persona.topics.length ? persona.topics : persona.contentPillars,
         contentPillars: persona.contentPillars,
         geo,
+        tone: persona.tone, // for domain-aware angle language
         recentTrends: recentTrends.length > 0 ? recentTrends : undefined,
       });
 

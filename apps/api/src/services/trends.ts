@@ -8,9 +8,8 @@
  *    └─ AI-optimised web search; niche-targeted; recency-filtered
  *
  *  Tier 2 — Hacker News Algolia + RSS Feeds (always-on, zero API keys)
- *    ├─ HN Algolia: real trending tech/AI/startup stories (no key, no limit)
- *    └─ RSS Feeds: TechCrunch, Entrepreneur, VentureBeat, Fast Company,
- *                  MIT Technology Review, Inc. Magazine, NYT Technology (no key)
+ *    ├─ HN Algolia: real trending stories (skipped for non-tech-adjacent domains)
+ *    └─ RSS Feeds: domain-specific curated publications per DomainCategory
  *
  *  Tier 2.5 — Google News RSS (free, no key, fallback when HN+RSS yield < 5)
  *
@@ -29,6 +28,15 @@
  *  #9  — RSS backup feed retry when all primary feeds fail
  *  #10 — Hyphen-normalized keyword matching in isRelevant()
  *  #11 — Google News RSS as Tier 2.5 fallback
+ *
+ * Domain-aware update:
+ *  #DA1 — classifyDomain() maps industry+topics → DomainCategory (exported)
+ *  #DA2 — DOMAIN_RSS_FEEDS replaces flat RSS_FEEDS array; each domain has its
+ *          own curated publication pool (4-6 feeds per category)
+ *  #DA3 — fetchFromHackerNews() skips HN entirely for non-tech-adjacent domains
+ *          (healthcare, legal, wellness, food, etc.) — HN is a tech community
+ *  #DA4 — Broad HN fallback now uses domain-aware query instead of the
+ *          hardcoded "technology business innovation 2026" string
  */
 
 import Parser from "rss-parser";
@@ -44,68 +52,913 @@ export interface RawTrendItem {
   publishedAt?: string;
 }
 
-// ── RSS feed sources ───────────────────────────────────────────────────────────
-// Curated sources covering: tech, AI, business, leadership, startups, marketing
-// All are free, no API key, no rate limits
+// ── Domain Classification (#DA1) ──────────────────────────────────────────────
 
-const RSS_FEEDS: { name: string; url: string; topics: string[] }[] = [
-  {
-    name: "TechCrunch",
-    url: "https://techcrunch.com/feed/",
-    topics: ["tech", "ai", "startup", "saas", "software", "engineering"],
-  },
-  {
-    // HBR feeds.hbr.org is dead (TLS failure). Replaced with Entrepreneur for
-    // leadership/management/business content coverage.
-    name: "Entrepreneur",
-    url: "https://www.entrepreneur.com/latest.rss",
-    topics: [
-      "leadership",
-      "management",
-      "strategy",
-      "business",
-      "career",
-      "hr",
-      "entrepreneurship",
-      "startup",
-    ],
-  },
-  {
-    // feeds.feedburner.com/venturebeat/SZYF still works but direct URL is more reliable
-    name: "VentureBeat",
-    url: "https://venturebeat.com/feed/",
-    topics: ["ai", "ml", "enterprise", "tech", "startup", "data"],
-  },
-  {
-    name: "Fast Company",
-    url: "https://www.fastcompany.com/latest/rss",
-    topics: ["innovation", "design", "business", "leadership", "marketing"],
-  },
-  {
-    name: "MIT Technology Review",
-    url: "https://www.technologyreview.com/feed/",
-    topics: ["ai", "biotech", "climate", "computing", "engineering", "science"],
-  },
-  {
-    name: "Inc. Magazine",
-    url: "https://www.inc.com/rss",
-    topics: [
-      "entrepreneurship",
-      "startup",
-      "growth",
-      "management",
-      "marketing",
-    ],
-  },
-  {
-    name: "NYT Technology",
-    url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
-    topics: ["tech", "ai", "software", "computing", "science", "data"],
-  },
-];
+/**
+ * Broad domain categories used to select appropriate RSS feed pools and
+ * decide whether Hacker News is a relevant source for this creator.
+ */
+export type DomainCategory =
+  | "tech"
+  | "business"
+  | "healthcare"
+  | "wellness"
+  | "finance"
+  | "legal"
+  | "education"
+  | "creative"
+  | "food"
+  | "sustainability"
+  | "hr"
+  | "real-estate"
+  | "manufacturing"
+  | "general";
+
+/**
+ * Classifies the user's domain from their industry + topic keywords.
+ * Returns a DomainCategory used to:
+ *  - Select the right RSS feed pool (DOMAIN_RSS_FEEDS)
+ *  - Decide whether to query Hacker News (TECH_ADJACENT_DOMAINS)
+ *  - Choose a domain-appropriate HN broad-fallback query
+ */
+export function classifyDomain(
+  industry: string,
+  topics: string[],
+): DomainCategory {
+  const text = [industry, ...topics].join(" ").toLowerCase();
+
+  // Tech — check before generic "ai" since many industries are adopting AI too
+  if (
+    /\b(software|saas|devops|cloud|cybersecurity|blockchain|frontend|backend|mobile app|ios|android|machine learning|deep learning|neural network|llm|programming|coding|developer|engineering|api|microservice|kubernetes|docker|web development|data science|mlops)\b/.test(
+      text,
+    )
+  )
+    return "tech";
+  // Standalone "ai" or "tech" without a health/edu/legal/green/wellness qualifier
+  if (
+    /\b(ai|tech)\b/.test(text) &&
+    !/\b(health|medical|edu|legal|clean|green|food|restaurant)\b/.test(text)
+  )
+    return "tech";
+
+  // Healthcare
+  if (
+    /\b(healthcare|medical|medtech|biotech|pharma|clinical|hospital|nursing|doctor|telemedicine|digital health|patient|dentist|veterinar|health system|pharma)\b/.test(
+      text,
+    )
+  )
+    return "healthcare";
+
+  // Wellness — check before healthcare to catch yoga/fitness/coaching niches
+  if (
+    /\b(fitness|yoga|wellness|mental health|meditation|nutrition|personal training|mindfulness|therapy|coaching|life coach|holistic|pilates|breathwork|nutritionist|health coach)\b/.test(
+      text,
+    )
+  )
+    return "wellness";
+
+  // Finance
+  if (
+    /\b(finance|fintech|banking|accounting|investment|trading|mortgage|wealth management|insurance|financial planning|asset management|cfo|audit|tax advisor|financial advisor)\b/.test(
+      text,
+    )
+  )
+    return "finance";
+
+  // Legal
+  if (
+    /\b(legal|law firm|attorney|lawyer|compliance|legaltech|litigation|contract|paralegal|regulation|notary|intellectual property|solicitor|barrister)\b/.test(
+      text,
+    )
+  )
+    return "legal";
+
+  // Education
+  if (
+    /\b(education|edtech|teaching|e-learning|elearning|curriculum|school|university|professor|learning management|instructional design|tutor|educator|teacher|academic)\b/.test(
+      text,
+    )
+  )
+    return "education";
+
+  // Creative & Media
+  if (
+    /\b(design|ux|ui|graphic|photography|film|video production|content creator|media|journalism|publishing|art|animation|creative director|branding|copywriting|podcasting|videography)\b/.test(
+      text,
+    )
+  )
+    return "creative";
+
+  // Food & Hospitality
+  if (
+    /\b(food|restaurant|culinary|chef|foodtech|beverage|hospitality|catering|dining|nutrition|cooking|bakery|food service|agriculture|food industry)\b/.test(
+      text,
+    )
+  )
+    return "food";
+
+  // Sustainability & Climate
+  if (
+    /\b(sustainability|climate|cleantech|esg|environmental|green energy|renewable|carbon|net.?zero|impact investing|circular economy|decarbonization)\b/.test(
+      text,
+    )
+  )
+    return "sustainability";
+
+  // HR & People Ops
+  if (
+    /\b(hr|human resources|talent|recruitment|hiring|people ops|workforce|dei|diversity|employee engagement|people management|talent acquisition|hr tech)\b/.test(
+      text,
+    )
+  )
+    return "hr";
+
+  // Real Estate & Property
+  if (
+    /\b(real estate|proptech|property|construction|architecture|housing|mortgage broker|landlord|reit|commercial real estate|property management)\b/.test(
+      text,
+    )
+  )
+    return "real-estate";
+
+  // Manufacturing & Industrial
+  if (
+    /\b(manufacturing|industrial|logistics|supply chain|warehouse|robotics|automation|industry 4|factory|procurement|operations management|lean manufacturing)\b/.test(
+      text,
+    )
+  )
+    return "manufacturing";
+
+  // Business (catch-all for business/marketing/sales niches)
+  if (
+    /\b(marketing|sales|b2b|startup|entrepreneurship|consulting|strategy|leadership|management|retail|ecommerce|growth|brand|advertising)\b/.test(
+      text,
+    )
+  )
+    return "business";
+
+  return "general";
+}
+
+// ── Domain-specific RSS feed pools (#DA2) ──────────────────────────────────────
+// Each DomainCategory maps to 4-6 curated RSS feeds from domain-relevant
+// publications. All are free, no API key required.
+// Feed failures are handled gracefully by Promise.allSettled in fetchFeedsWithParser.
+
+const DOMAIN_RSS_FEEDS: Record<
+  DomainCategory,
+  { name: string; url: string; topics: string[] }[]
+> = {
+  tech: [
+    {
+      name: "TechCrunch",
+      url: "https://techcrunch.com/feed/",
+      topics: ["tech", "ai", "startup", "saas", "software", "engineering"],
+    },
+    {
+      name: "VentureBeat",
+      url: "https://venturebeat.com/feed/",
+      topics: ["ai", "ml", "enterprise", "tech", "startup", "data"],
+    },
+    {
+      name: "MIT Technology Review",
+      url: "https://www.technologyreview.com/feed/",
+      topics: ["ai", "biotech", "computing", "engineering", "science"],
+    },
+    {
+      name: "Ars Technica",
+      url: "https://feeds.arstechnica.com/arstechnica/index",
+      topics: ["tech", "software", "computing", "science", "security"],
+    },
+    {
+      name: "The Verge",
+      url: "https://www.theverge.com/rss/index.xml",
+      topics: ["tech", "gadgets", "software", "ai", "computing"],
+    },
+    {
+      name: "NYT Technology",
+      url: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+      topics: ["tech", "ai", "software", "computing", "data"],
+    },
+  ],
+
+  business: [
+    {
+      name: "Entrepreneur",
+      url: "https://www.entrepreneur.com/latest.rss",
+      topics: [
+        "leadership",
+        "management",
+        "strategy",
+        "business",
+        "entrepreneurship",
+        "startup",
+      ],
+    },
+    {
+      name: "Fast Company",
+      url: "https://www.fastcompany.com/latest/rss",
+      topics: ["innovation", "design", "business", "leadership", "marketing"],
+    },
+    {
+      name: "Inc. Magazine",
+      url: "https://www.inc.com/rss",
+      topics: [
+        "entrepreneurship",
+        "startup",
+        "growth",
+        "management",
+        "marketing",
+      ],
+    },
+    {
+      name: "Harvard Business Review",
+      url: "https://feeds.hbr.org/harvardbusiness",
+      topics: ["leadership", "management", "strategy", "business", "hr"],
+    },
+    {
+      name: "Forbes",
+      url: "https://www.forbes.com/most-popular/feed/",
+      topics: [
+        "business",
+        "leadership",
+        "entrepreneurship",
+        "finance",
+        "strategy",
+      ],
+    },
+  ],
+
+  healthcare: [
+    {
+      name: "STAT News",
+      url: "https://www.statnews.com/feed/",
+      topics: [
+        "healthcare",
+        "medical",
+        "biotech",
+        "pharma",
+        "health",
+        "clinical",
+      ],
+    },
+    {
+      name: "Medical Xpress",
+      url: "https://medicalxpress.com/rss-feed/",
+      topics: ["medical", "health", "research", "clinical", "biotech"],
+    },
+    {
+      name: "Fierce Healthcare",
+      url: "https://www.fiercehealthcare.com/rss/xml",
+      topics: [
+        "healthcare",
+        "hospital",
+        "health system",
+        "medical",
+        "health tech",
+      ],
+    },
+    {
+      name: "MedCity News",
+      url: "https://medcitynews.com/feed/",
+      topics: [
+        "healthcare",
+        "health tech",
+        "biotech",
+        "medtech",
+        "digital health",
+      ],
+    },
+    {
+      name: "Becker's Hospital Review",
+      url: "https://www.beckershospitalreview.com/rss/rss.php",
+      topics: [
+        "hospital",
+        "healthcare",
+        "health system",
+        "clinical",
+        "administration",
+      ],
+    },
+  ],
+
+  wellness: [
+    {
+      name: "Well+Good",
+      url: "https://www.wellandgood.com/feed/",
+      topics: [
+        "wellness",
+        "fitness",
+        "mental health",
+        "nutrition",
+        "yoga",
+        "mindfulness",
+      ],
+    },
+    {
+      name: "MindBodyGreen",
+      url: "https://www.mindbodygreen.com/rss.xml",
+      topics: [
+        "wellness",
+        "mindfulness",
+        "yoga",
+        "nutrition",
+        "mental health",
+        "fitness",
+      ],
+    },
+    {
+      name: "Psychology Today",
+      url: "https://www.psychologytoday.com/us/front/feed",
+      topics: [
+        "mental health",
+        "psychology",
+        "therapy",
+        "wellness",
+        "mindfulness",
+        "coaching",
+      ],
+    },
+    {
+      name: "Shape",
+      url: "https://www.shape.com/rss",
+      topics: ["fitness", "wellness", "nutrition", "exercise", "yoga"],
+    },
+    {
+      name: "Healthline",
+      url: "https://www.healthline.com/rss/health-news",
+      topics: ["health", "wellness", "nutrition", "mental health", "fitness"],
+    },
+  ],
+
+  finance: [
+    {
+      name: "Investopedia",
+      url: "https://www.investopedia.com/feedbuilder/feed/getfeed/?feedName=rss_headline",
+      topics: [
+        "finance",
+        "investment",
+        "trading",
+        "banking",
+        "insurance",
+        "fintech",
+      ],
+    },
+    {
+      name: "Finance Magnates",
+      url: "https://www.financemagnates.com/feed/",
+      topics: [
+        "fintech",
+        "finance",
+        "trading",
+        "banking",
+        "payments",
+        "crypto",
+      ],
+    },
+    {
+      name: "American Banker",
+      url: "https://www.americanbanker.com/feed",
+      topics: [
+        "banking",
+        "fintech",
+        "payments",
+        "financial services",
+        "regulation",
+      ],
+    },
+    {
+      name: "CFO Dive",
+      url: "https://www.cfodive.com/feeds/news/",
+      topics: ["finance", "accounting", "cfo", "management", "strategy"],
+    },
+    {
+      name: "Axios Markets",
+      url: "https://api.axios.com/feed/markets",
+      topics: ["finance", "markets", "economy", "investing", "business"],
+    },
+  ],
+
+  legal: [
+    {
+      name: "Above The Law",
+      url: "https://abovethelaw.com/feed/",
+      topics: [
+        "law",
+        "legal",
+        "attorney",
+        "courts",
+        "regulation",
+        "legal tech",
+      ],
+    },
+    {
+      name: "Legal Dive",
+      url: "https://www.legaldive.com/feeds/news/",
+      topics: ["legal", "compliance", "law", "regulation", "courts"],
+    },
+    {
+      name: "JD Supra",
+      url: "https://www.jdsupra.com/resources/syndication/docsRSSfeed.aspx?ftype=AllContent&count=20",
+      topics: [
+        "legal",
+        "law",
+        "compliance",
+        "regulation",
+        "litigation",
+        "contract",
+      ],
+    },
+    {
+      name: "Law360",
+      url: "https://www.law360.com/rss",
+      topics: [
+        "law",
+        "legal",
+        "litigation",
+        "courts",
+        "attorney",
+        "legal tech",
+      ],
+    },
+    {
+      name: "Entrepreneur",
+      url: "https://www.entrepreneur.com/latest.rss",
+      topics: [
+        "compliance",
+        "regulation",
+        "contract",
+        "business law",
+        "startup law",
+      ],
+    },
+  ],
+
+  education: [
+    {
+      name: "EdSurge",
+      url: "https://www.edsurge.com/news.rss",
+      topics: [
+        "edtech",
+        "education",
+        "learning",
+        "e-learning",
+        "teaching",
+      ],
+    },
+    {
+      name: "Education Week",
+      url: "https://www.edweek.org/feed.rss",
+      topics: ["education", "teaching", "curriculum", "school", "k-12"],
+    },
+    {
+      name: "EdTech Magazine",
+      url: "https://edtechmagazine.com/k12/rss.xml",
+      topics: ["edtech", "technology", "education", "classroom", "learning"],
+    },
+    {
+      name: "E-Learning Industry",
+      url: "https://elearningindustry.com/feed",
+      topics: [
+        "e-learning",
+        "lms",
+        "online learning",
+        "instructional design",
+        "training",
+      ],
+    },
+    {
+      name: "Inside Higher Ed",
+      url: "https://www.insidehighered.com/rss",
+      topics: [
+        "higher education",
+        "university",
+        "academic",
+        "research",
+        "teaching",
+      ],
+    },
+  ],
+
+  creative: [
+    {
+      name: "Creative Bloq",
+      url: "https://www.creativebloq.com/feeds/rss",
+      topics: [
+        "design",
+        "creative",
+        "art",
+        "graphic design",
+        "photography",
+        "ux",
+      ],
+    },
+    {
+      name: "Dezeen",
+      url: "https://www.dezeen.com/feed/",
+      topics: ["design", "architecture", "art", "creative", "innovation"],
+    },
+    {
+      name: "Digiday",
+      url: "https://digiday.com/feed/",
+      topics: [
+        "media",
+        "content",
+        "marketing",
+        "publishing",
+        "digital media",
+        "creator economy",
+      ],
+    },
+    {
+      name: "Communication Arts",
+      url: "https://www.commarts.com/feed",
+      topics: [
+        "design",
+        "creative",
+        "advertising",
+        "branding",
+        "art direction",
+      ],
+    },
+    {
+      name: "Fast Company Design",
+      url: "https://www.fastcompany.com/co-design/rss",
+      topics: ["design", "ux", "innovation", "creative", "product design"],
+    },
+  ],
+
+  food: [
+    {
+      name: "Food Dive",
+      url: "https://www.fooddive.com/feeds/news/",
+      topics: [
+        "food",
+        "food industry",
+        "foodtech",
+        "restaurant",
+        "beverage",
+        "nutrition",
+      ],
+    },
+    {
+      name: "Eater",
+      url: "https://www.eater.com/rss/index.xml",
+      topics: [
+        "restaurant",
+        "food",
+        "culinary",
+        "chef",
+        "dining",
+        "hospitality",
+      ],
+    },
+    {
+      name: "Nation's Restaurant News",
+      url: "https://www.nrn.com/rss.xml",
+      topics: [
+        "restaurant",
+        "food service",
+        "hospitality",
+        "food industry",
+        "culinary",
+      ],
+    },
+    {
+      name: "Food Business News",
+      url: "https://www.foodbusinessnews.net/rss/topic/news",
+      topics: [
+        "food",
+        "beverage",
+        "food industry",
+        "restaurant",
+        "foodtech",
+      ],
+    },
+    {
+      name: "Agri Pulse",
+      url: "https://www.agri-pulse.com/feed.rss",
+      topics: ["agriculture", "food", "farm", "supply chain", "food policy"],
+    },
+  ],
+
+  sustainability: [
+    {
+      name: "GreenBiz",
+      url: "https://www.greenbiz.com/rss.xml",
+      topics: [
+        "sustainability",
+        "climate",
+        "esg",
+        "cleantech",
+        "green business",
+        "carbon",
+      ],
+    },
+    {
+      name: "CleanTechnica",
+      url: "https://cleantechnica.com/feed/",
+      topics: [
+        "cleantech",
+        "renewable energy",
+        "solar",
+        "electric vehicle",
+        "climate",
+        "sustainability",
+      ],
+    },
+    {
+      name: "Environmental Leader",
+      url: "https://www.environmentalleader.com/feed/",
+      topics: [
+        "sustainability",
+        "environmental",
+        "green",
+        "climate",
+        "esg",
+        "energy",
+      ],
+    },
+    {
+      name: "Eco-Business",
+      url: "https://www.eco-business.com/rss/",
+      topics: [
+        "sustainability",
+        "esg",
+        "green",
+        "climate",
+        "business",
+        "environment",
+      ],
+    },
+    {
+      name: "Sustainable Brands",
+      url: "https://sustainablebrands.com/rss.xml",
+      topics: [
+        "sustainability",
+        "esg",
+        "green",
+        "brand",
+        "consumer",
+        "climate",
+      ],
+    },
+  ],
+
+  hr: [
+    {
+      name: "HR Dive",
+      url: "https://www.hrdive.com/feeds/news/",
+      topics: [
+        "hr",
+        "human resources",
+        "talent",
+        "recruitment",
+        "workforce",
+        "employee",
+        "dei",
+      ],
+    },
+    {
+      name: "Workology",
+      url: "https://workology.com/feed/",
+      topics: ["hr", "talent", "recruitment", "people", "workforce", "hiring"],
+    },
+    {
+      name: "SHRM",
+      url: "https://www.shrm.org/rss/Pages/rss.aspx",
+      topics: [
+        "hr",
+        "human resources",
+        "management",
+        "talent",
+        "workforce",
+        "employee relations",
+      ],
+    },
+    {
+      name: "People Management",
+      url: "https://www.peoplemanagement.co.uk/rss",
+      topics: [
+        "hr",
+        "people",
+        "management",
+        "talent",
+        "workforce",
+        "leadership",
+      ],
+    },
+    {
+      name: "HR Morning",
+      url: "https://www.hrmorning.com/feed/",
+      topics: [
+        "hr",
+        "compliance",
+        "benefits",
+        "employee relations",
+        "talent",
+      ],
+    },
+  ],
+
+  "real-estate": [
+    {
+      name: "Inman",
+      url: "https://www.inman.com/feed/",
+      topics: [
+        "real estate",
+        "housing",
+        "mortgage",
+        "property",
+        "proptech",
+        "market",
+      ],
+    },
+    {
+      name: "The Real Deal",
+      url: "https://therealdeal.com/feed/",
+      topics: [
+        "real estate",
+        "commercial",
+        "residential",
+        "property",
+        "investment",
+        "development",
+      ],
+    },
+    {
+      name: "HousingWire",
+      url: "https://www.housingwire.com/feed/",
+      topics: [
+        "real estate",
+        "mortgage",
+        "housing",
+        "lending",
+        "market",
+        "proptech",
+      ],
+    },
+    {
+      name: "GlobeSt",
+      url: "https://www.globest.com/rss/",
+      topics: [
+        "commercial real estate",
+        "property",
+        "investment",
+        "development",
+        "market",
+      ],
+    },
+    {
+      name: "Bisnow",
+      url: "https://www.bisnow.com/rss",
+      topics: [
+        "commercial real estate",
+        "development",
+        "investment",
+        "market",
+        "construction",
+      ],
+    },
+  ],
+
+  manufacturing: [
+    {
+      name: "Industry Week",
+      url: "https://www.industryweek.com/rss",
+      topics: [
+        "manufacturing",
+        "industrial",
+        "industry 4.0",
+        "automation",
+        "supply chain",
+      ],
+    },
+    {
+      name: "Manufacturing Dive",
+      url: "https://www.manufacturingdive.com/feeds/news/",
+      topics: [
+        "manufacturing",
+        "industrial",
+        "automation",
+        "supply chain",
+        "production",
+      ],
+    },
+    {
+      name: "Supply Chain Dive",
+      url: "https://www.supplychaindive.com/feeds/news/",
+      topics: [
+        "supply chain",
+        "logistics",
+        "warehouse",
+        "shipping",
+        "manufacturing",
+      ],
+    },
+    {
+      name: "Automation World",
+      url: "https://www.automationworld.com/rss.xml",
+      topics: [
+        "automation",
+        "robotics",
+        "manufacturing",
+        "industrial",
+        "iot",
+        "industry 4.0",
+      ],
+    },
+    {
+      name: "Thomas Net News",
+      url: "https://news.thomasnet.com/rss",
+      topics: [
+        "manufacturing",
+        "industrial",
+        "supply chain",
+        "procurement",
+        "engineering",
+      ],
+    },
+  ],
+
+  general: [
+    {
+      name: "Entrepreneur",
+      url: "https://www.entrepreneur.com/latest.rss",
+      topics: [
+        "leadership",
+        "management",
+        "strategy",
+        "business",
+        "entrepreneurship",
+      ],
+    },
+    {
+      name: "Fast Company",
+      url: "https://www.fastcompany.com/latest/rss",
+      topics: ["innovation", "design", "business", "leadership", "marketing"],
+    },
+    {
+      name: "Inc. Magazine",
+      url: "https://www.inc.com/rss",
+      topics: [
+        "entrepreneurship",
+        "startup",
+        "growth",
+        "management",
+        "marketing",
+      ],
+    },
+    {
+      name: "TechCrunch",
+      url: "https://techcrunch.com/feed/",
+      topics: ["tech", "ai", "startup", "saas", "software"],
+    },
+    {
+      name: "BBC News Business",
+      url: "https://feeds.bbci.co.uk/news/business/rss.xml",
+      topics: ["business", "economy", "finance", "global", "markets"],
+    },
+  ],
+};
+
+// ── Domains where HN provides signal (#DA3) ───────────────────────────────────
+// HN (Hacker News) is a tech/startup community. For healthcare, legal, yoga,
+// food, etc., keyword searches on HN return 0 results or tech-framed articles.
+// We skip HN entirely for non-tech-adjacent domains and rely on RSS + Google News.
+
+const TECH_ADJACENT_DOMAINS = new Set<DomainCategory>([
+  "tech",
+  "business",
+  "finance",
+  "general",
+]);
+
+// ── Domain-aware HN broad fallback (#DA4) ─────────────────────────────────────
+// When a keyword-specific HN search returns 0 results AND the domain is
+// tech-adjacent, use a domain-appropriate broad query instead of the old
+// hardcoded "technology business innovation 2026".
+
+const DOMAIN_BROAD_HN_FALLBACK: Record<DomainCategory, string> = {
+  tech: "technology software AI innovation 2026",
+  business: "business entrepreneurship startup strategy growth",
+  healthcare: "health tech digital health medical innovation",
+  wellness: "wellness fitness mental health biohacking",
+  finance: "fintech banking finance investment markets",
+  legal: "legaltech law compliance regulation",
+  education: "edtech education learning online courses",
+  creative: "design media content creator economy",
+  food: "foodtech restaurant industry consumer food trends",
+  sustainability: "sustainability climate green tech ESG",
+  hr: "HR talent remote work workforce future of work",
+  "real-estate": "proptech real estate housing market trends",
+  manufacturing: "manufacturing automation supply chain industry",
+  general: "business innovation leadership trends 2026",
+};
 
 // ── HN search terms per broad topic (#7 — expanded to 30+ industries) ────────
-// Maps niche keywords → HN search queries for best results
+// Maps niche keywords → focused HN search queries for best relevance.
+// Only used for tech-adjacent domains.
 
 const HN_QUERY_MAP: Record<string, string> = {
   // Tech & Software
@@ -272,13 +1125,24 @@ async function fetchFromTavily(
 // ── Source 2a: Hacker News Algolia — real trending tech stories ───────────────
 // Completely free, no API key, ~10,000 req/hour limit.
 // Filters by points to ensure quality (only community-validated stories).
-// Phase 3 #3: Adds created_at_i> time filter for recency.
+// Phase 3 #3: Adds created_at_i > time filter for recency.
 // Phase 3 #8: Uses lower points threshold (2) for raw/niche keyword queries.
+// Domain-aware #DA3: Skips entirely for non-tech-adjacent domains.
+// Domain-aware #DA4: Uses domain-appropriate broad fallback query.
 
 async function fetchFromHackerNews(
   keywords: string[],
   industry: string,
+  domain?: DomainCategory,
 ): Promise<RawTrendItem[]> {
+  // #DA3: Skip HN for non-tech-adjacent domains — returns sparse/irrelevant results
+  if (domain && !TECH_ADJACENT_DOMAINS.has(domain)) {
+    console.log(
+      `[trends:hn] Skipping HN for domain="${domain}" (not tech-adjacent) — using RSS+GoogleNews instead`,
+    );
+    return [];
+  }
+
   try {
     // Build a focused HN query — 3-5 terms max for best relevance.
     const firstMappedExpansion = keywords
@@ -360,18 +1224,17 @@ async function fetchFromHackerNews(
       items = [...items, ...newRanked].slice(0, 20);
     }
 
-    // #8: If raw keyword query returned 0, try broad fallback
+    // #8 + #DA4: If raw keyword query returned 0, try domain-aware broad fallback
     if (items.length === 0 && !firstMappedExpansion) {
+      const broadQuery =
+        DOMAIN_BROAD_HN_FALLBACK[domain ?? "general"];
       console.log(
-        "[trends:hn] Raw keyword search returned 0 — trying broad fallback query",
+        `[trends:hn] Raw keyword search returned 0 — trying broad fallback: "${broadQuery}"`,
       );
       const broadUrl = new URL(
         "https://hn.algolia.com/api/v1/search_by_date",
       );
-      broadUrl.searchParams.set(
-        "query",
-        "technology business innovation 2026",
-      );
+      broadUrl.searchParams.set("query", broadQuery);
       broadUrl.searchParams.set("tags", "story");
       broadUrl.searchParams.set("numericFilters", `points>5`);
       broadUrl.searchParams.set("hitsPerPage", "15");
@@ -413,13 +1276,20 @@ async function fetchFromHackerNews(
   }
 }
 
-// ── Source 2b: RSS Feeds — business/leadership/tech publications ──────────────
-// Completely free, no keys. Fetches from 2-4 curated feeds relevant to
-// the user's keywords, then filters items by keyword match.
+// ── Source 2b: RSS Feeds — domain-specific publications ───────────────────────
+// Completely free, no keys. Fetches from 2-4 curated feeds from the domain's
+// feed pool, then filters items by keyword match.
 // Phase 3 #4: Shuffles feeds within same-score tiers for variety.
 // Phase 3 #9: Retries with backup feeds when all primary feeds fail.
+// Domain-aware #DA2: Uses DOMAIN_RSS_FEEDS[domain] pool instead of a flat list.
 
-async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
+async function fetchFromRSSFeeds(
+  keywords: string[],
+  domain?: DomainCategory,
+): Promise<RawTrendItem[]> {
+  // #DA2: Select feed pool appropriate to this creator's domain
+  const feedPool = DOMAIN_RSS_FEEDS[domain ?? "general"];
+
   const parser = new Parser({
     timeout: 12000,
     headers: {
@@ -432,17 +1302,19 @@ async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
   });
 
   // Score feeds by keyword match
-  const scoredFeeds = RSS_FEEDS.map((feed) => ({
-    ...feed,
-    matchScore: feed.topics.filter((t) => isRelevant(t, keywords)).length,
-  })).sort((a, b) => b.matchScore - a.matchScore);
+  const scoredFeeds = feedPool
+    .map((feed) => ({
+      ...feed,
+      matchScore: feed.topics.filter((t) => isRelevant(t, keywords)).length,
+    }))
+    .sort((a, b) => b.matchScore - a.matchScore);
 
   // #4: Shuffle feeds within same-score tiers for variety
   const shuffledFeeds = shuffleWithinScoreTiers(scoredFeeds);
   const selectedFeeds = shuffledFeeds.slice(0, 3);
 
   console.log(
-    `[trends:rss] Fetching from: ${selectedFeeds.map((f) => f.name).join(", ")}`,
+    `[trends:rss] domain="${domain ?? "general"}" | Fetching from: ${selectedFeeds.map((f) => f.name).join(", ")}`,
   );
 
   const { items: allItems, rejectedCount } = await fetchFeedsWithParser(
@@ -606,22 +1478,29 @@ async function fetchFromGoogleNewsRSS(
  * industry and content keywords.
  *
  * Phase 3 #1: Removed internal cache — caching is handled by trendCache.ts.
+ * Domain-aware: accepts optional `domain` param to route to correct RSS pools
+ * and skip HN for non-tech domains.
  *
- * @param keywords  e.g. ['AI', 'product management', 'SaaS'] from user persona
- * @param industry  e.g. 'technology', 'healthcare', 'marketing'
+ * @param keywords  e.g. ['yoga', 'mindfulness', 'wellness coaching'] from user persona
+ * @param industry  e.g. 'wellness', 'healthcare', 'technology', 'finance'
  * @param geo       ISO country code, e.g. 'US' (used as hint, not a hard filter)
+ * @param domain    Optional pre-classified domain; auto-classified from industry if omitted
  * @returns Array of raw trending items ready for agent enrichment
  */
 export async function fetchRealTrendingContent(
   keywords: string[],
   industry: string,
   geo = "US",
+  domain?: DomainCategory,
 ): Promise<RawTrendItem[]> {
   // #1: No internal cache — trendCache.ts is the single source of truth
   const hasTavily = !!process.env.TAVILY_API_KEY;
 
+  // Auto-classify domain if not provided
+  const resolvedDomain = domain ?? classifyDomain(industry, keywords);
+
   console.log(
-    `[trends] Fetching | industry="${industry}" keywords=[${keywords.join(", ")}] geo=${geo} tavily=${hasTavily}`,
+    `[trends] Fetching | industry="${industry}" domain="${resolvedDomain}" keywords=[${keywords.join(", ")}] geo=${geo} tavily=${hasTavily}`,
   );
 
   let results: RawTrendItem[];
@@ -630,16 +1509,16 @@ export async function fetchRealTrendingContent(
     // Tier 1: Tavily — best quality, targeted, recency-filtered
     const [tavilyItems, hnItems, rssItems] = await Promise.all([
       fetchFromTavily(keywords, industry),
-      fetchFromHackerNews(keywords, industry),
-      fetchFromRSSFeeds(keywords),
+      fetchFromHackerNews(keywords, industry, resolvedDomain),
+      fetchFromRSSFeeds(keywords, resolvedDomain),
     ]);
     // Tavily first (highest relevance), then HN + RSS for breadth
     results = deduplicateAndRank([...tavilyItems, ...hnItems, ...rssItems]);
   } else {
     // Tier 2: HN + RSS — always-on, no keys required
     const [hnItems, rssItems] = await Promise.all([
-      fetchFromHackerNews(keywords, industry),
-      fetchFromRSSFeeds(keywords),
+      fetchFromHackerNews(keywords, industry, resolvedDomain),
+      fetchFromRSSFeeds(keywords, resolvedDomain),
     ]);
     results = deduplicateAndRank([...hnItems, ...rssItems]);
   }
