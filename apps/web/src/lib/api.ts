@@ -21,6 +21,7 @@ import type {
   ITokenUsageLog,
   IPersonaPostsResponse,
   ITokenRequest,
+  ITrendDiscoveryResponse,
   FeedbackRating,
   FeedbackAction,
   ISuggestionFeedback,
@@ -212,6 +213,16 @@ export const onboardingApi = {
     ),
 };
 
+// ── Trends ────────────────────────────────────────────────────────────────────
+
+export const trendsApi = {
+  /** Discover curated trends for browsing and selection (Phase 3 #26) */
+  discover: (geo?: string) =>
+    requestAI<ITrendDiscoveryResponse>(
+      `/api/trends/discover${geo ? `?geo=${geo}` : ""}`,
+    ),
+};
+
 // ── Suggestions ───────────────────────────────────────────────────────────────
 
 export const suggestionsApi = {
@@ -226,6 +237,19 @@ export const suggestionsApi = {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
+
+  /** Generate content from user-selected trends (Phase 3 #26) */
+  generateFromTrends: (
+    selectedTrendIds: string[],
+    context?: IGenerateContextOptions,
+  ) =>
+    requestAI<ISuggestionsGenerateResponse>(
+      "/api/suggestions/generate-from-trends",
+      {
+        method: "POST",
+        body: JSON.stringify({ selectedTrendIds, context }),
+      },
+    ),
 
   refineContext: (body: {
     messages: { role: "user" | "assistant"; content: string }[];

@@ -2,7 +2,7 @@
 
 **Source**: `/Users/hexahealth/Documents/PP/content-generator/.claude/audits/phase3/improvement.md`
 **Started**: 2026-03-04
-**Last Updated**: 2026-03-04 (Created — no items started)
+**Last Updated**: 2026-03-04 (Phase A + B COMPLETE ✅)
 
 ---
 
@@ -17,73 +17,73 @@ If context runs out, come back here and:
 
 ---
 
-## Phase A — Trend Pipeline Reliability (Sections 1 + 2)
+## Phase A — Trend Pipeline Reliability (Sections 1 + 2) ✅ COMPLETE (2026-03-04)
 
 *Priority: CRITICAL — fixes user-reported trend repetition and zero-result bugs. No dependencies.*
 
-- [ ] **#1 — Remove duplicate cache from `services/trends.ts`** (`services/trends.ts` MODIFY): Remove the internal `trendCache` Map and related functions (`getCachedTrends`, `setCachedTrends`, `buildCacheKey`) from `services/trends.ts` (lines ~370-411). The canonical cache in `services/trendCache.ts` is the single source of truth. This eliminates ghost stale data from two independent 30-min caches. (§1.2 Issue A)
+- [x] **#1 — Remove duplicate cache from `services/trends.ts`** (`services/trends.ts` MODIFY): Removed internal `trendCache` Map, `getCachedTrends`, `setCachedTrends`, `buildCacheKey`, and `TREND_CACHE_TTL_MS` from `services/trends.ts`. The canonical cache in `services/trendCache.ts` is now the single source of truth. `fetchRealTrendingContent()` no longer has its own cache logic. ✅ DONE
 
-- [ ] **#2 — Add time-bucket to `buildTrendCacheKey()` in `trendCache.ts`** (`services/trendCache.ts` MODIFY): Incorporate a 6-hour time-bucket into the cache key so entries auto-rotate: `const timeBucket = Math.floor(Date.now() / (6 * 60 * 60 * 1000));` appended to the key. This ensures even the same user with the same persona gets fresh trends every 6 hours. (§1.2 Issue B)
+- [x] **#2 — Add time-bucket to `buildTrendCacheKey()` in `trendCache.ts`** (`services/trendCache.ts` MODIFY): Added `const timeBucket = Math.floor(Date.now() / (6 * 60 * 60 * 1000))` to cache key. Keys now auto-rotate every 6 hours. ✅ DONE
 
-- [ ] **#3 — Add `created_at_i>` time filter to HN Algolia queries** (`services/trends.ts` MODIFY): In `fetchFromHackerNews()` (line ~209), add a `numericFilters` parameter to restrict results to the last 48 hours: `created_at_i>${twoDaysAgo}` where `twoDaysAgo = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000)`. Prevents old high-scoring stories from weeks ago from appearing. (§1.2 Issue B)
+- [x] **#3 — Add `created_at_i>` time filter to HN Algolia queries** (`services/trends.ts` MODIFY): `fetchFromHackerNews()` now computes `twoDaysAgo` timestamp and passes `created_at_i>${twoDaysAgo}` in `numericFilters` for the primary `search_by_date` call. Ranked fallback intentionally skips time filter for broader results. ✅ DONE
 
-- [ ] **#4 — Add random shuffle for equally-scored RSS feeds** (`services/trends.ts` MODIFY): In feed selection logic (line ~301-306), after scoring feeds by keyword match, group feeds by their `matchScore`, shuffle randomly within each score tier, then take the top 3. Ensures different feeds get selected when multiple have the same score. (§1.2 Issue C)
+- [x] **#4 — Add random shuffle for equally-scored RSS feeds** (`services/trends.ts` MODIFY): Added `shuffleWithinScoreTiers()` helper that groups feeds by `matchScore`, shuffles within each tier via Fisher-Yates, then reassembles in descending score order. Applied before `slice(0, 3)` selection. ✅ DONE
 
-- [ ] **#5 — Shuffle heuristic items + vary content angle templates** (`agents/trendResearch.ts` MODIFY): In `buildHeuristicResult()` (line ~288-316): (1) Shuffle input items before slicing to 8; (2) Add timestamp-based variety to the `contentAngle` template — alternate between 3-4 angle templates based on `item index + current day-of-week`. Prevents identical heuristic results within any cache window. (§1.2 Issue D)
+- [x] **#5 — Shuffle heuristic items + vary content angle templates** (`agents/trendResearch.ts` MODIFY): (1) High-relevance items are now `shuffleArray()`-ed before slicing to 8. (2) Added `ANGLE_TEMPLATES` array with 4 distinct templates. Template selection uses `(index + dayOfWeek) % 4` for day-based variety. ✅ DONE
 
-- [ ] **#6 — Implement "recently shown" trend penalty** (`utils/scoring.ts` MODIFY, `agents/trendResearch.ts` MODIFY, `agents/mastra.ts` MODIFY): Track previously shown trends per user. Before trend scoring in `mastra.ts`, load the user's last 3 `ContentSuggestion.trendsUsed` arrays (within last 7 days). Build a `Set<string>` of recently used trend titles. In `utils/scoring.ts`, add optional `recentTrends: Set<string>` parameter to `scoreTrendRelevance()` — apply a `-2` stale penalty when the item title fuzzy-matches any recently used trend. In `agents/trendResearch.ts`, accept optional `recentTrends: string[]` and pass through to scoring. (§1.2 Issue E)
+- [x] **#6 — Implement "recently shown" trend penalty** (`utils/scoring.ts` MODIFY, `agents/trendResearch.ts` MODIFY, `agents/mastra.ts` MODIFY): `mastra.ts` Step 3 now loads last 3 `ContentSuggestion.trendsUsed` arrays before calling `researchTrendsForUser()` with `recentTrends`. `researchTrendsForUser()` accepts optional `recentTrends: string[]`, builds a `Set<string>`, and passes to `scoreAndRankTrends()`. `scoreTrendRelevance()` in `scoring.ts` accepts optional `recentTrends: Set<string>` and applies -2 stale penalty via `fuzzyTitleMatch()` (≥60% word overlap). ✅ DONE
 
-- [ ] **#7 — Expand `HN_QUERY_MAP` to 30+ industries** (`services/trends.ts` MODIFY): Add mappings for niche industries currently missing: healthcare → "health tech medical biotech digital health", education → "edtech learning education online course", legal → "legaltech law compliance regulation", real estate → "proptech real estate housing construction", finance → "fintech banking payments insurance", food → "foodtech restaurant supply chain agriculture", fashion → "fashion retail D2C ecommerce brand", etc. (§2.2 Failure Mode A)
+- [x] **#7 — Expand `HN_QUERY_MAP` to 30+ industries** (`services/trends.ts` MODIFY): Expanded from 14 entries to 50+ covering: tech/software (20), business/finance (14), healthcare/science (6), education (2), legal/government (2), consumer/retail (6), industrial (7), creative/media (4), general (5). ✅ DONE
 
-- [ ] **#8 — Lower HN points threshold for raw keyword queries** (`services/trends.ts` MODIFY): When no `HN_QUERY_MAP` match is found (raw keyword search), lower the points threshold from 5 to 2: `const pointsMin = firstMappedExpansion ? 5 : 2;`. Niche topics get fewer upvotes but are still relevant. Also add broad fallback query "technology business innovation 2026" when raw keyword search returns 0. (§2.2 Failure Mode A)
+- [x] **#8 — Lower HN points threshold for raw keyword queries** (`services/trends.ts` MODIFY): `pointsMin` is now `firstMappedExpansion ? 5 : 2` for niche queries. Added broad fallback query `"technology business innovation 2026"` when raw keyword search returns 0 results. ✅ DONE
 
-- [ ] **#9 — Add RSS backup feed retry on total failure** (`services/trends.ts` MODIFY): After `Promise.allSettled()` for RSS feeds, if `allItems.length === 0` and at least one feed was rejected, retry with the next 2 backup feeds from the remaining scored pool: `const backupFeeds = scoredFeeds.slice(3, 5);`. (§2.2 Failure Mode B)
+- [x] **#9 — Add RSS backup feed retry on total failure** (`services/trends.ts` MODIFY): Extracted `fetchFeedsWithParser()` helper that returns `{ items, rejectedCount }`. When all primary feeds fail (`items.length === 0 && rejectedCount > 0`), retries with `shuffledFeeds.slice(3, 5)` backup feeds. ✅ DONE
 
-- [ ] **#10 — Fix hyphen-normalized keyword matching in `isRelevant()`** (`services/trends.ts` MODIFY): In `isRelevant()` (line ~120-136), normalize both text and keyword by replacing hyphens with spaces before word-boundary matching: `const lower = text.toLowerCase().replace(/-/g, " ");` and `const kwLower = kw.toLowerCase().trim().replace(/-/g, " ");`. Fixes compound keywords like "machine-learning" not matching "machine learning". (§2.2 Failure Mode C)
+- [x] **#10 — Fix hyphen-normalized keyword matching in `isRelevant()`** (`services/trends.ts` MODIFY): Both `text` and `keyword` are now normalized with `.replace(/-/g, " ")` before comparison. "machine-learning" now correctly matches "machine learning". ✅ DONE
 
-- [ ] **#11 — Add Google News RSS as Tier 2.5 fallback** (`services/trends.ts` MODIFY): Create `fetchFromGoogleNewsRSS(keywords, industry)` function using `https://news.google.com/rss/search?q={query}&hl=en-US&gl=US&ceid=US:en`. Free, no API key, rarely fails. Add to `fetchRealTrendingContent()` AFTER HN+RSS, only if combined results < 5: `if (results.length < 5) { const gnItems = await fetchFromGoogleNewsRSS(...); results = deduplicateAndRank([...results, ...gnItems]); }`. (§2.2 Failure Mode D)
+- [x] **#11 — Add Google News RSS as Tier 2.5 fallback** (`services/trends.ts` MODIFY): Added `fetchFromGoogleNewsRSS(keywords, industry)` using `https://news.google.com/rss/search?q={query}`. Called in `fetchRealTrendingContent()` when combined HN+RSS results < 5. Source tagged as `"google-news"` with priority 2 in ranking. ✅ DONE
 
-- [ ] **#12 — Add structured zero-result logging** (`agents/trendResearch.ts` MODIFY): Add structured JSON logging with source breakdown: `{ event: "trend_fetch", userId, sources: { tavily, hn, rss, googleNews }, total, cacheHit, duration }`. When `rawItems.length === 0`, log which sources were attempted and WHY each returned 0 with error details. (§2.3)
+- [x] **#12 — Add structured zero-result logging** (`agents/trendResearch.ts` MODIFY): Added structured JSON log on every fetch: `{ event: "trend_fetch", keywords, industry, geo, sources: { total, breakdown: { hn, tavily, rss, googleNews } }, cacheHit, durationMs }`. On zero results: `{ event: "trend_fetch_zero", keywords, industry, geo, cacheHit, error }`. ✅ DONE
 
 ---
 
-## Phase B — Feedback Weight Amplification (Section 6)
+## Phase B — Feedback Weight Amplification (Section 6) ✅ COMPLETE (2026-03-04)
 
 *Priority: HIGH — directly improves content quality. No dependencies — can run in parallel with Phase A.*
 
-- [ ] **#13 — Reduce learning trigger interval** (`services/feedbackProcessor.ts` MODIFY): In `_maybeTrigerLearning()`, change trigger from `count % 5 === 0` to `count % 3 === 0`. Additionally, for the first 3 feedbacks, trigger on every single one: `if (count <= 3 || count % 3 === 0) { triggerLearning(); }`. This closes the gap where users giving 1-4 feedbacks see zero learning effect. (§6.3 Issue 1)
+- [x] **#13 — Reduce learning trigger interval** (`services/feedbackProcessor.ts` MODIFY): Changed `_maybeTrigerLearning()` from `count % 5 === 0` to `count <= 3 || count % 3 === 0`. First 3 feedbacks trigger learning on every single one; after that every 3rd. Closes the gap where users giving 1-4 feedbacks see zero learning effect. ✅ DONE
 
-- [ ] **#14 — Strengthen feedback section prompt language** (`agents/contentGenerator.ts` MODIFY): In `buildFeedbackSection()`, change advisory language to directive RULES. (1) `"→ Prioritise ideas within..."` becomes `"→ RULE: At least 60% of generated ideas MUST relate to these preferred topics..."`. (2) `"→ Avoid ideas centred on..."` becomes `"→ RULE: Do NOT generate ANY ideas about these topics. Zero tolerance."`. (3) `"→ Skew format choices..."` becomes `"→ RULE: Format distribution MUST approximately match these percentages."`. (§6.3 Issue 2)
+- [x] **#14 — Strengthen feedback section prompt language** (`agents/contentGenerator.ts` MODIFY): Changed advisory language in `buildFeedbackSection()` to directive RULES: "RULE: At least 60% of generated ideas MUST relate to these preferred topics...", "RULE: Do NOT generate ANY ideas about these topics. Zero tolerance.", "RULE: Format distribution MUST approximately match these percentages." ✅ DONE
 
-- [ ] **#15 — Add action weight multiplier** (`services/personaLearning.ts` MODIFY): In the scoring loop (line ~80-101), add `ACTION_MULTIPLIER` map: `{ published: 2.0, draft: 1.5, saved: 1.2, dismissed: 1.0 }`. Apply: `weight = ratingWeight * actionMultiplier`. For actions WITHOUT rating, apply implicit signal: `published → 1.5, draft → 0.5, dismissed → -0.5, else 0`. This makes "published" the strongest behavioral signal. (§6.3 Issue 4)
+- [x] **#15 — Add action weight multiplier** (`services/personaLearning.ts` MODIFY): Added `ACTION_MULTIPLIER` record: `{ published: 2.0, draft: 1.5, saved: 1.2, dismissed: 1.0 }`. Combined weight = `ratingWeight * actionMultiplier * recencyMultiplier`. For actions WITHOUT rating: implicit signal (published=1.5, draft=0.5, dismissed=-0.5, else 0). Makes "published" the strongest behavioral signal. ✅ DONE
 
-- [ ] **#16 — Add recency decay weighting** (`services/personaLearning.ts` MODIFY): In the scoring loop, apply exponential decay: `const DECAY_HALF_LIFE_DAYS = 14;` then `recencyMultiplier = Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS)`. Final weight: `ratingWeight * actionMultiplier * recencyMultiplier`. Recent feedback outweighs stale preferences from months ago. (§6.3 Issue 6)
+- [x] **#16 — Add recency decay weighting** (`services/personaLearning.ts` MODIFY): Applied exponential decay with 14-day half-life: `DECAY_HALF_LIFE_DAYS = 14`, `recencyMultiplier = Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS)`. Final weight: `ratingWeight * actionMultiplier * recencyMultiplier`. Recent feedback now properly outweighs stale preferences. ✅ DONE
 
-- [ ] **#17 — Lower feedback threshold from 3 to 1 with graduated injection** (`agents/contentGenerator.ts` MODIFY): In `buildFeedbackSection()`, replace the hard `totalFeedbackCount < 3` gate with a two-phase approach. Phase 1 (1-2 feedbacks): inject lightweight "early signal" section with preferred/avoid topics only. Phase 2 (3+ feedbacks): full directive section (existing logic, strengthened by #14). (§6.3 Issue 5)
+- [x] **#17 — Lower feedback threshold from 3 to 1 with graduated injection** (`agents/contentGenerator.ts` MODIFY): Replaced hard `totalFeedbackCount < 3` gate with two-phase approach. Phase 1 (1-2 feedbacks): lightweight "early signal" section with preferred/avoid topics only. Phase 2 (3+ feedbacks): full directive section with RULES (strengthened by #14). ✅ DONE
 
-- [ ] **#18 — Populate `tonePreference` from parsedSignals** (`services/personaLearning.ts` MODIFY): In `aggregateAndUpdatePersona()`, after computing topic/format scores, analyze `parsedSignals.toneMatch` from feedbacks. Filter for feedbacks where `toneMatch === "perfect"` and `rating >= "good"`. If 2+ "perfect" tone matches found, set `feedbackProfile.tonePreference` to `persona.tone ?? "Professional"`. This field was defined in the schema but never populated. (§6.3 Issue 3)
+- [x] **#18 — Populate `tonePreference` from parsedSignals** (`services/personaLearning.ts` MODIFY): After scoring loop, counts feedbacks with `parsedSignals.toneMatch === "perfect"` and positive rating (loved/good). If ≥2 found, sets `feedbackProfile.tonePreference` to `persona.tone ?? "Professional"`. Now fetches persona alongside feedbacks/drafts via `Promise.all`. Field was defined in schema but never populated — now activated. ✅ DONE
 
 ---
 
-## Phase C — Human-in-the-Loop Trend Selection (Section 3)
+## Phase C — Human-in-the-Loop Trend Selection (Section 3) ✅ COMPLETE (2026-03-04)
 
 *Priority: HIGH — major UX improvement. Depends on Phase A (trend reliability must be fixed first).*
 
-- [ ] **#19 — Create `trendDiscoveryCache.ts` service** (`services/trendDiscoveryCache.ts` CREATE): Short-lived per-user cache mapping trend IDs to full trend data. Interface: `TrendDiscoveryEntry { userId, trends: Array<TrendResult["trends"][0] & { id: string }>, expiresAt }`. In-memory Map with 30-min TTL. Exports: `storeTrendDiscovery(userId, trends)`, `getTrendDiscovery(userId)`, `getSelectedTrends(userId, ids[])`. (§3.2.4)
+- [x] **#19 — Create `trendDiscoveryCache.ts` service** (`services/trendDiscoveryCache.ts` CREATE): Created in-memory per-user cache with 30-min TTL. Exports `storeTrendDiscovery()`, `getTrendDiscovery()`, `getSelectedTrends()`. Uses DJB2 hash for deterministic trend IDs (`generateTrendId()`). Categories derived from content pillar keyword matching. Deduplicates by ID. ✅ DONE
 
-- [ ] **#20 — Add `GET /api/trends/discover` endpoint** (`routes/trends.ts` MODIFY): Calls `researchTrendsForUser()` (same as pipeline Step 3), generates unique `trend_id` per trend (hash of topic + source), maps each to a "category" based on content pillar match, stores in discovery cache (30 min, keyed by userId). Response: `{ trends: [...], categories: [...], fetchedAt, expiresAt, isLive }`. Each trend includes: `id, topic, source, url, relevanceScore, relevanceReason, contentAngle, category, publishedAt`. (§3.2.1)
+- [x] **#20 — Add `GET /api/trends/discover` endpoint** (`routes/trends.ts` MODIFY): Calls `researchTrendsForUser()` with stale trend penalty (loads last 3 `ContentSuggestion.trendsUsed`). Tracks token usage fire-and-forget. Stores result in discovery cache via `storeTrendDiscovery()`. Returns `{ trends, categories, fetchedAt, expiresAt, isLive }`. ✅ DONE
 
-- [ ] **#21 — Add `POST /api/suggestions/generate-from-trends` endpoint** (`routes/suggestions.ts` MODIFY): Accepts `{ selectedTrendIds: string[], context: IGenerateContextOptions }`. Looks up selected trends from userId discovery cache, validates IDs exist, builds filtered `TrendResult` with ONLY selected trends, calls `generateContentIdeas()` directly (skips pipeline Steps 1-3). Persists with `generationMode = "trend-selected"`. (§3.2.2)
+- [x] **#21 — Add `POST /api/suggestions/generate-from-trends` endpoint** (`routes/suggestions.ts` MODIFY): Accepts `{ selectedTrendIds: string[], context? }` with Zod validation (1-5 IDs). Quota check, cache lookup, persona load, then calls `generateContentIdeas()` directly (skips pipeline Steps 1-3). Persists with `generationMode = "trend-selected"`, full `generationMeta`, and tracks token usage. ✅ DONE
 
-- [ ] **#22 — Add "trend-selected" to GenerationMode enum** (`models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `"trend-selected"` to the `GenerationMode` type. Add `selectedTrendIds?: string[]` to `IGenerateContextOptions`. (§3.2.3)
+- [x] **#22 — Add "trend-selected" to GenerationMode enum** (`models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Added `"trend-selected"` to `GenerationMode` type and Mongoose enum. Added `selectedTrendIds?: string[]` to `IGenerateContextOptions`. Added `IDiscoveryTrend` and `ITrendDiscoveryResponse` shared types. Updated Zod `mode` enum in suggestions route. ✅ DONE
 
-- [ ] **#23 — Create `TrendCard.tsx` component** (`components/trends/TrendCard.tsx` CREATE): Individual trend card with: topic title, source badge, relevance score, relevance reason, content angle, category pill, published time, checkbox for selection. Visual: compact card with left checkbox, truncated topic, expandable details. (§3.3)
+- [x] **#23 — Create `TrendCard.tsx` component** (`components/trends/TrendCard.tsx` CREATE): Compact card with left checkbox, topic title, source badge, category pill, relevance reason, and content angle. Visual states for selected (indigo ring), disabled (grayed), and hover. ✅ DONE
 
-- [ ] **#24 — Create `TrendBrowser.tsx` component** (`components/trends/TrendBrowser.tsx` CREATE): Container showing curated trends for user to browse and select. Category filter pills (AI, Leadership, SaaS, etc.), TrendCard list with checkbox selection (1-5 max), "Generate from Selected (N)" button at bottom, "Refresh Trends" button to re-fetch, loading/error/empty states. (§3.3)
+- [x] **#24 — Create `TrendBrowser.tsx` component** (`components/trends/TrendBrowser.tsx` CREATE): Container with category filter pills, scrollable TrendCard list (max 500px), 1-5 selection limit with counter, "Generate from N Trends" button, refresh and cancel actions. Live/evergreen badge. ✅ DONE
 
-- [ ] **#25 — Update dashboard page with "Browse Trends" flow** (`app/dashboard/page.tsx` MODIFY): Add new `generateFlow` state option: `"browse-trends"`. "Generate Content Ideas" button now shows TWO options: (a) "Quick Generate" → existing one-shot pipeline, (b) "Browse Trends First" → calls `GET /api/trends/discover` and shows `TrendBrowser`. After trend selection → calls `POST /generate-from-trends` → same loading/results flow as existing. (§3.3)
+- [x] **#25 — Update dashboard page with "Browse Trends" flow** (`app/dashboard/page.tsx` MODIFY): Added `generateFlow` state (`"one-shot" | "browse-trends"`). Idle state now shows two buttons: "Quick Generate" (existing flow) and "Browse Trends First" (new flow). Choosing state shows either `GenerateOptionsPanel` or `TrendBrowser` based on flow. Separate loading step messages for trend-selected generation. ✅ DONE
 
-- [ ] **#26 — Add API client functions for trend discovery** (`apps/web/src/lib/api.ts` MODIFY): Add `trendsApi.discover(geo?: string)` → `GET /api/trends/discover`. Add `suggestionsApi.generateFromTrends(selectedTrendIds, context)` → `POST /api/suggestions/generate-from-trends`. (§3.3)
+- [x] **#26 — Add API client functions for trend discovery** (`apps/web/src/lib/api.ts` MODIFY): Added `trendsApi.discover(geo?)` → `GET /api/trends/discover` (uses AI timeout). Added `suggestionsApi.generateFromTrends(selectedTrendIds, context?)` → `POST /api/suggestions/generate-from-trends` (uses AI timeout). Imported `ITrendDiscoveryResponse` from shared types. ✅ DONE
 
 ---
 

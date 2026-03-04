@@ -109,35 +109,61 @@ Return ONLY a valid JSON object (no markdown, no extra text):
 }`,
 });
 
-// ── Feedback signals section (#19) ────────────────────────────────────────────
-// Appended to the prompt when the user has ≥3 feedback records.
-// Guides the LLM to produce ideas more aligned with what the user has responded
-// well to in the past and away from topics/formats they've dismissed.
+// ── Feedback signals section (#19, Phase 3 #14 + #17) ───────────────────────
+// Phase 3 #17: Lowered threshold from 3 to 1 with graduated injection.
+//   Phase 1 (1-2 feedbacks): lightweight early signals
+//   Phase 2 (3+ feedbacks): full directive section
+// Phase 3 #14: Strengthened prompt language from advisory to directive RULES.
 
 function buildFeedbackSection(persona: IUserPersonaDocument): string {
   const fp = persona.feedbackProfile;
-  if (!fp || fp.totalFeedbackCount < 3) return "";
+  if (!fp || fp.totalFeedbackCount < 1) return "";
 
-  const lines: string[] = ["\n## USER FEEDBACK SIGNALS"];
+  const lines: string[] = [];
+
+  // #17: Phase 1 — early signal (1-2 feedbacks)
+  if (fp.totalFeedbackCount < 3) {
+    lines.push("\n## USER FEEDBACK SIGNALS (early — limited data)");
+    if (fp.preferredTopics.length > 0) {
+      lines.push(
+        `Early signal — user engaged positively with: ${fp.preferredTopics.join(", ")}`,
+      );
+    }
+    if (fp.avoidTopics.length > 0) {
+      lines.push(
+        `Early signal — user rejected: ${fp.avoidTopics.join(", ")}`,
+      );
+    }
+    return lines.join("\n");
+  }
+
+  // #17: Phase 2 — full directive section (3+ feedbacks)
+  lines.push("\n## USER FEEDBACK SIGNALS");
   lines.push(
     `(Based on ${fp.totalFeedbackCount} past rating${fp.totalFeedbackCount === 1 ? "" : "s"}, avg satisfaction: ${fp.averageRating}/4)`,
   );
 
+  // #14: Directive language for preferred topics
   if (fp.preferredTopics.length > 0) {
     lines.push(
       `Topics they engage with most: ${fp.preferredTopics.slice(0, 5).join(", ")}`,
     );
-    lines.push("→ Prioritise ideas within or adjacent to these topics.");
+    lines.push(
+      "→ RULE: At least 60% of generated ideas MUST relate to these preferred topics or closely adjacent ones.",
+    );
   }
 
+  // #14: Directive language for avoid topics
   if (fp.avoidTopics.length > 0) {
     lines.push(
       `Topics they consistently dismiss: ${fp.avoidTopics.slice(0, 5).join(", ")}`,
     );
-    lines.push("→ Avoid ideas centred on these topics.");
+    lines.push(
+      "→ RULE: Do NOT generate ANY ideas about these topics. They have been explicitly rejected by the user. Zero tolerance.",
+    );
   }
 
-  // Format preferences — show only those ≥10%
+  // #14: Directive language for format preferences
   const preferredFormats = Object.entries(fp.formatPreferences)
     .filter(([, pct]) => pct >= 0.1)
     .sort((a, b) => b[1] - a[1])
@@ -145,7 +171,9 @@ function buildFeedbackSection(persona: IUserPersonaDocument): string {
 
   if (preferredFormats.length > 0) {
     lines.push(`Format preferences: ${preferredFormats.join(", ")}`);
-    lines.push("→ Skew format choices to reflect these preferences.");
+    lines.push(
+      "→ RULE: Format distribution MUST approximately match these percentages. For example, if carousel is 40%, at least 2 out of 5 ideas must be carousel format.",
+    );
   }
 
   if (fp.tonePreference) {

@@ -4,23 +4,32 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SuggestionCard } from "@/components/suggestions/SuggestionCard";
 import { GenerateOptionsPanel } from "@/components/suggestions/GenerateOptionsPanel";
+import { TrendBrowser } from "@/components/trends/TrendBrowser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { personaApi, suggestionsApi, tokenApi, ApiError } from "@/lib/api";
+import { personaApi, suggestionsApi, trendsApi, tokenApi, ApiError } from "@/lib/api";
 import type {
   ISuggestion,
   IUserPersona,
   IGenerateContextOptions,
   ITokenUsageSummary,
+  ITrendDiscoveryResponse,
 } from "@repo/shared-types";
 
 type GenerateState = "idle" | "choosing" | "loading" | "done" | "error";
+type GenerateFlow = "one-shot" | "browse-trends";
 
 const LOADING_STEPS = [
-  "Analysing your LinkedIn persona…",
-  "Fetching trending topics in your niche…",
-  "Generating personalised content ideas…",
-  "Finalising your suggestions…",
+  "Analysing your LinkedIn persona\u2026",
+  "Fetching trending topics in your niche\u2026",
+  "Generating personalised content ideas\u2026",
+  "Finalising your suggestions\u2026",
+];
+
+const TREND_LOADING_STEPS = [
+  "Generating personalised content ideas from your selected trends\u2026",
+  "Crafting hooks and angles tailored to your voice\u2026",
+  "Finalising your suggestions\u2026",
 ];
 
 export default function DashboardPage() {
@@ -30,6 +39,7 @@ export default function DashboardPage() {
   const [personaLoading, setPersonaLoading] = useState(true);
 
   const [generateState, setGenerateState] = useState<GenerateState>("idle");
+  const [generateFlow, setGenerateFlow] = useState<GenerateFlow>("one-shot");
   const [loadingStep, setLoadingStep] = useState(0);
   const [suggestions, setSuggestions] = useState<ISuggestion[]>([]);
   const [currentSuggestionSetId, setCurrentSuggestionSetId] = useState<string | null>(null);
@@ -40,6 +50,11 @@ export default function DashboardPage() {
   const [generateError, setGenerateError] = useState("");
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [tokenUsage, setTokenUsage] = useState<ITokenUsageSummary | null>(null);
+
+  // Trend browsing state (Phase 3 #25)
+  const [trendDiscovery, setTrendDiscovery] = useState<ITrendDiscoveryResponse | null>(null);
+  const [trendBrowseLoading, setTrendBrowseLoading] = useState(false);
+  const [trendGenerating, setTrendGenerating] = useState(false);
 
   // Load persona + token quota on mount
   useEffect(() => {
@@ -60,16 +75,19 @@ export default function DashboardPage() {
   useEffect(() => {
     if (generateState !== "loading") return;
     setLoadingStep(0);
+    const steps = generateFlow === "browse-trends" ? TREND_LOADING_STEPS : LOADING_STEPS;
     const interval = setInterval(() => {
-      setLoadingStep((s) => (s + 1) % LOADING_STEPS.length);
+      setLoadingStep((s) => (s + 1) % steps.length);
     }, 2500);
     return () => clearInterval(interval);
-  }, [generateState]);
+  }, [generateState, generateFlow]);
 
+  // Quick generate (existing one-shot flow)
   const handleGenerate = useCallback(
     async (context: IGenerateContextOptions) => {
       setGenerateError("");
       setGenerateState("loading");
+      setGenerateFlow("one-shot");
       setSuggestions([]);
 
       try {
@@ -83,11 +101,9 @@ export default function DashboardPage() {
         tokenApi.getUsage().then((u) => { setTokenUsage(u); if (!u.allowed) setQuotaExceeded(true); }).catch(() => {});
       } catch (err) {
         if (err instanceof ApiError && err.status === 400) {
-          // Interview not complete — redirect to onboarding
           router.push("/onboarding");
           return;
         }
-        // Token quota exhausted — show the quota-exceeded banner
         if (err instanceof ApiError && err.status === 429) {
           setQuotaExceeded(true);
           setGenerateState("idle");
@@ -104,10 +120,79 @@ export default function DashboardPage() {
     [router],
   );
 
+  // Browse Trends flow — Step 1: fetch discoverable trends
+  const handleBrowseTrends = useCallback(async () => {
+    setTrendBrowseLoading(true);
+    setGenerateError("");
+    setGenerateFlow("browse-trends");
+    try {
+      const discovery = await trendsApi.discover();
+      setTrendDiscovery(discovery);
+      setGenerateState("choosing");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setQuotaExceeded(true);
+        return;
+      }
+      setGenerateError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to fetch trends. Please try again.",
+      );
+      setGenerateState("error");
+    } finally {
+      setTrendBrowseLoading(false);
+    }
+  }, []);
+
+  // Browse Trends flow — Step 2: generate from selected trends
+  const handleGenerateFromTrends = useCallback(
+    async (selectedTrendIds: string[]) => {
+      setGenerateError("");
+      setTrendGenerating(true);
+      setGenerateState("loading");
+      setSuggestions([]);
+
+      try {
+        const result = await suggestionsApi.generateFromTrends(selectedTrendIds);
+        setSuggestions(result.suggestions);
+        setCurrentSuggestionSetId(result.id);
+        setTrendsUsed(result.trendsUsed);
+        setTrendSource(result.trendSource ?? "live");
+        setGenerateState("done");
+        tokenApi.getUsage().then((u) => { setTokenUsage(u); if (!u.allowed) setQuotaExceeded(true); }).catch(() => {});
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 429) {
+          setQuotaExceeded(true);
+          setGenerateState("idle");
+          return;
+        }
+        setGenerateError(
+          err instanceof ApiError
+            ? err.message
+            : "Generation failed. Please try again.",
+        );
+        setGenerateState("error");
+      } finally {
+        setTrendGenerating(false);
+      }
+    },
+    [],
+  );
+
+  // Reset to idle
+  const handleReset = useCallback(() => {
+    setGenerateState("idle");
+    setGenerateFlow("one-shot");
+    setTrendDiscovery(null);
+    setTrendGenerating(false);
+  }, []);
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   const interviewComplete = persona?.interviewComplete ?? false;
   const personaReady = !personaLoading && persona !== null;
+  const currentLoadingSteps = generateFlow === "browse-trends" ? TREND_LOADING_STEPS : LOADING_STEPS;
 
   return (
     <main className="container max-w-5xl mx-auto px-4 py-8">
@@ -133,7 +218,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <StatusCard
           label="Profile Analysis"
-          value={personaLoading ? "…" : persona ? "Complete" : "Pending"}
+          value={personaLoading ? "\u2026" : persona ? "Complete" : "Pending"}
           ok={personaReady && persona !== null}
           pending={personaLoading}
           action={
@@ -145,7 +230,7 @@ export default function DashboardPage() {
         <StatusCard
           label="Strategy Interview"
           value={
-            personaLoading ? "…" : interviewComplete ? "Complete" : "Pending"
+            personaLoading ? "\u2026" : interviewComplete ? "Complete" : "Pending"
           }
           ok={interviewComplete}
           pending={personaLoading}
@@ -159,7 +244,7 @@ export default function DashboardPage() {
           label="Content Pillars"
           value={
             personaLoading
-              ? "…"
+              ? "\u2026"
               : persona?.contentPillars?.length
                 ? persona.contentPillars.slice(0, 2).join(", ")
                 : "Not set"
@@ -201,30 +286,44 @@ export default function DashboardPage() {
       {/* Generate section */}
       {generateState !== "done" && (
         <div className="mb-8">
-          {/* Idle — show the "Generate" button that opens the options panel */}
+          {/* Idle — show two generation options */}
           {generateState === "idle" && (
             <Card>
               <CardContent className="p-8 text-center">
-                <p className="text-gray-600 mb-4 max-w-md mx-auto">
+                <p className="text-gray-600 mb-6 max-w-md mx-auto">
                   {!personaReady
-                    ? "Loading your profile…"
+                    ? "Loading your profile\u2026"
                     : !interviewComplete
                       ? "Complete your strategy interview first to unlock content generation."
-                      : "Ready to generate personalised LinkedIn post ideas based on your voice and trending topics."}
+                      : "Choose how you'd like to generate content ideas."}
                 </p>
                 {generateError && (
                   <div className="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
                     {generateError}
                   </div>
                 )}
-                <Button
-                  size="lg"
-                  onClick={() => setGenerateState("choosing")}
-                  disabled={!interviewComplete || personaLoading || quotaExceeded}
-                  className="min-w-[220px]"
-                >
-                  Generate Content Ideas →
-                </Button>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Button
+                    size="lg"
+                    onClick={() => {
+                      setGenerateFlow("one-shot");
+                      setGenerateState("choosing");
+                    }}
+                    disabled={!interviewComplete || personaLoading || quotaExceeded}
+                    className="min-w-[200px]"
+                  >
+                    Quick Generate
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    onClick={handleBrowseTrends}
+                    disabled={!interviewComplete || personaLoading || quotaExceeded || trendBrowseLoading}
+                    className="min-w-[200px]"
+                  >
+                    {trendBrowseLoading ? "Fetching Trends\u2026" : "Browse Trends First"}
+                  </Button>
+                </div>
                 {!interviewComplete && personaReady && (
                   <p className="mt-3 text-sm text-gray-500">
                     <Link
@@ -240,12 +339,22 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* Choosing — show the options panel */}
-          {generateState === "choosing" && (
+          {/* Choosing — either quick generate options panel OR trend browser */}
+          {generateState === "choosing" && generateFlow === "one-shot" && (
             <GenerateOptionsPanel
               disabled={!interviewComplete || personaLoading}
               onGenerate={handleGenerate}
-              onCancel={() => setGenerateState("idle")}
+              onCancel={handleReset}
+            />
+          )}
+
+          {generateState === "choosing" && generateFlow === "browse-trends" && trendDiscovery && (
+            <TrendBrowser
+              discovery={trendDiscovery}
+              loading={trendGenerating}
+              onGenerate={handleGenerateFromTrends}
+              onRefresh={handleBrowseTrends}
+              onCancel={handleReset}
             />
           )}
 
@@ -258,7 +367,7 @@ export default function DashboardPage() {
                     <span className="text-2xl animate-spin">⚙️</span>
                   </div>
                   <p className="text-gray-700 font-medium">
-                    {LOADING_STEPS[loadingStep]}
+                    {currentLoadingSteps[loadingStep % currentLoadingSteps.length]}
                   </p>
                   <div className="mx-auto max-w-xs h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
@@ -284,12 +393,12 @@ export default function DashboardPage() {
                 <div className="flex gap-3 justify-center">
                   <Button
                     variant="outline"
-                    onClick={() => setGenerateState("idle")}
+                    onClick={handleReset}
                   >
                     Cancel
                   </Button>
                   <Button
-                    onClick={() => setGenerateState("choosing")}
+                    onClick={() => setGenerateState("idle")}
                     size="lg"
                   >
                     Try Again
@@ -339,7 +448,7 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setGenerateState("idle")}
+              onClick={handleReset}
             >
               + Generate New
             </Button>
@@ -347,9 +456,6 @@ export default function DashboardPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             {suggestions.map((s, i) => (
-              // Use a stable unique key so React never reuses a card's DOM node
-              // for a different suggestion — this prevents the briefExpanded state
-              // leaking from one card to the adjacent one when toggling.
               <SuggestionCard
                 key={String(s.hook ?? i)}
                 suggestion={s}

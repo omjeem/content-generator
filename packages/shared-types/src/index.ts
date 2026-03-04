@@ -240,7 +240,7 @@ export interface IOnboardingResponse {
 // --- Feature: Flexible Content Generation Context ---
 
 export interface IGenerateContextOptions {
-  mode: "profile" | "topic-focus" | "chat-refined";
+  mode: "profile" | "topic-focus" | "chat-refined" | "trend-selected";
   topicFocus?: string; // used when mode='topic-focus'
   targetAudienceOverride?: string;
   platformGoal?: PlatformGoal;
@@ -248,6 +248,8 @@ export interface IGenerateContextOptions {
   chatRefinementContext?: string; // summary from pre-gen chat, mode='chat-refined'
   /** Target platforms for this generation run (#36) */
   platforms?: SuggestionPlatform[];
+  /** IDs of user-selected trends from the discovery cache (Phase 3 #22) */
+  selectedTrendIds?: string[];
 }
 
 export interface ISuggestionsGenerateResponse {
@@ -265,6 +267,28 @@ export interface IPaginatedResponse<T> {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+// --- Feature: Trend Discovery (Phase 3 #22) ---
+
+export interface IDiscoveryTrend {
+  id: string;
+  topic: string;
+  source?: string;
+  url?: string;
+  relevanceScore: number;
+  relevanceReason: string;
+  contentAngle: string;
+  category: string;
+  publishedAt?: string;
+}
+
+export interface ITrendDiscoveryResponse {
+  trends: IDiscoveryTrend[];
+  categories: string[];
+  fetchedAt: string;
+  expiresAt: string;
+  isLive: boolean;
 }
 
 // --- Feature: Persona Chat (live profile update via AI) ---

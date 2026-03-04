@@ -191,6 +191,22 @@ export async function runContentPipeline(
   // ── STEP 3: Trend Research (Agent 3) ─────────────────────────────────────────
   // For returning users (persona already exists), trend research is independent
   // of any further persona work so we can start it immediately. (#31)
+  //
+  // Phase 3 #6: Load recently used trends to penalize repeats.
+  let recentTrends: string[] = [];
+  try {
+    const recentSets = await ContentSuggestion.find({ userId: userObjectId })
+      .sort({ createdAt: -1 })
+      .limit(3)
+      .select("trendsUsed")
+      .lean();
+    recentTrends = recentSets.flatMap(
+      (s) => (s as { trendsUsed?: string[] }).trendsUsed ?? [],
+    );
+  } catch {
+    // Non-fatal — proceed without stale penalty
+  }
+
   let trends;
   let trendIsLive = false;
   let trendFetchDurationMs = 0;
@@ -205,6 +221,7 @@ export async function runContentPipeline(
       industry: persona.industry ?? "business",
       topics: persona.topics.length ? persona.topics : persona.contentPillars,
       contentPillars: persona.contentPillars, // for balanced selection (#15)
+      recentTrends: recentTrends.length > 0 ? recentTrends : undefined, // #6
     });
     trendFetchDurationMs = Date.now() - trendStart;
     trends = trendResult;

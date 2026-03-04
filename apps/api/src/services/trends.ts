@@ -2,7 +2,7 @@
  * Trend Research Service
  *
  * Fetches REAL trending content from live APIs — no LLM hallucination.
- * Three-tier strategy (highest quality first):
+ * Multi-tier strategy (highest quality first):
  *
  *  Tier 1 — Tavily (when TAVILY_API_KEY is set)
  *    └─ AI-optimised web search; niche-targeted; recency-filtered
@@ -12,11 +12,23 @@
  *    └─ RSS Feeds: TechCrunch, Entrepreneur, VentureBeat, Fast Company,
  *                  MIT Technology Review, Inc. Magazine, NYT Technology (no key)
  *
+ *  Tier 2.5 — Google News RSS (free, no key, fallback when HN+RSS yield < 5)
+ *
  *  Tier 3 — Evergreen fallback (no network call)
  *    └─ Returns content-pillar-based fallback topics if all APIs fail
  *
  * The raw article titles fetched here are passed to the trendResearch agent
  * which filters them for relevance and adds LinkedIn content angles.
+ *
+ * Phase 3 Audit:
+ *  #1  — Removed duplicate internal cache (canonical cache lives in trendCache.ts)
+ *  #3  — HN Algolia queries now filter by created_at_i > 48h ago
+ *  #4  — RSS feeds shuffled within equal-score tiers for variety
+ *  #7  — HN_QUERY_MAP expanded to 30+ industries
+ *  #8  — Lower HN points threshold (2) for raw/niche keyword queries
+ *  #9  — RSS backup feed retry when all primary feeds fail
+ *  #10 — Hyphen-normalized keyword matching in isRelevant()
+ *  #11 — Google News RSS as Tier 2.5 fallback
  */
 
 import Parser from "rss-parser";
@@ -27,7 +39,7 @@ import { tavily } from "@tavily/core";
 export interface RawTrendItem {
   title: string;
   url?: string;
-  source: string; // "hackernews" | "rss:TechCrunch" | "tavily" | etc.
+  source: string; // "hackernews" | "rss:TechCrunch" | "tavily" | "google-news" | etc.
   score?: number; // HN points or Tavily relevance score
   publishedAt?: string;
 }
@@ -92,35 +104,106 @@ const RSS_FEEDS: { name: string; url: string; topics: string[] }[] = [
   },
 ];
 
-// ── HN subreddits-equivalent search terms per broad topic ─────────────────────
+// ── HN search terms per broad topic (#7 — expanded to 30+ industries) ────────
 // Maps niche keywords → HN search queries for best results
 
 const HN_QUERY_MAP: Record<string, string> = {
+  // Tech & Software
   ai: "AI machine learning LLM",
+  "artificial intelligence": "AI machine learning LLM",
   "machine learning": "machine learning neural network",
+  "deep learning": "deep learning AI neural network",
   saas: "SaaS startup product",
   startup: "startup founder YC",
   engineering: "software engineering developer tools",
-  fintech: "fintech payments crypto",
-  healthcare: "health tech biotech medical",
-  marketing: "marketing growth SEO content",
-  leadership: "leadership management productivity",
-  design: "design UX product",
-  data: "data engineering analytics",
-  security: "security infosec cybersecurity",
+  software: "software engineering developer tools",
+  devops: "devops CI CD infrastructure",
   cloud: "cloud AWS infrastructure devops",
-  ecommerce: "ecommerce retail B2C",
+  security: "security infosec cybersecurity",
+  cybersecurity: "cybersecurity security infosec",
+  data: "data engineering analytics",
+  "data science": "data science analytics machine learning",
+  blockchain: "blockchain crypto web3 decentralized",
+  crypto: "crypto blockchain bitcoin ethereum",
+  web3: "web3 blockchain decentralized",
+  mobile: "mobile app iOS Android development",
+  frontend: "frontend React JavaScript web development",
+  backend: "backend API microservices infrastructure",
+
+  // Business & Finance
+  fintech: "fintech payments banking digital finance",
+  finance: "fintech banking payments insurance",
+  ecommerce: "ecommerce retail B2C online shopping",
+  marketing: "marketing growth SEO content",
+  "digital marketing": "marketing growth SEO content strategy",
+  sales: "sales B2B revenue growth pipeline",
   hr: "hiring remote work people management",
+  "human resources": "hiring remote work people management",
+  leadership: "leadership management productivity",
+  management: "management leadership team productivity",
+  consulting: "consulting strategy management advisory",
+  "real estate": "proptech real estate housing construction",
+  proptech: "proptech real estate housing construction",
+  insurance: "insurtech insurance fintech risk",
+
+  // Healthcare & Science
+  healthcare: "health tech medical biotech digital health",
+  health: "health tech medical biotech digital health",
+  biotech: "biotech pharma drug discovery genomics",
+  pharma: "pharma biotech drug discovery healthcare",
+  medtech: "medtech medical device healthcare technology",
+  "mental health": "mental health wellness therapy tech",
+
+  // Education
+  education: "edtech learning education online course",
+  edtech: "edtech learning education online course",
+
+  // Legal & Government
+  legal: "legaltech law compliance regulation",
+  legaltech: "legaltech law compliance regulation",
+  government: "govtech government public sector digital",
+
+  // Consumer & Retail
+  food: "foodtech restaurant supply chain agriculture",
+  foodtech: "foodtech restaurant agriculture food delivery",
+  fashion: "fashion retail D2C ecommerce brand",
+  retail: "retail ecommerce D2C consumer brand",
+  travel: "travel hospitality tourism booking",
+  gaming: "gaming esports game development",
+
+  // Industrial & Infrastructure
+  manufacturing: "manufacturing industry 4.0 automation robotics",
+  logistics: "logistics supply chain shipping warehouse",
+  energy: "energy cleantech renewable sustainability",
+  cleantech: "cleantech renewable energy climate sustainability",
+  climate: "climate sustainability cleantech carbon",
+  automotive: "automotive EV self-driving mobility",
+  construction: "construction proptech building infrastructure",
+  agriculture: "agtech agriculture farming sustainability",
+
+  // Creative & Media
+  design: "design UX product",
+  media: "media publishing content creator journalism",
+  creator: "creator economy content monetization",
+  "content creation": "content creator economy social media",
+
+  // General
+  innovation: "innovation technology disruption startup",
+  sustainability: "sustainability ESG climate green tech",
+  diversity: "diversity inclusion DEI workplace culture",
+  "remote work": "remote work hybrid distributed team",
+  productivity: "productivity tools workflow automation",
 };
 
-// ── Utility: keyword relevance check (word-boundary aware) ───────────────────
+// ── Utility: keyword relevance check (word-boundary aware) (#10) ─────────────
 // Uses \b word boundaries so short words like "ai" don't match "tail" or "email".
 // Falls back to simple includes() for multi-word phrases (spaces break \b matching).
+// Phase 3 #10: Normalizes hyphens to spaces so "machine-learning" matches "machine learning".
 
 function isRelevant(text: string, keywords: string[]): boolean {
-  const lower = text.toLowerCase();
+  const lower = text.toLowerCase().replace(/-/g, " ");
   return keywords.some((kw) => {
-    const kwLower = kw.toLowerCase().trim();
+    const kwLower = kw.toLowerCase().trim().replace(/-/g, " ");
     if (!kwLower) return false;
     // Multi-word keyword: use simple includes (word boundaries don't help across spaces)
     if (kwLower.includes(" ")) return lower.includes(kwLower);
@@ -133,6 +216,17 @@ function isRelevant(text: string, keywords: string[]): boolean {
       return lower.includes(kwLower);
     }
   });
+}
+
+// ── Fisher-Yates shuffle ──────────────────────────────────────────────────────
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j]!, result[i]!];
+  }
+  return result;
 }
 
 // ── Source 1: Tavily — premium AI web search ──────────────────────────────────
@@ -178,6 +272,8 @@ async function fetchFromTavily(
 // ── Source 2a: Hacker News Algolia — real trending tech stories ───────────────
 // Completely free, no API key, ~10,000 req/hour limit.
 // Filters by points to ensure quality (only community-validated stories).
+// Phase 3 #3: Adds created_at_i> time filter for recency.
+// Phase 3 #8: Uses lower points threshold (2) for raw/niche keyword queries.
 
 async function fetchFromHackerNews(
   keywords: string[],
@@ -185,29 +281,38 @@ async function fetchFromHackerNews(
 ): Promise<RawTrendItem[]> {
   try {
     // Build a focused HN query — 3-5 terms max for best relevance.
-    // Too many terms cause HN Algolia to return noisy/empty results.
-    //
-    // Strategy:
-    //  1. Check HN_QUERY_MAP for known topic expansions (e.g. "ai" → "AI machine learning LLM")
-    //  2. Use the first mapped expansion found (single best match)
-    //  3. Fall back to the top 3 raw keywords or the industry name
     const firstMappedExpansion = keywords
       .map((k) => HN_QUERY_MAP[k.toLowerCase()])
       .find(Boolean); // first hit wins
     const fallbackTerms = keywords.slice(0, 3).join(" ") || industry;
     const query = firstMappedExpansion ?? fallbackTerms;
 
-    console.log(`[trends:hn] Searching HN for: "${query}"`);
+    // #8: Lower threshold for raw keyword queries (no HN_QUERY_MAP match)
+    const pointsMin = firstMappedExpansion ? 5 : 2;
+
+    console.log(
+      `[trends:hn] Searching HN for: "${query}" (pointsMin=${pointsMin})`,
+    );
+
+    // #3: Only fetch stories from the last 48 hours for recency
+    const twoDaysAgo = Math.floor(
+      (Date.now() - 48 * 60 * 60 * 1000) / 1000,
+    );
 
     // Helper to run a single HN Algolia fetch
     const fetchHN = async (
       endpoint: "search_by_date" | "search",
-      pointsMin: number,
+      ptsMin: number,
+      useTimeFilter: boolean,
     ) => {
       const url = new URL(`https://hn.algolia.com/api/v1/${endpoint}`);
       url.searchParams.set("query", query);
       url.searchParams.set("tags", "story");
-      url.searchParams.set("numericFilters", `points>${pointsMin}`);
+      // #3: Combine points filter with optional time filter
+      const numericFilters = useTimeFilter
+        ? `points>${ptsMin},created_at_i>${twoDaysAgo}`
+        : `points>${ptsMin}`;
+      url.searchParams.set("numericFilters", numericFilters);
       url.searchParams.set("hitsPerPage", "20");
 
       const res = await fetch(url.toString(), {
@@ -240,21 +345,64 @@ async function fetchFromHackerNews(
         );
     };
 
-    // Attempt 1: recent stories with points > 5 (lower threshold than original 10,
-    // so niche topics like leadership/management still return results)
-    let items = await fetchHN("search_by_date", 5);
+    // Attempt 1: recent stories (last 48h) with points filter
+    let items = await fetchHN("search_by_date", pointsMin, true);
 
-    // Attempt 2: if still sparse, fall back to the ranked "search" endpoint which
-    // surfaces all-time popular stories relevant to the query (not just recent ones)
+    // Attempt 2: if still sparse, try without time filter (ranked endpoint)
     if (items.length < 5) {
       console.log(
-        `[trends:hn] Only ${items.length} recent stories — trying ranked search`,
+        `[trends:hn] Only ${items.length} recent stories — trying ranked search (no time filter)`,
       );
-      const ranked = await fetchHN("search", 5);
+      const ranked = await fetchHN("search", pointsMin, false);
       // Merge: prefer recent stories, top up with ranked ones
       const existingUrls = new Set(items.map((i) => i.url));
       const newRanked = ranked.filter((r) => !existingUrls.has(r.url));
       items = [...items, ...newRanked].slice(0, 20);
+    }
+
+    // #8: If raw keyword query returned 0, try broad fallback
+    if (items.length === 0 && !firstMappedExpansion) {
+      console.log(
+        "[trends:hn] Raw keyword search returned 0 — trying broad fallback query",
+      );
+      const broadUrl = new URL(
+        "https://hn.algolia.com/api/v1/search_by_date",
+      );
+      broadUrl.searchParams.set(
+        "query",
+        "technology business innovation 2026",
+      );
+      broadUrl.searchParams.set("tags", "story");
+      broadUrl.searchParams.set("numericFilters", `points>5`);
+      broadUrl.searchParams.set("hitsPerPage", "15");
+
+      const res = await fetch(broadUrl.toString(), {
+        headers: { "User-Agent": "ContentGeneratorApp/1.0" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          hits: {
+            title: string;
+            url?: string;
+            story_url?: string;
+            points: number;
+            created_at: string;
+          }[];
+        };
+        items = (data.hits ?? [])
+          .filter((h) => h.title && h.title.length > 10)
+          .slice(0, 15)
+          .map(
+            (h): RawTrendItem => ({
+              title: h.title,
+              url: h.url ?? h.story_url,
+              source: "hackernews",
+              score: h.points,
+              publishedAt: h.created_at,
+            }),
+          );
+      }
     }
 
     console.log(`[trends:hn] ✓ ${items.length} stories`);
@@ -268,21 +416,10 @@ async function fetchFromHackerNews(
 // ── Source 2b: RSS Feeds — business/leadership/tech publications ──────────────
 // Completely free, no keys. Fetches from 2-4 curated feeds relevant to
 // the user's keywords, then filters items by keyword match.
-//
-// Fixes applied vs original:
-//  • HBR feeds.hbr.org dead (TLS failure) → replaced with Entrepreneur
-//  • VentureBeat FeedBurner URL → switched to direct venturebeat.com/feed/
-//  • Added NYT Technology as a reliable 7th source
-//  • Richer User-Agent + Accept headers so sites don't reject the request
-//  • Per-feed timeout raised to 12 s (some feeds are slow to respond)
-//  • Keyword filter now uses a broadened fallback: if a feed returns 0
-//    relevant items we include ALL items from that feed (up to 10) rather
-//    than silently discarding them — this ensures the agent always has
-//    material to work with even when persona keywords are very niche.
+// Phase 3 #4: Shuffles feeds within same-score tiers for variety.
+// Phase 3 #9: Retries with backup feeds when all primary feeds fail.
 
 async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
-  // rss-parser uses the underlying http/https module; set browser-like headers
-  // so publication servers don't block the request as a headless scraper.
   const parser = new Parser({
     timeout: 12000,
     headers: {
@@ -294,29 +431,59 @@ async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
     },
   });
 
-  // Select 3 feeds whose topic tags best match the user's keywords.
-  // If all scores are 0 (very niche persona), just take the top 3 by
-  // their natural order (TechCrunch, Entrepreneur, VentureBeat) so we
-  // always fetch *something* rather than falling completely silent.
+  // Score feeds by keyword match
   const scoredFeeds = RSS_FEEDS.map((feed) => ({
     ...feed,
     matchScore: feed.topics.filter((t) => isRelevant(t, keywords)).length,
   })).sort((a, b) => b.matchScore - a.matchScore);
 
-  const selectedFeeds = scoredFeeds.slice(0, 3);
+  // #4: Shuffle feeds within same-score tiers for variety
+  const shuffledFeeds = shuffleWithinScoreTiers(scoredFeeds);
+  const selectedFeeds = shuffledFeeds.slice(0, 3);
 
   console.log(
     `[trends:rss] Fetching from: ${selectedFeeds.map((f) => f.name).join(", ")}`,
   );
 
-  const allItems: RawTrendItem[] = [];
+  const { items: allItems, rejectedCount } = await fetchFeedsWithParser(
+    parser,
+    selectedFeeds,
+    keywords,
+  );
 
-  await Promise.allSettled(
-    selectedFeeds.map(async (feed) => {
+  // #9: If all primary feeds failed, retry with backup feeds
+  if (allItems.length === 0 && rejectedCount > 0) {
+    console.warn(
+      `[trends:rss] All ${rejectedCount} primary feeds failed — trying backup feeds`,
+    );
+    const backupFeeds = shuffledFeeds.slice(3, 5);
+    if (backupFeeds.length > 0) {
+      const { items: backupItems } = await fetchFeedsWithParser(
+        parser,
+        backupFeeds,
+        keywords,
+      );
+      return backupItems;
+    }
+  }
+
+  return allItems;
+}
+
+// Helper to fetch multiple feeds and collect results + failure count
+async function fetchFeedsWithParser(
+  parser: Parser,
+  feeds: { name: string; url: string; topics: string[] }[],
+  keywords: string[],
+): Promise<{ items: RawTrendItem[]; rejectedCount: number }> {
+  const allItems: RawTrendItem[] = [];
+  let rejectedCount = 0;
+
+  const results = await Promise.allSettled(
+    feeds.map(async (feed) => {
       try {
         const parsed = await parser.parseURL(feed.url);
-
-        const rawItems = (parsed.items ?? []).slice(0, 20); // latest 20 items
+        const rawItems = (parsed.items ?? []).slice(0, 20);
 
         // First pass: keyword-relevant items
         let items = rawItems
@@ -360,60 +527,85 @@ async function fetchFromRSSFeeds(keywords: string[]): Promise<RawTrendItem[]> {
           `[trends:rss] ${feed.name} failed:`,
           (err as Error).message,
         );
+        throw err; // re-throw so Promise.allSettled marks it as rejected
       }
     }),
   );
 
-  return allItems;
+  rejectedCount = results.filter((r) => r.status === "rejected").length;
+  return { items: allItems, rejectedCount };
 }
 
-// ── 30-minute in-memory trend cache ──────────────────────────────────────────
-// Avoids hammering HN/RSS/Tavily on every content generation request.
-// Cache key = sorted keywords + industry + geo → deterministic hash.
-// TTL = 30 minutes (30 * 60 * 1000 ms).
+// #4: Shuffle feeds within same-score tiers so different equally-scored
+// feeds get selected across calls. Preserves tier ordering (higher scores first).
+function shuffleWithinScoreTiers<T extends { matchScore: number }>(
+  feeds: T[],
+): T[] {
+  const tiers = new Map<number, T[]>();
+  for (const feed of feeds) {
+    const tier = tiers.get(feed.matchScore) ?? [];
+    tier.push(feed);
+    tiers.set(feed.matchScore, tier);
+  }
 
-const TREND_CACHE_TTL_MS = 30 * 60 * 1000;
-
-interface TrendCacheEntry {
-  items: RawTrendItem[];
-  cachedAt: number; // Date.now() timestamp
+  const result: T[] = [];
+  // Sort tier keys descending (highest score first)
+  const sortedScores = [...tiers.keys()].sort((a, b) => b - a);
+  for (const score of sortedScores) {
+    result.push(...shuffleArray(tiers.get(score)!));
+  }
+  return result;
 }
 
-const trendCache = new Map<string, TrendCacheEntry>();
+// ── Source 2.5: Google News RSS (#11) ─────────────────────────────────────────
+// Free, no API key, rarely fails. Used as fallback when HN+RSS yield < 5 items.
 
-function buildCacheKey(
+async function fetchFromGoogleNewsRSS(
   keywords: string[],
   industry: string,
-  geo: string,
-): string {
-  const sortedKeywords = [...keywords].sort().join(",").toLowerCase();
-  return `${sortedKeywords}|${industry.toLowerCase()}|${geo.toLowerCase()}`;
-}
+): Promise<RawTrendItem[]> {
+  try {
+    const query = encodeURIComponent(
+      `${keywords.slice(0, 3).join(" ")} ${industry}`.trim(),
+    );
+    const url = `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
 
-function getCachedTrends(key: string): RawTrendItem[] | null {
-  const entry = trendCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.cachedAt > TREND_CACHE_TTL_MS) {
-    trendCache.delete(key);
-    return null;
-  }
-  return entry.items;
-}
+    console.log(`[trends:google-news] Fetching: "${keywords.slice(0, 3).join(", ")}" in ${industry}`);
 
-function setCachedTrends(key: string, items: RawTrendItem[]): void {
-  trendCache.set(key, { items, cachedAt: Date.now() });
-  // Evict entries older than 2x TTL to prevent unbounded growth
-  for (const [k, v] of trendCache.entries()) {
-    if (Date.now() - v.cachedAt > TREND_CACHE_TTL_MS * 2) {
-      trendCache.delete(k);
-    }
+    const parser = new Parser({
+      timeout: 10000,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; ContentGeneratorBot/1.0)",
+        Accept: "application/rss+xml, application/xml, text/xml, */*",
+      },
+    });
+
+    const parsed = await parser.parseURL(url);
+    const items: RawTrendItem[] = (parsed.items ?? [])
+      .slice(0, 15)
+      .map((item) => ({
+        title: item.title ?? "",
+        url: item.link,
+        source: "google-news",
+        publishedAt: item.isoDate ?? item.pubDate,
+      }))
+      .filter((item) => item.title.length > 10);
+
+    console.log(`[trends:google-news] ✓ ${items.length} results`);
+    return items;
+  } catch (err) {
+    console.warn("[trends:google-news] Failed:", (err as Error).message);
+    return [];
   }
 }
 
 // ── Main export: fetch real trending content ──────────────────────────────────
 /**
  * Fetches real trending content from live sources, personalised to the user's
- * industry and content keywords. Results are cached for 30 minutes.
+ * industry and content keywords.
+ *
+ * Phase 3 #1: Removed internal cache — caching is handled by trendCache.ts.
  *
  * @param keywords  e.g. ['AI', 'product management', 'SaaS'] from user persona
  * @param industry  e.g. 'technology', 'healthcare', 'marketing'
@@ -425,19 +617,11 @@ export async function fetchRealTrendingContent(
   industry: string,
   geo = "US",
 ): Promise<RawTrendItem[]> {
-  // Check cache first
-  const cacheKey = buildCacheKey(keywords, industry, geo);
-  const cached = getCachedTrends(cacheKey);
-  if (cached) {
-    console.log(
-      `[trends] Cache HIT for key="${cacheKey}" (${cached.length} items)`,
-    );
-    return cached;
-  }
+  // #1: No internal cache — trendCache.ts is the single source of truth
   const hasTavily = !!process.env.TAVILY_API_KEY;
 
   console.log(
-    `[trends] Cache MISS — fetching | industry="${industry}" keywords=[${keywords.join(", ")}] geo=${geo} tavily=${hasTavily}`,
+    `[trends] Fetching | industry="${industry}" keywords=[${keywords.join(", ")}] geo=${geo} tavily=${hasTavily}`,
   );
 
   let results: RawTrendItem[];
@@ -460,8 +644,15 @@ export async function fetchRealTrendingContent(
     results = deduplicateAndRank([...hnItems, ...rssItems]);
   }
 
-  // Cache results (even empty arrays — avoids hammering APIs on repeated failures)
-  setCachedTrends(cacheKey, results);
+  // #11: Tier 2.5 — Google News RSS fallback when combined results are sparse
+  if (results.length < 5) {
+    console.log(
+      `[trends] Only ${results.length} results from primary sources — trying Google News RSS fallback`,
+    );
+    const googleNewsItems = await fetchFromGoogleNewsRSS(keywords, industry);
+    results = deduplicateAndRank([...results, ...googleNewsItems]);
+  }
+
   return results;
 }
 
@@ -516,14 +707,14 @@ function deduplicateAndRank(items: RawTrendItem[]): RawTrendItem[] {
     }
   }
 
-  // Sort: Tavily (scored) first, then HN (by points), then RSS
+  // Sort: Tavily (scored) first, then HN (by points), then RSS/Google News
   unique.sort((a, b) => {
     const aScore = a.score ?? 0;
     const bScore = b.score ?? 0;
     if (aScore !== bScore) return bScore - aScore;
-    // Prefer Tavily > HN > RSS
+    // Prefer Tavily > HN > Google News > RSS
     const sourcePriority = (s: string) =>
-      s === "tavily" ? 3 : s === "hackernews" ? 2 : 1;
+      s === "tavily" ? 4 : s === "hackernews" ? 3 : s === "google-news" ? 2 : 1;
     return sourcePriority(b.source) - sourcePriority(a.source);
   });
 

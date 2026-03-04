@@ -29,6 +29,10 @@ const cache = new Map<string, CacheEntry>();
 /**
  * Build a deterministic cache key from the parameters used to fetch trends.
  * Keywords are sorted so that different orderings produce the same key.
+ *
+ * Phase 3 #2: Added 6-hour time-bucket so cache keys auto-rotate.
+ * This ensures even the same user with the same persona gets fresh trends
+ * every 6 hours instead of hitting the same stale cache entry indefinitely.
  */
 export function buildTrendCacheKey(
   keywords: string[],
@@ -41,7 +45,9 @@ export function buildTrendCacheKey(
     .join(",");
   const normalizedIndustry = industry.toLowerCase().trim();
   const normalizedGeo = geo.toUpperCase().trim();
-  return `trends:${normalizedIndustry}:${sortedKeywords}:${normalizedGeo}`;
+  // #2: 6-hour time-bucket rotation — cache key changes every 6 hours
+  const timeBucket = Math.floor(Date.now() / (6 * 60 * 60 * 1000));
+  return `trends:${normalizedIndustry}:${sortedKeywords}:${normalizedGeo}:${timeBucket}`;
 }
 
 // ── Get / Set ─────────────────────────────────────────────────────────────────

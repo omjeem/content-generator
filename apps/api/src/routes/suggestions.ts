@@ -3,11 +3,15 @@ import { z } from "zod";
 import { authenticate, AuthRequest } from "../middleware/auth";
 import { runContentPipelineWithRetry } from "../agents/mastra";
 import { ContentSuggestion } from "../models/ContentSuggestion";
+import { UserPersona } from "../models/UserPersona";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import { getSelectedTrends } from "../services/trendDiscoveryCache";
+import { generateContentIdeas } from "../agents/contentGenerator";
 import mongoose from "mongoose";
 import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMessage } from "../utils/sanitizeInput";
+import type { ISuggestion } from "@repo/shared-types";
 
 const router = Router();
 router.use(authenticate);
@@ -29,7 +33,7 @@ const contentMixEnum = z.enum([
 
 const generateContextSchema = z
   .object({
-    mode: z.enum(["profile", "topic-focus", "chat-refined"]),
+    mode: z.enum(["profile", "topic-focus", "chat-refined", "trend-selected"]),
     topicFocus: z.string().optional(),
     targetAudienceOverride: z.string().optional(),
     platformGoal: platformGoalEnum.optional(),
@@ -178,6 +182,182 @@ router.post(
               result.message ?? "Content generation failed. Please try again.",
           });
       }
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/suggestions/generate-from-trends ──────────────────────────────
+/**
+ * @swagger
+ * /api/suggestions/generate-from-trends:
+ *   post:
+ *     tags: [Suggestions]
+ *     summary: Generate content ideas from user-selected trends (Phase 3 #21)
+ *     description: |
+ *       Step 2 of the two-step generation flow. Accepts trend IDs from
+ *       the discovery cache, skips pipeline Steps 1-3, and calls the
+ *       content generator directly with only the selected trends.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [selectedTrendIds]
+ *             properties:
+ *               selectedTrendIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 minItems: 1
+ *                 maxItems: 5
+ *               context:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Content ideas generated from selected trends
+ *       400:
+ *         description: Invalid trend IDs or expired cache
+ *       429:
+ *         description: Token quota exceeded
+ */
+const generateFromTrendsSchema = z.object({
+  selectedTrendIds: z.array(z.string()).min(1).max(5),
+  context: generateContextSchema,
+});
+
+router.post(
+  "/generate-from-trends",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = generateFromTrendsSchema.parse(req.body);
+      const userObjectId = new mongoose.Types.ObjectId(req.userId!);
+
+      // Quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      // Look up selected trends from discovery cache
+      const selectedTrends = getSelectedTrends(
+        req.userId!,
+        body.selectedTrendIds,
+      );
+
+      if (!selectedTrends || selectedTrends.length === 0) {
+        res.status(400).json({
+          error:
+            "Selected trends not found or expired. Please refresh trends and try again.",
+        });
+        return;
+      }
+
+      // Load persona for content generation
+      const persona = await UserPersona.findOne({ userId: userObjectId });
+      if (!persona) {
+        res.status(400).json({
+          error: "No persona found. Complete persona analysis first.",
+        });
+        return;
+      }
+
+      if (!persona.interviewComplete) {
+        res.status(400).json({
+          error: "Please complete the onboarding interview first.",
+        });
+        return;
+      }
+
+      // Build trend result with only the selected trends
+      const filteredTrendResult = {
+        trends: selectedTrends,
+        rawTrends: selectedTrends.map((t) => t.topic),
+      };
+
+      // Generate content ideas directly (skip pipeline Steps 1-3)
+      const pipelineStart = Date.now();
+      const { ideas: contentIdeas, usage: contentUsage } =
+        await generateContentIdeas({
+          persona,
+          trends: filteredTrendResult,
+          context: body.context
+            ? { ...body.context, mode: "trend-selected" as const }
+            : undefined,
+          platforms: body.context?.platforms?.map(String),
+        });
+      const llmDurationMs = Date.now() - pipelineStart;
+
+      // Persist results
+      const acceptedTrendTopics = selectedTrends.map((t) => t.topic);
+
+      const saved = await ContentSuggestion.create({
+        userId: userObjectId,
+        generatedAt: new Date(),
+        trendsUsed: acceptedTrendTopics,
+        trendSource: "live",
+        generationMode: "trend-selected",
+        contextOptions: body.context
+          ? {
+              ...body.context,
+              mode: "trend-selected",
+              selectedTrendIds: body.selectedTrendIds,
+            }
+          : { mode: "trend-selected", selectedTrendIds: body.selectedTrendIds },
+        generationMeta: {
+          pipelineDurationMs: llmDurationMs,
+          trendFetchDurationMs: 0, // trends were pre-fetched
+          llmDurationMs,
+          tokenCost: {
+            input: contentUsage.inputTokens,
+            output: contentUsage.outputTokens,
+            total: contentUsage.inputTokens + contentUsage.outputTokens,
+          },
+          trendSource: "live",
+          modelId: "gemini-2.5-flash",
+        },
+        suggestions: contentIdeas.ideas.map((idea) => ({
+          topic: idea.topic,
+          angle: idea.angle,
+          format: idea.format,
+          hook: idea.hook,
+          whyItFits: idea.whyItFits,
+          seoKeywords: idea.seoKeywords ?? [],
+          clickbaitHooks: idea.clickbaitHooks ?? [],
+          postPointers: idea.postPointers ?? [],
+          callToAction: idea.callToAction ?? "",
+          platform: idea.platform ?? "linkedin",
+        })),
+      });
+
+      // Track token usage — fire-and-forget
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "content-generator",
+        operation: "content_generation",
+        inputTokens: contentUsage.inputTokens,
+        outputTokens: contentUsage.outputTokens,
+        totalTokens: contentUsage.inputTokens + contentUsage.outputTokens,
+        metadata: { suggestionId: String(saved._id) },
+      });
+
+      res.json({
+        suggestions: contentIdeas.ideas as ISuggestion[],
+        id: String(saved._id),
+        trendsUsed: acceptedTrendTopics,
+        trendSource: "live" as const,
+        generatedAt: new Date().toISOString(),
+      });
     } catch (err) {
       next(err);
     }

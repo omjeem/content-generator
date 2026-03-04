@@ -13,6 +13,7 @@
  *   +1  content pillar match
  *   +1  source is premium (Tavily or HN with score > 50)
  *  -1   off-topic signal detected (title has no keyword overlap at all)
+ *  -2   recently shown trend (Phase 3 #6 — stale penalty)
  *
  * After scoring, `selectBalancedTrends()` ensures each content pillar
  * is represented where possible.
@@ -47,11 +48,29 @@ function normalise(s: string): string {
 }
 
 /**
+ * Phase 3 #6: Fuzzy title match — checks if two normalised titles have
+ * ≥60% word overlap. Used to detect recently shown trends even when
+ * titles have minor wording differences.
+ */
+function fuzzyTitleMatch(a: string, b: string): boolean {
+  const wordsA = a.split(" ").filter((w) => w.length > 2);
+  const wordsB = new Set(b.split(" ").filter((w) => w.length > 2));
+  if (wordsA.length === 0 || wordsB.size === 0) return false;
+  const overlap = wordsA.filter((w) => wordsB.has(w)).length;
+  return overlap / Math.min(wordsA.length, wordsB.size) >= 0.6;
+}
+
+/**
  * Score a single raw trend item against persona signals.
+ *
+ * Phase 3 #6: Accepts optional recentTrends set. If the item's title
+ * fuzzy-matches a recently shown trend, applies a -2 stale penalty
+ * to deprioritize (but not hard-exclude) repeat trends.
  */
 export function scoreTrendRelevance(
   item: RawTrendItem,
   persona: PersonaSignals,
+  recentTrends?: Set<string>,
 ): ScoredTrendItem {
   const titleNorm = normalise(item.title);
   const matchedKeywords: string[] = [];
@@ -100,6 +119,17 @@ export function scoreTrendRelevance(
     score -= 1;
   }
 
+  // #6: Stale trend penalty — deprioritize recently shown trends
+  if (recentTrends && recentTrends.size > 0) {
+    for (const recentTitle of recentTrends) {
+      const recentNorm = normalise(recentTitle);
+      if (recentNorm && fuzzyTitleMatch(titleNorm, recentNorm)) {
+        score -= 2;
+        break; // one penalty is enough
+      }
+    }
+  }
+
   return {
     ...item,
     relevanceScore: Math.max(0, score),
@@ -109,13 +139,16 @@ export function scoreTrendRelevance(
 
 /**
  * Score all raw trend items and return sorted by relevance (highest first).
+ *
+ * Phase 3 #6: Accepts optional recentTrends to penalize previously shown trends.
  */
 export function scoreAndRankTrends(
   items: RawTrendItem[],
   persona: PersonaSignals,
+  recentTrends?: Set<string>,
 ): ScoredTrendItem[] {
   return items
-    .map((item) => scoreTrendRelevance(item, persona))
+    .map((item) => scoreTrendRelevance(item, persona, recentTrends))
     .sort((a, b) => b.relevanceScore - a.relevanceScore);
 }
 

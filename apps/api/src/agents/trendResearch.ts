@@ -94,13 +94,27 @@ export interface TrendResearchResult {
   isLive: boolean;
 }
 
+// ── Helper: Fisher-Yates shuffle (#5) ─────────────────────────────────────────
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j]!, result[i]!];
+  }
+  return result;
+}
+
 // ── Helper: run trend research for a user ────────────────────────────────────
+// Phase 3 #6: Accepts optional recentTrends to penalize previously shown trends.
 
 export async function researchTrendsForUser(input: {
   industry: string;
   topics: string[];
   contentPillars?: string[]; // used for balanced trend selection
   geo?: string;
+  /** Phase 3 #6: Titles from recently used trends (last 7 days) for stale penalty */
+  recentTrends?: string[];
 }): Promise<TrendResearchResult> {
   const geo = input.geo ?? "US";
   const keywords = [input.industry, ...input.topics]
@@ -108,11 +122,18 @@ export async function researchTrendsForUser(input: {
     .slice(0, 6);
   const contentPillars = input.contentPillars ?? input.topics.slice(0, 3);
 
+  // #6: Build a Set of recent trend titles for stale penalty scoring
+  const recentTrendsSet = input.recentTrends
+    ? new Set(input.recentTrends)
+    : undefined;
+
   // ── Step 1: Fetch REAL trending content from live APIs (with 30-min cache) ─
-  // Tier 1: Tavily (if key set) + HN Algolia + RSS feeds in parallel
-  // Tier 2: HN Algolia + RSS feeds (no keys required)
   const cacheKey = buildTrendCacheKey(keywords, input.industry, geo);
   let rawItems: RawTrendItem[] = [];
+
+  // Track source breakdown for structured logging (#12)
+  let cacheHit = false;
+  let fetchError: string | undefined;
 
   // Check cache first — avoids duplicate API calls within a 30-min window (#13)
   const cachedItems = getCachedTrends(cacheKey);
@@ -121,30 +142,73 @@ export async function researchTrendsForUser(input: {
       `[trendResearch] Cache HIT for key=${cacheKey} (${cachedItems.length} items)`,
     );
     rawItems = cachedItems;
+    cacheHit = true;
   } else {
     console.log(
       `[trendResearch] Cache MISS — fetching from APIs | keywords=[${keywords.join(", ")}] geo=${geo}`,
     );
+    const fetchStart = Date.now();
     try {
       rawItems = await fetchRealTrendingContent(keywords, input.industry, geo);
+      const fetchDuration = Date.now() - fetchStart;
+      const sources = [...new Set(rawItems.map((i) => i.source))];
+
+      // #12: Structured logging with source breakdown
       console.log(
-        `[trendResearch] Got ${rawItems.length} real items from APIs`,
-        `(sources: ${[...new Set(rawItems.map((i) => i.source))].join(", ")})`,
+        JSON.stringify({
+          event: "trend_fetch",
+          keywords: keywords.slice(0, 4),
+          industry: input.industry,
+          geo,
+          sources: {
+            total: rawItems.length,
+            breakdown: sources.reduce(
+              (acc, s) => {
+                const key =
+                  s === "hackernews"
+                    ? "hn"
+                    : s === "tavily"
+                      ? "tavily"
+                      : s === "google-news"
+                        ? "googleNews"
+                        : "rss";
+                acc[key] = (acc[key] ?? 0) + rawItems.filter((i) => i.source === s).length;
+                return acc;
+              },
+              {} as Record<string, number>,
+            ),
+          },
+          cacheHit: false,
+          durationMs: fetchDuration,
+        }),
       );
+
       // Cache successful results
       if (rawItems.length > 0) {
         setCachedTrends(cacheKey, rawItems);
       }
     } catch (err) {
+      fetchError = (err as Error).message;
       console.warn(
         "[trendResearch] fetchRealTrendingContent failed:",
-        (err as Error).message,
+        fetchError,
       );
     }
   }
 
   // ── Fallback if all APIs fail ─────────────────────────────────────────────
   if (rawItems.length === 0) {
+    // #12: Structured zero-result logging
+    console.warn(
+      JSON.stringify({
+        event: "trend_fetch_zero",
+        keywords: keywords.slice(0, 4),
+        industry: input.industry,
+        geo,
+        cacheHit,
+        error: fetchError ?? "all sources returned 0 items",
+      }),
+    );
     console.warn("[trendResearch] All APIs failed — using evergreen fallback");
     return {
       result: buildFallbackResult(input.industry, input.topics),
@@ -154,14 +218,13 @@ export async function researchTrendsForUser(input: {
   }
 
   // ── Step 2: Score + balanced-select items before sending to LLM (#15) ─────
-  // This pre-filters for relevance deterministically (zero LLM cost),
-  // so the agent receives a smaller, more relevant input and needs less filtering.
+  // #6: Pass recentTrends to scoring for stale penalty
   const personaSignals = {
     topics: input.topics,
     contentPillars,
     industry: input.industry,
   };
-  const scoredItems = scoreAndRankTrends(rawItems, personaSignals);
+  const scoredItems = scoreAndRankTrends(rawItems, personaSignals, recentTrendsSet);
   const balancedItems = selectBalancedTrends(scoredItems, contentPillars, 20);
 
   const topScore = balancedItems[0]?.relevanceScore ?? 0;
@@ -172,12 +235,8 @@ export async function researchTrendsForUser(input: {
   );
 
   // ── Step 3a: Heuristic-only fast path (#32) ────────────────────────────────
-  // When items have high relevance scores (top ≥ 3) AND there are enough of them,
-  // skip the LLM call entirely — saves ~2,300 tokens and ~1-2s per generation.
-  // The content generator receives the pre-scored titles directly as "trends",
-  // with deterministically generated angles instead of LLM-crafted ones.
-  const HEURISTIC_THRESHOLD = 3; // minimum top-item relevance score to skip LLM
-  const HEURISTIC_MIN_ITEMS = 4; // need at least 4 good items to skip LLM
+  const HEURISTIC_THRESHOLD = 3;
+  const HEURISTIC_MIN_ITEMS = 4;
 
   const highRelevanceItems = balancedItems.filter(
     (item) => item.relevanceScore >= HEURISTIC_THRESHOLD,
@@ -188,8 +247,10 @@ export async function researchTrendsForUser(input: {
     console.log(
       `[trendResearch] Heuristic fast path: ${highRelevanceItems.length} high-relevance items — skipping LLM`,
     );
+    // #5: Shuffle before slicing to prevent deterministic results
+    const shuffled = shuffleArray(highRelevanceItems);
     const heuristicResult = buildHeuristicResult(
-      highRelevanceItems.slice(0, 8),
+      shuffled.slice(0, 8),
       input.industry,
       input.topics,
       rawItems,
@@ -210,7 +271,9 @@ export async function researchTrendsForUser(input: {
           ? `Hacker News${item.score ? ` (${item.score} pts)` : ""}`
           : item.source === "tavily"
             ? "Web (Tavily)"
-            : item.source;
+            : item.source === "google-news"
+              ? "Google News"
+              : item.source;
       const scoreHint =
         item.relevanceScore > 0 ? ` [relevance:${item.relevanceScore}]` : "";
       return `${i + 1}. [${sourcePart}]${scoreHint} ${item.title}`;
@@ -283,7 +346,18 @@ Return ONLY the JSON object.`;
 
 // ── Heuristic result builder (#32) ───────────────────────────────────────────
 // Constructs a TrendResult from high-confidence scored items without LLM.
-// Content angles are deterministically generated from matched keywords + industry.
+// Phase 3 #5: Content angle templates now vary based on item index + day-of-week.
+
+const ANGLE_TEMPLATES = [
+  (title: string, keyword: string) =>
+    `Share your take on "${title.slice(0, 60)}" — what it means for ${keyword} practitioners`,
+  (title: string, keyword: string) =>
+    `Break down the key insights from "${title.slice(0, 50)}" and how ${keyword} teams should respond`,
+  (title: string, keyword: string) =>
+    `Use "${title.slice(0, 50)}" as a jumping-off point to share your ${keyword} experience`,
+  (title: string, keyword: string) =>
+    `Create a "hot take" carousel on "${title.slice(0, 50)}" from your ${keyword} perspective`,
+];
 
 function buildHeuristicResult(
   items: ScoredTrendItem[],
@@ -291,7 +365,9 @@ function buildHeuristicResult(
   topics: string[],
   allItems: RawTrendItem[],
 ): TrendResult {
-  const trends = items.map((item) => {
+  const dayOfWeek = new Date().getDay();
+
+  const trends = items.map((item, index) => {
     const matchedKeyword = item.matchedKeywords[0] ?? topics[0] ?? industry;
     const sourceName = item.source.startsWith("rss:")
       ? item.source.replace("rss:", "")
@@ -299,12 +375,18 @@ function buildHeuristicResult(
         ? "Hacker News"
         : item.source === "tavily"
           ? "Web"
-          : item.source;
+          : item.source === "google-news"
+            ? "Google News"
+            : item.source;
+
+    // #5: Vary content angle template based on index + day-of-week
+    const templateIndex = (index + dayOfWeek) % ANGLE_TEMPLATES.length;
+    const template = ANGLE_TEMPLATES[templateIndex]!;
 
     return {
       topic: item.title,
       relevanceReason: `Directly relevant to ${matchedKeyword} in the ${industry} space`,
-      contentAngle: `Share your take on "${item.title.slice(0, 60)}" — what it means for ${matchedKeyword} practitioners`,
+      contentAngle: template(item.title, matchedKeyword),
       source: sourceName,
     };
   });

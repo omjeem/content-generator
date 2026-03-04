@@ -110,8 +110,11 @@ Analyze this feedback and return ONLY a valid JSON object:
 // ── Step 2: Persona learning trigger ─────────────────────────────────────────
 
 /**
- * Every 5th feedback from a user, run the learning aggregation.
- * Checks the total feedback count for this user and triggers if divisible by 5.
+ * Phase 3 #13: Reduced learning trigger interval.
+ *
+ * For the first 3 feedbacks, trigger on EVERY single one (immediate effect).
+ * After that, trigger every 3rd feedback (was every 5th — too infrequent).
+ *
  * Uses canonical aggregateAndUpdatePersona from personaLearning.ts (#51).
  */
 async function _maybeTrigerLearning(userId: string): Promise<void> {
@@ -120,7 +123,10 @@ async function _maybeTrigerLearning(userId: string): Promise<void> {
       userId: new mongoose.Types.ObjectId(userId),
     });
 
-    if (count > 0 && count % 5 === 0) {
+    // #13: First 3 feedbacks → trigger on every one; after that → every 3rd
+    const shouldTrigger = count > 0 && (count <= 3 || count % 3 === 0);
+
+    if (shouldTrigger) {
       console.log(
         `[feedbackProcessor] Triggering persona learning for user ${userId} (${count} total feedbacks)`,
       );
