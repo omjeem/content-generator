@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * AiDetectorPanel — Phase 3 #39
+ * AiDetectorModal — Phase 3 #39 (revised)
  *
- * Collapsible panel for AI detection + humanization in the post editor.
- * Shows score, verdict, signals, suggestions, and a humanize button.
+ * Modal overlay for AI detection + humanization.
+ * Triggered from a toolbar button in the editor page.
+ * Shows score, verdict, signals, suggestions, and a humanize flow.
  */
 
 import { useState, useCallback } from "react";
@@ -12,17 +13,35 @@ import { Button } from "@/components/ui/button";
 import { draftsApi, ApiError } from "@/lib/api";
 import type { IAiCheckResponse, HumanizeIntensity } from "@repo/shared-types";
 
-interface AiDetectorPanelProps {
+interface AiDetectorModalProps {
   draftId: string;
   content: string;
   disabled?: boolean;
+  isOpen: boolean;
+  onClose: () => void;
   onContentUpdated: (newContent: string) => void;
 }
 
-const INTENSITY_OPTIONS: { value: HumanizeIntensity; label: string; desc: string }[] = [
-  { value: "light", label: "Light", desc: "Fix obvious AI patterns, keep 80% wording" },
-  { value: "moderate", label: "Moderate", desc: "Significant rewrite, add personal touches" },
-  { value: "aggressive", label: "Aggressive", desc: "Complete rewrite in your voice" },
+const INTENSITY_OPTIONS: {
+  value: HumanizeIntensity;
+  label: string;
+  desc: string;
+}[] = [
+  {
+    value: "light",
+    label: "Light",
+    desc: "Fix obvious AI patterns, keep 80% wording",
+  },
+  {
+    value: "moderate",
+    label: "Moderate",
+    desc: "Significant rewrite, add personal touches",
+  },
+  {
+    value: "aggressive",
+    label: "Aggressive",
+    desc: "Complete rewrite in your voice",
+  },
 ];
 
 function ScoreBar({ score }: { score: number }) {
@@ -40,35 +59,47 @@ function ScoreBar({ score }: { score: number }) {
         ? "text-amber-700"
         : "text-red-700";
 
+  const bgRing =
+    score <= 30
+      ? "bg-green-50 border-green-200"
+      : score <= 60
+        ? "bg-amber-50 border-amber-200"
+        : "bg-red-50 border-red-200";
+
   return (
-    <div className="space-y-1">
-      <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+    <div className={`rounded-lg border p-4 ${bgRing}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className={`text-2xl font-bold ${textColor}`}>{score}/100</span>
+        <span
+          className={`text-sm font-semibold px-2.5 py-0.5 rounded-full ${
+            score <= 30
+              ? "bg-green-100 text-green-700"
+              : score <= 60
+                ? "bg-amber-100 text-amber-700"
+                : "bg-red-100 text-red-700"
+          }`}
+        >
+          {score <= 30 ? "Likely Human" : score <= 60 ? "Mixed" : "Likely AI"}
+        </span>
+      </div>
+      <div className="w-full h-3 bg-white/60 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          className={`h-full rounded-full transition-all duration-700 ${color}`}
           style={{ width: `${score}%` }}
         />
-      </div>
-      <div className="flex justify-between">
-        <span className={`text-sm font-bold ${textColor}`}>{score}/100</span>
-        <span className={`text-xs font-medium ${textColor}`}>
-          {score <= 30
-            ? "Likely Human"
-            : score <= 60
-              ? "Mixed"
-              : "Likely AI"}
-        </span>
       </div>
     </div>
   );
 }
 
-export function AiDetectorPanel({
+export function AiDetectorModal({
   draftId,
   content,
   disabled,
+  isOpen,
+  onClose,
   onContentUpdated,
-}: AiDetectorPanelProps) {
-  const [isOpen, setIsOpen] = useState(false);
+}: AiDetectorModalProps) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<IAiCheckResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -131,183 +162,249 @@ export function AiDetectorPanel({
     }
   }, [draftId, intensity, humanizing, onContentUpdated]);
 
-  if (!isOpen) {
-    return (
-      <button
-        onClick={() => setIsOpen(true)}
-        disabled={disabled}
-        className="w-full text-left text-xs font-medium text-gray-500 hover:text-indigo-600 transition-colors py-2 px-3 border border-gray-200 rounded-lg hover:border-indigo-300 disabled:opacity-50"
-      >
-        🔍 AI Detection & Humanizer
-      </button>
-    );
-  }
+  const handleClose = () => {
+    // Don't close while processing
+    if (checking || humanizing) return;
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  const contentTooShort = !content.trim() || content.trim().length < 50;
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
-        <span className="text-xs font-semibold text-gray-700">
-          🔍 AI Detection & Humanizer
-        </span>
-        <button
-          onClick={() => setIsOpen(false)}
-          className="text-xs text-gray-400 hover:text-gray-600"
-        >
-          ✕
-        </button>
-      </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        onClick={handleClose}
+      />
 
-      <div className="p-3 space-y-3">
-        {/* Check button */}
-        {!result && !checking && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full"
-            onClick={handleCheck}
-            disabled={disabled || !content.trim() || content.trim().length < 50}
+      {/* Modal panel */}
+      <div className="relative bg-white rounded-2xl shadow-2xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 rounded-t-2xl px-5 py-4 flex items-center justify-between z-10">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+              <span className="text-lg">🔍</span> AI Detection & Humanizer
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Check if your post sounds AI-generated
+            </p>
+          </div>
+          <button
+            onClick={handleClose}
+            disabled={checking || humanizing}
+            className="text-gray-400 hover:text-gray-600 text-lg p-1 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
           >
-            Run AI Detection
-          </Button>
-        )}
+            ✕
+          </button>
+        </div>
 
-        {/* Checking spinner */}
-        {checking && (
-          <div className="flex items-center justify-center gap-2 py-4">
-            <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-600 border-t-transparent" />
-            <span className="text-xs text-gray-500">Analyzing content…</span>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="text-xs text-red-600 bg-red-50 rounded-md px-3 py-2">
-            {error}
-          </div>
-        )}
-
-        {/* Results */}
-        {result && (
-          <>
-            <ScoreBar score={result.score} />
-
-            {/* Signals */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Signals Detected
+        {/* Content */}
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {/* Initial state — run check */}
+          {!result && !checking && (
+            <div className="text-center py-6">
+              <div className="text-4xl mb-3">🤖</div>
+              <p className="text-sm text-gray-600 mb-1">
+                Analyze your post for AI-generated patterns
               </p>
-              <ul className="space-y-1">
-                {result.signals.map((signal, i) => (
-                  <li
-                    key={i}
-                    className="text-xs text-gray-600 flex items-start gap-1.5"
-                  >
-                    <span className="text-amber-500 shrink-0 mt-0.5">⚠</span>
-                    {signal}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Suggestions */}
-            <div>
-              <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                Suggestions
+              <p className="text-xs text-gray-400 mb-5">
+                Our 7-signal analysis checks sentence structure, vocabulary,
+                tone, and more
               </p>
-              <ul className="space-y-1">
-                {result.suggestions.map((sug, i) => (
-                  <li
-                    key={i}
-                    className="text-xs text-gray-600 flex items-start gap-1.5"
-                  >
-                    <span className="text-green-500 shrink-0 mt-0.5">✓</span>
-                    {sug}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex gap-2 pt-1">
               <Button
-                size="sm"
-                variant="outline"
+                size="lg"
                 onClick={handleCheck}
-                disabled={checking}
-                className="flex-1"
+                disabled={disabled || contentTooShort}
+                className="px-6"
               >
-                Re-check
+                Run AI Detection
               </Button>
-              <Button
-                size="sm"
-                onClick={() => setShowHumanize(true)}
-                disabled={humanizing}
-                className="flex-1"
-              >
-                Humanize Post
-              </Button>
+              {contentTooShort && (
+                <p className="text-xs text-gray-400 mt-2">
+                  Need at least 50 characters to analyze
+                </p>
+              )}
             </div>
-          </>
-        )}
+          )}
 
-        {/* Humanize panel */}
-        {showHumanize && (
-          <div className="bg-gray-50 rounded-md p-3 space-y-2">
-            <p className="text-xs font-medium text-gray-700">
-              Humanization Intensity
-            </p>
-            <div className="space-y-1">
-              {INTENSITY_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setIntensity(opt.value)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded text-xs transition-colors ${
-                    intensity === opt.value
-                      ? "bg-indigo-100 text-indigo-700 border border-indigo-200"
-                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
-                  }`}
+          {/* Checking spinner — full modal loading state */}
+          {checking && (
+            <div className="text-center py-10">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-indigo-50 mb-4">
+                <div className="animate-spin rounded-full h-7 w-7 border-[3px] border-indigo-600 border-t-transparent" />
+              </div>
+              <p className="text-sm font-medium text-gray-700">
+                Analyzing content…
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Running 7-signal detection analysis
+              </p>
+            </div>
+          )}
+
+          {/* Error */}
+          {error && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-4 py-3">
+              {error}
+            </div>
+          )}
+
+          {/* Results */}
+          {result && (
+            <>
+              <ScoreBar score={result.score} />
+
+              {/* Signals */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Signals Detected
+                </p>
+                <ul className="space-y-2">
+                  {result.signals.map((signal, i) => (
+                    <li
+                      key={i}
+                      className="text-sm text-gray-600 flex items-start gap-2"
+                    >
+                      <span className="text-amber-500 shrink-0 mt-0.5">⚠</span>
+                      {signal}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Suggestions */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Suggestions
+                </p>
+                <ul className="space-y-2">
+                  {result.suggestions.map((sug, i) => (
+                    <li
+                      key={i}
+                      className="text-sm text-gray-600 flex items-start gap-2"
+                    >
+                      <span className="text-green-500 shrink-0 mt-0.5">✓</span>
+                      {sug}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-3 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCheck}
+                  disabled={checking}
+                  className="flex-1"
                 >
-                  <span className="font-medium">{opt.label}</span>
-                  <span className="text-gray-400 ml-1">— {opt.desc}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 pt-1">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setShowHumanize(false)}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleHumanize}
-                disabled={humanizing}
-                className="flex-1"
-              >
-                {humanizing ? "Humanizing…" : "Apply"}
-              </Button>
-            </div>
-          </div>
-        )}
+                  Re-check
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setShowHumanize(true)}
+                  disabled={humanizing}
+                  className="flex-1"
+                >
+                  ✨ Humanize Post
+                </Button>
+              </div>
+            </>
+          )}
 
-        {/* Humanize success banner */}
-        {humanizeResult && (
-          <div className="bg-green-50 border border-green-200 rounded-md px-3 py-2 space-y-1">
-            <p className="text-xs font-medium text-green-700">
-              ✓ Content humanized
-            </p>
-            <p className="text-[10px] text-green-600">
-              AI score: {humanizeResult.beforeScore} → {humanizeResult.afterScore}
-            </p>
-            <p className="text-[10px] text-green-600">
-              {humanizeResult.changesSummary}
-            </p>
-          </div>
-        )}
+          {/* Humanize panel */}
+          {showHumanize && (
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-4 space-y-3">
+              <p className="text-sm font-semibold text-gray-700">
+                Humanization Intensity
+              </p>
+              <div className="space-y-2">
+                {INTENSITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setIntensity(opt.value)}
+                    className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all ${
+                      intensity === opt.value
+                        ? "bg-indigo-100 text-indigo-700 border-2 border-indigo-300 shadow-sm"
+                        : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                    }`}
+                  >
+                    <span className="font-medium">{opt.label}</span>
+                    <span className="text-gray-400 ml-1.5 text-xs">
+                      — {opt.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setShowHumanize(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleHumanize}
+                  disabled={humanizing}
+                  className="flex-1"
+                >
+                  {humanizing ? (
+                    <span className="flex items-center gap-2">
+                      <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+                      Humanizing…
+                    </span>
+                  ) : (
+                    "Apply"
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Humanize in-progress full state (when not in humanize panel) */}
+          {humanizing && !showHumanize && (
+            <div className="text-center py-10">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-purple-50 mb-4">
+                <div className="animate-spin rounded-full h-7 w-7 border-[3px] border-purple-600 border-t-transparent" />
+              </div>
+              <p className="text-sm font-medium text-gray-700">
+                Humanizing your post…
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                Rewriting in your personal voice
+              </p>
+            </div>
+          )}
+
+          {/* Humanize success banner */}
+          {humanizeResult && (
+            <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 space-y-1.5">
+              <p className="text-sm font-semibold text-green-700 flex items-center gap-1.5">
+                <span>✓</span> Content humanized successfully
+              </p>
+              <p className="text-xs text-green-600 flex items-center gap-2">
+                <span className="font-medium">AI score:</span>
+                <span className="line-through text-red-400">
+                  {humanizeResult.beforeScore}
+                </span>
+                <span>→</span>
+                <span className="font-bold text-green-700">
+                  {humanizeResult.afterScore}
+                </span>
+              </p>
+              <p className="text-xs text-green-600">
+                {humanizeResult.changesSummary}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

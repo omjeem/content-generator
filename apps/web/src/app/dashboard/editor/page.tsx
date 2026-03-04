@@ -23,7 +23,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { PostEditorPane } from "@/components/editor/PostEditorPane";
 import { EditorChatPane } from "@/components/editor/EditorChatPane";
-import { AiDetectorPanel } from "@/components/editor/AiDetectorPanel";
+import { AiDetectorModal } from "@/components/editor/AiDetectorPanel";
 import { draftsApi } from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import type { IPostDraft, DraftStatus, DraftPlatform } from "@/lib/api";
@@ -66,7 +66,10 @@ function EditorPageContent() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [publishing, setPublishing] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+
+  // AI Detector modal state
+  const [aiDetectorOpen, setAiDetectorOpen] = useState(false);
 
   // Chat history (loaded from server)
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([]);
@@ -179,20 +182,20 @@ function EditorPageContent() {
     }
   }, [draftId, content, title, saving]);
 
-  // ── Publish ──────────────────────────────────────────────────────────────────
-  const handlePublish = useCallback(async () => {
-    if (!draftId || publishing) return;
+  // ── Finalize (was Publish) ────────────────────────────────────────────────────
+  const handleFinalize = useCallback(async () => {
+    if (!draftId || finalizing) return;
 
-    // Auto-save content before publishing
+    // Auto-save content before finalizing
     if (content !== draft?.content) {
       try {
         await draftsApi.update(draftId, { content, title });
       } catch {
-        // Best-effort save — proceed with publish anyway
+        // Best-effort save — proceed with finalize anyway
       }
     }
 
-    setPublishing(true);
+    setFinalizing(true);
     setSaveError(null);
 
     try {
@@ -201,12 +204,12 @@ function EditorPageContent() {
       setStatus("published");
     } catch (err) {
       setSaveError(
-        err instanceof ApiError ? err.message : "Failed to publish draft.",
+        err instanceof ApiError ? err.message : "Failed to finalize draft.",
       );
     } finally {
-      setPublishing(false);
+      setFinalizing(false);
     }
-  }, [draftId, content, title, draft, publishing]);
+  }, [draftId, content, title, draft, finalizing]);
 
   // ── Apply AI edit (from EditorChatPane) ─────────────────────────────────────
   const handleApplyEdit = useCallback(
@@ -294,7 +297,7 @@ function EditorPageContent() {
           />
         </div>
 
-        {/* Right: platform badge + save status + publish */}
+        {/* Right: platform badge + AI check + save status + finalize */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Save feedback */}
           {saveSuccess && (
@@ -317,20 +320,32 @@ function EditorPageContent() {
             <option value="twitter">Twitter/X</option>
           </select>
 
-          {/* Publish button */}
+          {/* AI Detection button — opens modal */}
           {status !== "published" && (
             <button
-              onClick={() => void handlePublish()}
-              disabled={publishing || saving || !content.trim()}
+              onClick={() => setAiDetectorOpen(true)}
+              disabled={!content.trim() || content.trim().length < 50}
+              className="text-xs border border-gray-200 hover:border-indigo-300 text-gray-600 hover:text-indigo-600 font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              title="Check for AI-generated patterns"
+            >
+              🔍 AI Check
+            </button>
+          )}
+
+          {/* Finalize button (was Publish) */}
+          {status !== "published" && (
+            <button
+              onClick={() => void handleFinalize()}
+              disabled={finalizing || saving || !content.trim()}
               className="text-xs bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
             >
-              {publishing ? "Publishing…" : "🚀 Publish"}
+              {finalizing ? "Finalizing…" : "✅ Finalize"}
             </button>
           )}
 
           {status === "published" && (
             <span className="text-xs font-medium bg-green-100 text-green-700 px-3 py-1.5 rounded-md">
-              ✓ Published
+              ✓ Finalized
             </span>
           )}
         </div>
@@ -338,7 +353,7 @@ function EditorPageContent() {
 
       {/* ── Dual-pane editor ──────────────────────────────────────────────────── */}
       <div className="flex flex-1 gap-0 overflow-hidden" style={{ minHeight: 0 }}>
-        {/* Left pane — PostEditorPane + AI Detector */}
+        {/* Left pane — PostEditorPane */}
         <div className="flex-1 p-4 overflow-y-auto border-r border-gray-100" style={{ minHeight: 0 }}>
           <PostEditorPane
             content={content}
@@ -349,18 +364,6 @@ function EditorPageContent() {
             onMarkReady={() => void handleMarkReady()}
             saving={saving}
           />
-
-          {/* AI Detection & Humanizer panel — below the editor */}
-          {draftId && (
-            <div className="mt-4">
-              <AiDetectorPanel
-                draftId={draftId}
-                content={content}
-                disabled={status === "published"}
-                onContentUpdated={handleApplyEdit}
-              />
-            </div>
-          )}
         </div>
 
         {/* Right pane — EditorChatPane: flex column, no outer scroll */}
@@ -382,6 +385,21 @@ function EditorPageContent() {
           )}
         </div>
       </div>
+
+      {/* ── AI Detector Modal ─────────────────────────────────────────────────── */}
+      {draftId && (
+        <AiDetectorModal
+          draftId={draftId}
+          content={content}
+          disabled={status === "published"}
+          isOpen={aiDetectorOpen}
+          onClose={() => setAiDetectorOpen(false)}
+          onContentUpdated={(newContent) => {
+            handleApplyEdit(newContent);
+            // Keep modal open so user sees the result
+          }}
+        />
+      )}
     </div>
   );
 }

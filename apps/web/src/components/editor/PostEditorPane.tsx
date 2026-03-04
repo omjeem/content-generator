@@ -296,7 +296,7 @@ export function PostEditorPane({
           )}
         >
           {status === "published"
-            ? "✓ Published"
+            ? "✓ Finalized"
             : status === "ready"
               ? "Ready"
               : "Drafting"}
