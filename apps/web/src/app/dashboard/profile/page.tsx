@@ -6,7 +6,7 @@ import { PendingChangesCard } from "@/components/persona/PendingChangesCard";
 import { PostInputCards } from "@/components/persona/PostInputCards";
 import { PostBatchHistory } from "@/components/persona/PostBatchHistory";
 import { PersonaDiffCard } from "@/components/persona/PersonaDiffCard";
-import { personaChatApi, personaApi, ApiError } from "@/lib/api";
+import { personaChatApi, personaApi, feedbackApi, ApiError } from "@/lib/api";
 import type {
   IUserPersona,
   IPersonaPendingChanges,
@@ -110,6 +110,15 @@ export default function ProfilePage() {
   const [addPostsError, setAddPostsError] = useState("");
   const [addPostsDiff, setAddPostsDiff] = useState<IPersonaDiff | null>(null);
 
+  // Phase 4 #40: Feedback insights
+  const [feedbackSummary, setFeedbackSummary] = useState<{
+    totalFeedback: number;
+    preferredTopics: string[];
+    avoidTopics: string[];
+    formatDistribution: Record<string, number>;
+    averageRating: number;
+  } | null>(null);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Load persona + history in parallel on mount.
@@ -132,6 +141,9 @@ export default function ProfilePage() {
       .then(({ persona: p }) => setPersona(p))
       .catch(() => {}) // persona stays null → "No persona found" message shown
       .finally(() => setPersonaLoading(false));
+
+    // Phase 4 #40: Fetch feedback insights
+    feedbackApi.getSummary().then(setFeedbackSummary).catch(() => {});
   }, []);
 
   // Auto-scroll — scroll only within the chat box, not the whole page.
@@ -422,6 +434,116 @@ export default function ProfilePage() {
                 )}
             </CardContent>
           </Card>
+
+          {/* Phase 4 #40: Feedback Insights */}
+          {feedbackSummary && feedbackSummary.totalFeedback >= 3 && (
+            <Card>
+              <CardContent className="p-5">
+                <h2 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <span>📊</span> Feedback Insights
+                </h2>
+
+                {/* Average Rating */}
+                {feedbackSummary.averageRating > 0 && (
+                  <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-100">
+                    <div>
+                      <p className="text-xs text-gray-500">Avg Rating</p>
+                      <span className="text-xl font-bold text-indigo-600">
+                        {feedbackSummary.averageRating.toFixed(1)}
+                      </span>
+                      <span className="text-xs text-gray-400 ml-0.5">/ 4.0</span>
+                    </div>
+                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          feedbackSummary.averageRating >= 3
+                            ? "bg-green-500"
+                            : feedbackSummary.averageRating >= 2
+                              ? "bg-amber-400"
+                              : "bg-red-400"
+                        }`}
+                        style={{
+                          width: `${(feedbackSummary.averageRating / 4) * 100}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Preferred Topics */}
+                {feedbackSummary.preferredTopics.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1.5">
+                      You love these topics
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {feedbackSummary.preferredTopics.map((t) => (
+                        <span
+                          key={t}
+                          className="inline-flex items-center rounded-full bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 text-[11px] font-medium"
+                        >
+                          {t.length > 35 ? t.slice(0, 35) + "…" : t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Topics to Avoid */}
+                {feedbackSummary.avoidTopics.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs font-medium text-gray-500 mb-1.5">
+                      Not interested in
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {feedbackSummary.avoidTopics.map((t) => (
+                        <span
+                          key={t}
+                          className="inline-flex items-center rounded-full bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 text-[11px] font-medium"
+                        >
+                          {t.length > 35 ? t.slice(0, 35) + "…" : t}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Format Distribution */}
+                {Object.keys(feedbackSummary.formatDistribution).length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1.5">
+                      Format Preferences
+                    </p>
+                    <div className="space-y-1.5">
+                      {Object.entries(feedbackSummary.formatDistribution)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 5)
+                        .map(([fmt, pct]) => (
+                          <div key={fmt} className="flex items-center gap-2">
+                            <span className="text-[11px] text-gray-600 w-20 truncate">
+                              {fmt}
+                            </span>
+                            <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div
+                                className="h-full bg-indigo-500 rounded-full"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-gray-400 w-8 text-right">
+                              {pct}%
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[10px] text-gray-400 mt-3">
+                  Based on {feedbackSummary.totalFeedback} feedback signals
+                </p>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Apply success */}
           {applySuccess && (

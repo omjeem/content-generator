@@ -399,6 +399,21 @@ export const feedbackApi = {
       ratingDistribution: Record<string, number>;
       averageRating: number;
     }>("/api/feedback/summary"),
+
+  /**
+   * Submit batched implicit feedback signals (Phase 4 #37).
+   * Usually called automatically by implicitTracking.ts.
+   */
+  submitImplicit: (signals: {
+    type: string;
+    suggestionSetId: string;
+    suggestionIndex: number;
+    metadata?: { timeSpentMs?: number };
+  }[]) =>
+    request<{ accepted: number }>("/api/feedback/implicit", {
+      method: "POST",
+      body: JSON.stringify({ signals }),
+    }),
 };
 
 // Re-export for type access in components
@@ -500,6 +515,16 @@ export const draftsApi = {
       method: "POST",
       body: JSON.stringify({ intensity }),
     }),
+
+  /** Report post performance data for a published draft (Phase 4 #41) */
+  reportPerformance: (
+    id: string,
+    data: { likes: number; comments: number; reposts: number; impressions?: number },
+  ) =>
+    request<{ message: string; performanceData: { likes: number; comments: number; reposts: number; impressions?: number; reportedAt: string } }>(
+      `/api/drafts/${id}/performance`,
+      { method: "POST", body: JSON.stringify(data) },
+    ),
 };
 
 export type { IPostDraft, IDraftBrief, DraftStatus, DraftPlatform };

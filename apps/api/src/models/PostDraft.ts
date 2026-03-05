@@ -57,6 +57,15 @@ export interface IPostDraftDocument extends Document {
   chatSessionId?: string; // ref to the editor chat session key
   publishedAt?: Date;
 
+  // Phase 4 #41: Post performance data (user-reported)
+  performanceData?: {
+    likes: number;
+    comments: number;
+    reposts: number;
+    impressions?: number;
+    reportedAt: Date;
+  };
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -153,6 +162,20 @@ const postDraftSchema = new Schema<IPostDraftDocument>(
     },
     publishedAt: {
       type: Date,
+    },
+    // Phase 4 #41: Post performance data
+    performanceData: {
+      type: new Schema(
+        {
+          likes: { type: Number, default: 0, min: 0 },
+          comments: { type: Number, default: 0, min: 0 },
+          reposts: { type: Number, default: 0, min: 0 },
+          impressions: { type: Number, min: 0 },
+          reportedAt: { type: Date, default: Date.now },
+        },
+        { _id: false },
+      ),
+      default: undefined,
     },
   },
   { timestamps: true },

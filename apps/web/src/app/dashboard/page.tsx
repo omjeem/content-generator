@@ -9,7 +9,8 @@ import { TopicBrowser } from "@/components/suggestions/TopicBrowser";
 import type { TopicItem } from "@/components/suggestions/TopicBrowser";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { personaApi, suggestionsApi, trendsApi, tokenApi, ApiError } from "@/lib/api";
+import { personaApi, suggestionsApi, trendsApi, tokenApi, feedbackApi, ApiError } from "@/lib/api";
+import { startImplicitTracking } from "@/lib/implicitTracking";
 import type {
   ISuggestion,
   IUserPersona,
@@ -72,6 +73,15 @@ export default function DashboardPage() {
   // Phase 4 #9: Cache last generation options for retry
   const [lastGenerationContext, setLastGenerationContext] = useState<IGenerateContextOptions | null>(null);
 
+  // Phase 4 #39: Feedback summary state
+  const [feedbackSummary, setFeedbackSummary] = useState<{
+    totalFeedback: number;
+    preferredTopics: string[];
+    avoidTopics: string[];
+    formatDistribution: Record<string, number>;
+    averageRating: number;
+  } | null>(null);
+
   // Load persona + token quota on mount
   useEffect(() => {
     personaApi
@@ -85,6 +95,12 @@ export default function DashboardPage() {
       setTokenUsage(usage);
       if (!usage.allowed) setQuotaExceeded(true);
     }).catch(() => {}); // non-fatal — only blocks UX if we have data
+
+    // Phase 4 #37: Start implicit signal tracking
+    startImplicitTracking();
+
+    // Phase 4 #39: Fetch feedback summary for dashboard card
+    feedbackApi.getSummary().then(setFeedbackSummary).catch(() => {});
   }, []);
 
   // Cycle through loading step messages while generating
@@ -383,6 +399,97 @@ export default function DashboardPage() {
                 ? "Good — keep providing feedback"
                 : "Excellent — highly personalized"}
           </span>
+        </div>
+      )}
+
+      {/* ── Feedback Summary Card — Phase 4 #39 ──────────────────────────── */}
+      {feedbackSummary && feedbackSummary.totalFeedback >= 3 && (
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+          <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2 mb-3">
+            <span>🧠</span> What We&apos;ve Learned About You
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Preferred Topics */}
+            {feedbackSummary.preferredTopics.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+                  Preferred Topics
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {feedbackSummary.preferredTopics.map((topic) => (
+                    <span
+                      key={topic}
+                      className="inline-flex items-center rounded-full bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 text-[11px] font-medium"
+                    >
+                      {topic.length > 30 ? topic.slice(0, 30) + "…" : topic}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Format Preferences */}
+            {Object.keys(feedbackSummary.formatDistribution).length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+                  Format Mix
+                </p>
+                <div className="space-y-1">
+                  {Object.entries(feedbackSummary.formatDistribution)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 4)
+                    .map(([fmt, pct]) => (
+                      <div key={fmt} className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-indigo-500 rounded-full"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-[11px] text-gray-600 w-24 text-right">
+                          {fmt} ({pct}%)
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Rating + Avoid */}
+            <div>
+              {feedbackSummary.averageRating > 0 && (
+                <div className="mb-2">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                    Avg Rating
+                  </p>
+                  <span className="text-lg font-bold text-indigo-600">
+                    {feedbackSummary.averageRating.toFixed(1)}
+                  </span>
+                  <span className="text-xs text-gray-400 ml-1">/ 4.0</span>
+                </div>
+              )}
+              {feedbackSummary.avoidTopics.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                    Topics to Avoid
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {feedbackSummary.avoidTopics.map((topic) => (
+                      <span
+                        key={topic}
+                        className="inline-flex items-center rounded-full bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 text-[11px] font-medium"
+                      >
+                        {topic.length > 25 ? topic.slice(0, 25) + "…" : topic}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-3">
+            Based on {feedbackSummary.totalFeedback} feedback signals
+          </p>
         </div>
       )}
 

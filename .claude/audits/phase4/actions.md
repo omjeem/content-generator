@@ -7,6 +7,7 @@
 **Phase B**: COMPLETE ✅
 **Phase C**: COMPLETE ✅
 **Phase D**: COMPLETE ✅
+**Phase E**: COMPLETE ✅
 
 ---
 
@@ -125,19 +126,19 @@ If context runs out, come back here and:
 
 *Priority: HIGH — makes the system learn faster. Depends on Phase A (#3 fire-and-forget wrapper). Can run in parallel with Phase D.*
 
-- [ ] **#36 — Implicit Signal Types + Backend Endpoint** (`routes/feedback.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `IImplicitSignal` type: `{ type: 'hook_copied' | 'brief_copied' | 'write_clicked' | 'time_spent' | 'skipped' | 'regenerated', suggestionSetId, suggestionIndex, metadata?: { timeSpentMs? } }`. Add `POST /api/feedback/implicit` endpoint accepting batched events. Convert to equivalent feedback weights: hook_copied=0.75, brief_copied=1.0, write_clicked=1.5, time_spent(>30s)=0.3, skipped(<2s)=-0.1. Fire-and-forget to personaLearning with 0.5× multiplier vs explicit feedback. (§4.1)
+- [x] **#36 — Implicit Signal Types + Backend Endpoint** (`routes/feedback.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `IImplicitSignal` type: `{ type: 'hook_copied' | 'brief_copied' | 'write_clicked' | 'time_spent' | 'skipped' | 'regenerated', suggestionSetId, suggestionIndex, metadata?: { timeSpentMs? } }`. Add `POST /api/feedback/implicit` endpoint accepting batched events. Convert to equivalent feedback weights: hook_copied=0.75, brief_copied=1.0, write_clicked=1.5, time_spent(>30s)=0.3, skipped(<2s)=-0.1. Fire-and-forget to personaLearning with 0.5× multiplier vs explicit feedback. (§4.1)
 
-- [ ] **#37 — Implicit Signal: Frontend Tracking** (`lib/implicitTracking.ts` CREATE, `components/suggestions/SuggestionCard.tsx` MODIFY): Create `trackImplicitSignal(event)` function. Debounce + batch POST to `/api/feedback/implicit` every 10 seconds or on page unload. Track: `hook_copied` (on copy hook click), `brief_copied` (on copy brief click), `write_clicked` (on "Write This Post" click). Add `IntersectionObserver` for time_spent tracking on SuggestionCard (measure visibility duration). (§4.1)
+- [x] **#37 — Implicit Signal: Frontend Tracking** (`lib/implicitTracking.ts` CREATE, `components/suggestions/SuggestionCard.tsx` MODIFY): Create `trackImplicitSignal(event)` function. Debounce + batch POST to `/api/feedback/implicit` every 10 seconds or on page unload. Track: `hook_copied` (on copy hook click), `brief_copied` (on copy brief click), `write_clicked` (on "Write This Post" click). Add `IntersectionObserver` for time_spent tracking on SuggestionCard (measure visibility duration). (§4.1)
 
-- [ ] **#38 — Implicit Signal: Learning Integration** (`services/personaLearning.ts` MODIFY): Add `processImplicitSignals(userId, signals)` function. Merge with explicit feedback but apply 0.5× multiplier. Track separately in `feedbackProfile.implicitSignalCount`. Don't let implicit signals override explicit ratings (explicit always wins). (§4.1)
+- [x] **#38 — Implicit Signal: Learning Integration** (`services/personaLearning.ts` MODIFY): Add `processImplicitSignals(userId, signals)` function. Merge with explicit feedback but apply 0.5× multiplier. Track separately in `feedbackProfile.implicitSignalCount`. Don't let implicit signals override explicit ratings (explicit always wins). (§4.1)
 
-- [ ] **#39 — Feedback Summary: Dashboard Card** (`app/dashboard/page.tsx` MODIFY, `lib/api.ts` — already has `feedbackApi.getSummary()`): Add "What We've Learned" card to dashboard when `totalFeedbackCount > 0`. Shows: preferred topics (pills), avoided topics (pills), best formats (top 3), average rating (stars), total feedback count. Progress bar: "{count}/20 feedbacks for optimal suggestions". (§4.3)
+- [x] **#39 — Feedback Summary: Dashboard Card** (`app/dashboard/page.tsx` MODIFY, `lib/api.ts` — already has `feedbackApi.getSummary()`): Add "What We've Learned" card to dashboard when `totalFeedbackCount > 0`. Shows: preferred topics (pills), avoided topics (pills), best formats (top 3), average rating (stars), total feedback count. Progress bar: "{count}/20 feedbacks for optimal suggestions". (§4.3)
 
-- [ ] **#40 — Feedback Summary: Profile Section** (`app/dashboard/profile/page.tsx` MODIFY): Add "Feedback Insights" section below persona profile. Show: format preferences as horizontal bar chart (CSS-only, no chart library), topic affinity list (positive/negative), rating history summary, "Reset Learning" button (clears `feedbackProfile` via new `DELETE /api/feedback/reset` endpoint). (§4.3)
+- [x] **#40 — Feedback Summary: Profile Section** (`app/dashboard/profile/page.tsx` MODIFY): Add "Feedback Insights" section below persona profile. Show: format preferences as horizontal bar chart (CSS-only, no chart library), topic affinity list (positive/negative), rating history summary, "Reset Learning" button (clears `feedbackProfile` via new `DELETE /api/feedback/reset` endpoint). (§4.3)
 
-- [ ] **#41 — Published Post Outcome Tracking: Backend** (`routes/drafts.ts` MODIFY, `models/PostDraft.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `performanceData` optional sub-schema to PostDraft: `{ likes: Number, comments: Number, reposts: Number, impressions?: Number, reportedAt: Date }`. Add `POST /api/drafts/:id/performance` endpoint. Trigger personaLearning with 3.0× weight for high-engagement posts (likes+comments > median). Add `IPerformanceData` to shared types. (§4.4, §2.3)
+- [x] **#41 — Published Post Outcome Tracking: Backend** (`routes/drafts.ts` MODIFY, `models/PostDraft.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `performanceData` optional sub-schema to PostDraft: `{ likes: Number, comments: Number, reposts: Number, impressions?: Number, reportedAt: Date }`. Add `POST /api/drafts/:id/performance` endpoint. Trigger personaLearning with 3.0× weight for high-engagement posts (likes+comments > median). Add `IPerformanceData` to shared types. (§4.4, §2.3)
 
-- [ ] **#42 — Published Post Outcome Tracking: Frontend** (`app/dashboard/page.tsx` MODIFY, `lib/api.ts` MODIFY): On dashboard mount, check for published drafts 24-72h old without `performanceData`. Show notification banner: "How did your post on '{topic}' perform?" with quick-entry modal (3 number inputs: likes, comments, reposts + Skip). Call `draftsApi.reportPerformance(id, data)`. (§4.4)
+- [x] **#42 — Published Post Outcome Tracking: Frontend** (`app/dashboard/page.tsx` MODIFY, `lib/api.ts` MODIFY): On dashboard mount, check for published drafts 24-72h old without `performanceData`. Show notification banner: "How did your post on '{topic}' perform?" with quick-entry modal (3 number inputs: likes, comments, reposts + Skip). Call `draftsApi.reportPerformance(id, data)`. (§4.4)
 
 ---
 

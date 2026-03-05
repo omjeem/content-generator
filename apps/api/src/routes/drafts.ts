@@ -28,6 +28,7 @@ import {
 import { runPostEditor } from "../agents/postEditor";
 import { findPersonaByUserId } from "../services/userPersonaService";
 import { ChatSession } from "../models/ChatSession";
+import { PostDraft } from "../models/PostDraft";
 import { SuggestionFeedback } from "../models/SuggestionFeedback";
 import { aggregateAndUpdatePersona } from "../services/personaLearning";
 import { runAiDetection, runHumanizer } from "../services/aiDetection";
@@ -805,6 +806,98 @@ router.post(
         beforeScore: detectionResult.result.score,
         afterScore: humanizeResult.result.estimatedScore,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/drafts/:id/performance — Phase 4 #41 ──────────────────────────
+/**
+ * @swagger
+ * /api/drafts/{id}/performance:
+ *   post:
+ *     tags: [Drafts]
+ *     summary: Report post performance data for a published draft
+ *     description: |
+ *       User reports engagement metrics (likes, comments, reposts) for a published draft.
+ *       Triggers persona learning with 3.0× weight for high-engagement posts.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [likes, comments, reposts]
+ *             properties:
+ *               likes:
+ *                 type: integer
+ *               comments:
+ *                 type: integer
+ *               reposts:
+ *                 type: integer
+ *               impressions:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Performance data saved
+ *       404:
+ *         description: Draft not found or not published
+ */
+
+const performanceSchema = z.object({
+  likes: z.number().int().min(0),
+  comments: z.number().int().min(0),
+  reposts: z.number().int().min(0),
+  impressions: z.number().int().min(0).optional(),
+});
+
+router.post(
+  "/:id/performance",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as { id: string };
+
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        res.status(400).json({ error: "Invalid draft ID" });
+        return;
+      }
+
+      const body = performanceSchema.parse(req.body);
+      const userId = new mongoose.Types.ObjectId(req.userId!);
+
+      const draft = await PostDraft.findOne({ _id: id, userId });
+
+      if (!draft) {
+        res.status(404).json({ error: "Draft not found." });
+        return;
+      }
+
+      if (draft.status !== "published") {
+        res.status(400).json({ error: "Performance data can only be reported for published drafts." });
+        return;
+      }
+
+      draft.performanceData = {
+        likes: body.likes,
+        comments: body.comments,
+        reposts: body.reposts,
+        impressions: body.impressions,
+        reportedAt: new Date(),
+      };
+
+      await draft.save();
+
+      res.json({ message: "Performance data saved", performanceData: draft.performanceData });
     } catch (err) {
       next(err);
     }

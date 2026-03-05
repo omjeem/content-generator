@@ -97,29 +97,34 @@ export async function aggregateAndUpdatePersona(userId: string): Promise<{
   let ratingCount = 0;
   const now = Date.now();
 
+  let implicitSignalCount = 0;
+
   for (const fb of feedbacks) {
     const topic = fb.suggestionSnapshot?.topic;
     const format = fb.suggestionSnapshot?.format;
-
-    // Base rating weight
-    const ratingWeight = fb.rating
-      ? (SIGNAL_WEIGHTS[fb.rating as keyof typeof SIGNAL_WEIGHTS] ?? 0)
-      : 0;
-
-    // #15: Action weight multiplier
-    const actionMultiplier = ACTION_MULTIPLIER[fb.action] ?? 1.0;
 
     // #16: Recency decay — exponential decay with 14-day half-life
     const ageMs = now - new Date(fb.createdAt).getTime();
     const ageDays = ageMs / (24 * 60 * 60 * 1000);
     const recencyMultiplier = Math.pow(0.5, ageDays / DECAY_HALF_LIFE_DAYS);
 
-    // Combined weight
+    // Phase 4 #38: Handle implicit signals with 0.5× multiplier
+    const isImplicit = (fb as { isImplicit?: boolean }).isImplicit === true;
+    const implicitWeightVal = (fb as { implicitWeight?: number }).implicitWeight;
+
     let weight: number;
-    if (fb.rating) {
+    if (isImplicit && typeof implicitWeightVal === "number") {
+      // Implicit signal — use stored weight with 0.5× multiplier (never overrides explicit)
+      weight = implicitWeightVal * 0.5 * recencyMultiplier;
+      implicitSignalCount++;
+    } else if (fb.rating) {
+      // Explicit feedback with rating
+      const ratingWeight = SIGNAL_WEIGHTS[fb.rating as keyof typeof SIGNAL_WEIGHTS] ?? 0;
+      const actionMultiplier = ACTION_MULTIPLIER[fb.action ?? "dismissed"] ?? 1.0;
       weight = ratingWeight * actionMultiplier * recencyMultiplier;
     } else {
-      // #15: Implicit action signal when no rating is given
+      // #15: Implicit action signal when no rating is given (legacy behavior)
+      const actionMultiplier = ACTION_MULTIPLIER[fb.action ?? "dismissed"] ?? 1.0;
       const implicitSignal =
         fb.action === "published"
           ? 1.5
@@ -129,6 +134,7 @@ export async function aggregateAndUpdatePersona(userId: string): Promise<{
               ? -0.5
               : 0;
       weight = implicitSignal * recencyMultiplier;
+      void actionMultiplier; // used above via legacy path
     }
 
     if (topic) {
@@ -215,6 +221,7 @@ export async function aggregateAndUpdatePersona(userId: string): Promise<{
     "feedbackProfile.formatPreferences": formatPreferences,
     "feedbackProfile.averageRating": averageRating,
     "feedbackProfile.totalFeedbackCount": feedbacks.length,
+    "feedbackProfile.implicitSignalCount": implicitSignalCount,
     "feedbackProfile.lastFeedbackAt": new Date(),
     lastLearningUpdate: new Date(),
   };

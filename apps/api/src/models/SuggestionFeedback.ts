@@ -23,11 +23,16 @@ export interface ISuggestionFeedbackDocument extends Document {
 
   // Feedback signals
   rating?: FeedbackRating; // explicit quality signal
-  action: FeedbackAction; // what the user did with it
+  action?: FeedbackAction; // what the user did with it
   feedbackText?: string; // optional free-text
 
   // Parsed signals (extracted from feedbackText by feedbackProcessor)
   parsedSignals?: IParsedFeedbackSignals;
+
+  // Phase 4 #36: Implicit signal fields
+  isImplicit?: boolean;
+  implicitType?: string; // hook_copied, brief_copied, write_clicked, etc.
+  implicitWeight?: number; // equivalent feedback weight (0.5× multiplier applied during learning)
 
   // Snapshot of the suggestion for historical reference
   suggestionSnapshot: {
@@ -67,7 +72,6 @@ const suggestionFeedbackSchema = new Schema<ISuggestionFeedbackDocument>(
     action: {
       type: String,
       enum: ["saved", "draft", "published", "dismissed"],
-      required: true,
     },
     feedbackText: {
       type: String,
@@ -76,6 +80,10 @@ const suggestionFeedbackSchema = new Schema<ISuggestionFeedbackDocument>(
     parsedSignals: {
       type: Schema.Types.Mixed,
     },
+    // Phase 4 #36: Implicit signal fields
+    isImplicit: { type: Boolean, default: false },
+    implicitType: { type: String },
+    implicitWeight: { type: Number },
     suggestionSnapshot: {
       topic: { type: String, required: true },
       angle: { type: String, required: true },
@@ -88,9 +96,10 @@ const suggestionFeedbackSchema = new Schema<ISuggestionFeedbackDocument>(
 
 // Indexes
 suggestionFeedbackSchema.index({ userId: 1, createdAt: -1 });
-// Unique: one feedback record per user per suggestion in a set
+// Unique: one feedback record per user per suggestion per type
+// Phase 4 #36: Added implicitType to allow both explicit + multiple implicit records
 suggestionFeedbackSchema.index(
-  { userId: 1, suggestionSetId: 1, suggestionIndex: 1 },
+  { userId: 1, suggestionSetId: 1, suggestionIndex: 1, isImplicit: 1, implicitType: 1 },
   { unique: true },
 );
 

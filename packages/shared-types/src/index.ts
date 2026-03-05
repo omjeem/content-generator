@@ -189,6 +189,33 @@ export interface ISeriesTag {
   previousPosts: string[];
 }
 
+// --- Feature: Implicit Feedback Signals (Phase 4 #36-#38) ---
+
+export type ImplicitSignalType =
+  | "hook_copied"
+  | "brief_copied"
+  | "write_clicked"
+  | "time_spent"
+  | "skipped"
+  | "regenerated";
+
+export interface IImplicitSignal {
+  type: ImplicitSignalType;
+  suggestionSetId: string;
+  suggestionIndex: number;
+  metadata?: { timeSpentMs?: number };
+}
+
+// --- Feature: Published Post Performance (Phase 4 #41-#42) ---
+
+export interface IPerformanceData {
+  likes: number;
+  comments: number;
+  reposts: number;
+  impressions?: number;
+  reportedAt: string;
+}
+
 export interface ISuggestion {
   topic: string;
   angle: string;
@@ -588,6 +615,8 @@ export interface IPostDraft {
   charCount: number;
   chatSessionId?: string;
   publishedAt?: string;
+  // Phase 4 #41: Post performance data (user-reported)
+  performanceData?: IPerformanceData;
   createdAt: string;
   updatedAt: string;
 }

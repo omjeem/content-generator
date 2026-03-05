@@ -8,6 +8,11 @@ import { cn } from "@/lib/utils";
 import type { ISuggestion } from "@repo/shared-types";
 import { feedbackApi, draftsApi, ApiError } from "@/lib/api";
 import type { FeedbackRating, FeedbackAction } from "@/lib/api";
+import {
+  trackHookCopied,
+  trackBriefCopied,
+  trackWriteClicked,
+} from "@/lib/implicitTracking";
 
 interface SuggestionCardProps {
   suggestion: ISuggestion;
@@ -83,6 +88,8 @@ export function SuggestionCard({
       await navigator.clipboard.writeText(suggestion.hook);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      // Phase 4 #37: Track implicit signal
+      if (suggestionSetId) trackHookCopied(suggestionSetId, index);
     } catch {
       // clipboard not available
     }
@@ -119,6 +126,8 @@ export function SuggestionCard({
       await navigator.clipboard.writeText(lines.join("\n"));
       setBriefCopied(true);
       setTimeout(() => setBriefCopied(false), 2000);
+      // Phase 4 #37: Track implicit signal
+      if (suggestionSetId) trackBriefCopied(suggestionSetId, index);
     } catch {
       // clipboard not available
     }
@@ -130,6 +139,9 @@ export function SuggestionCard({
     setDraftError(null);
 
     try {
+      // Phase 4 #37: Track implicit signal — write_clicked
+      if (suggestionSetId) trackWriteClicked(suggestionSetId, index);
+
       const res = await draftsApi.create({
         title: suggestion.topic,
         platform: suggestion.platform === "twitter" ? "twitter" : "linkedin",

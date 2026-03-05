@@ -27,6 +27,7 @@ interface PostListItemProps {
   draft: IPostDraft;
   onStatusChange: (id: string, newStatus: DraftStatus) => void;
   onDelete: (id: string) => void;
+  onPerformanceReported?: (id: string) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -68,11 +69,20 @@ function getStatusLabel(status: DraftStatus): string {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function PostListItem({ draft, onStatusChange, onDelete }: PostListItemProps) {
+export function PostListItem({ draft, onStatusChange, onDelete, onPerformanceReported }: PostListItemProps) {
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null); // which action is in flight
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Phase 4 #42: Performance reporting state
+  const [perfOpen, setPerfOpen] = useState(false);
+  const [perfLikes, setPerfLikes] = useState("");
+  const [perfComments, setPerfComments] = useState("");
+  const [perfReposts, setPerfReposts] = useState("");
+  const [perfImpressions, setPerfImpressions] = useState("");
+  const [perfSubmitting, setPerfSubmitting] = useState(false);
+  const [perfSubmitted, setPerfSubmitted] = useState(!!draft.performanceData);
 
   // Display title: prefer explicit title, else first line of content
   const displayTitle =
@@ -145,6 +155,27 @@ export function PostListItem({ draft, onStatusChange, onDelete }: PostListItemPr
       setLoading(null);
     }
   }, [draft._id, onDelete]);
+
+  // Phase 4 #42: Report post performance
+  const handleReportPerformance = useCallback(async () => {
+    setPerfSubmitting(true);
+    setError(null);
+    try {
+      await draftsApi.reportPerformance(draft._id, {
+        likes: parseInt(perfLikes) || 0,
+        comments: parseInt(perfComments) || 0,
+        reposts: parseInt(perfReposts) || 0,
+        impressions: perfImpressions ? parseInt(perfImpressions) : undefined,
+      });
+      setPerfSubmitted(true);
+      setPerfOpen(false);
+      onPerformanceReported?.(draft._id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save performance data.");
+    } finally {
+      setPerfSubmitting(false);
+    }
+  }, [draft._id, perfLikes, perfComments, perfReposts, perfImpressions, onPerformanceReported]);
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -288,10 +319,113 @@ export function PostListItem({ draft, onStatusChange, onDelete }: PostListItemPr
               >
                 {copied ? "✓ Copied" : "📋 Copy"}
               </Button>
+              {/* Phase 4 #42: Report performance button */}
+              {!perfSubmitted && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7 px-2.5 border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={() => setPerfOpen((o) => !o)}
+                >
+                  📊 Report
+                </Button>
+              )}
+              {perfSubmitted && (
+                <span className="text-[11px] text-green-600 font-medium flex items-center gap-1">
+                  ✓ Reported
+                </span>
+              )}
             </>
           )}
         </div>
       </div>
+
+      {/* Phase 4 #42: Performance reporting form for published drafts */}
+      {draft.status === "published" && perfOpen && !perfSubmitted && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <p className="text-xs font-medium text-gray-600 mb-2">
+            How did this post perform? (helps improve future suggestions)
+          </p>
+          <div className="flex items-end gap-3 flex-wrap">
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Likes</label>
+              <input
+                type="number"
+                min="0"
+                value={perfLikes}
+                onChange={(e) => setPerfLikes(e.target.value)}
+                className="w-20 h-7 text-xs rounded border border-gray-200 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Comments</label>
+              <input
+                type="number"
+                min="0"
+                value={perfComments}
+                onChange={(e) => setPerfComments(e.target.value)}
+                className="w-20 h-7 text-xs rounded border border-gray-200 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Reposts</label>
+              <input
+                type="number"
+                min="0"
+                value={perfReposts}
+                onChange={(e) => setPerfReposts(e.target.value)}
+                className="w-20 h-7 text-xs rounded border border-gray-200 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-gray-400 block mb-0.5">Impressions (opt)</label>
+              <input
+                type="number"
+                min="0"
+                value={perfImpressions}
+                onChange={(e) => setPerfImpressions(e.target.value)}
+                className="w-24 h-7 text-xs rounded border border-gray-200 px-2 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                placeholder="optional"
+              />
+            </div>
+            <Button
+              size="sm"
+              className="text-xs h-7 px-3"
+              onClick={() => void handleReportPerformance()}
+              disabled={perfSubmitting}
+            >
+              {perfSubmitting ? "Saving…" : "Save"}
+            </Button>
+            <button
+              onClick={() => setPerfOpen(false)}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Performance data display for already-reported drafts */}
+      {draft.status === "published" && draft.performanceData && (
+        <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
+          <span>📊</span>
+          <span>{draft.performanceData.likes} likes</span>
+          <span>·</span>
+          <span>{draft.performanceData.comments} comments</span>
+          <span>·</span>
+          <span>{draft.performanceData.reposts} reposts</span>
+          {draft.performanceData.impressions !== undefined && (
+            <>
+              <span>·</span>
+              <span>{draft.performanceData.impressions.toLocaleString()} impressions</span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

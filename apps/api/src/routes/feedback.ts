@@ -201,13 +201,15 @@ router.get(
         number,
         {
           rating?: string;
-          action: string;
+          action?: string;
           feedbackText?: string;
           feedbackId: string;
         }
       > = {};
 
       for (const fb of feedbacks) {
+        // Skip implicit signals in the per-set feedback lookup
+        if (fb.isImplicit) continue;
         feedbackMap[fb.suggestionIndex] = {
           feedbackId: String(fb._id),
           rating: fb.rating,
@@ -338,6 +340,136 @@ router.get(
         ratingDistribution: ratingCounts,
         averageRating,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/feedback/implicit — Phase 4 #36 ─────────────────────────────────
+/**
+ * @swagger
+ * /api/feedback/implicit:
+ *   post:
+ *     tags: [Feedback]
+ *     summary: Submit batched implicit feedback signals
+ *     description: |
+ *       Accepts an array of implicit user actions (hook_copied, brief_copied,
+ *       write_clicked, time_spent, skipped, regenerated).
+ *       Converted to equivalent feedback weights and processed with 0.5× multiplier
+ *       vs explicit feedback. Fire-and-forget processing.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [signals]
+ *             properties:
+ *               signals:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   required: [type, suggestionSetId, suggestionIndex]
+ *                   properties:
+ *                     type:
+ *                       type: string
+ *                       enum: [hook_copied, brief_copied, write_clicked, time_spent, skipped, regenerated]
+ *                     suggestionSetId:
+ *                       type: string
+ *                     suggestionIndex:
+ *                       type: integer
+ *                     metadata:
+ *                       type: object
+ *                       properties:
+ *                         timeSpentMs:
+ *                           type: number
+ *     responses:
+ *       200:
+ *         description: Signals accepted
+ *       400:
+ *         description: Invalid input
+ */
+
+const implicitSignalSchema = z.object({
+  type: z.enum(["hook_copied", "brief_copied", "write_clicked", "time_spent", "skipped", "regenerated"]),
+  suggestionSetId: z.string().min(1),
+  suggestionIndex: z.number().int().min(0),
+  metadata: z.object({ timeSpentMs: z.number().optional() }).optional(),
+});
+
+const implicitBatchSchema = z.object({
+  signals: z.array(implicitSignalSchema).min(1).max(50),
+});
+
+// Implicit signal → equivalent feedback weight (#36)
+const IMPLICIT_WEIGHTS: Record<string, number> = {
+  hook_copied: 0.75,
+  brief_copied: 1.0,
+  write_clicked: 1.5,
+  time_spent: 0.3, // only if >30s
+  skipped: -0.1,
+  regenerated: -0.2,
+};
+
+router.post(
+  "/feedback/implicit",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = implicitBatchSchema.parse(req.body);
+      const userId = new mongoose.Types.ObjectId(req.userId!);
+
+      // Fire-and-forget: convert signals to lightweight feedback records
+      fireAndForget(async () => {
+        for (const signal of body.signals) {
+          // Skip time_spent under 30s — too short to be meaningful
+          if (signal.type === "time_spent" && (signal.metadata?.timeSpentMs ?? 0) < 30_000) {
+            continue;
+          }
+
+          if (!mongoose.Types.ObjectId.isValid(signal.suggestionSetId)) continue;
+
+          // Look up suggestion snapshot for topic/format tracking
+          const set = await ContentSuggestion.findById(signal.suggestionSetId)
+            .select("suggestions")
+            .lean();
+          if (!set) continue;
+
+          const suggestion = set.suggestions[signal.suggestionIndex];
+          if (!suggestion) continue;
+
+          const weight = IMPLICIT_WEIGHTS[signal.type] ?? 0;
+          if (weight === 0) continue;
+
+          // Upsert as a lightweight feedback record with implicitWeight
+          await SuggestionFeedback.findOneAndUpdate(
+            {
+              userId,
+              suggestionSetId: new mongoose.Types.ObjectId(signal.suggestionSetId),
+              suggestionIndex: signal.suggestionIndex,
+              isImplicit: true,
+              implicitType: signal.type,
+            },
+            {
+              $set: {
+                suggestionSnapshot: {
+                  topic: suggestion.topic,
+                  angle: suggestion.angle,
+                  format: suggestion.format,
+                  hook: suggestion.hook,
+                },
+                implicitWeight: weight,
+              },
+            },
+            { upsert: true },
+          );
+        }
+      }, "implicit-signal-processing");
+
+      res.json({ accepted: body.signals.length });
     } catch (err) {
       next(err);
     }
