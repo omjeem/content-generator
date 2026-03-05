@@ -6,6 +6,7 @@
 **Phase A**: COMPLETE ✅
 **Phase B**: COMPLETE ✅
 **Phase C**: COMPLETE ✅
+**Phase D**: COMPLETE ✅
 
 ---
 
@@ -96,27 +97,27 @@ If context runs out, come back here and:
 
 ---
 
-## Phase D — Smarter Content Generation (Section 3)
+## Phase D — Smarter Content Generation (Section 3) ✅ COMPLETE
 
 *Priority: HIGH — directly improves suggestion quality. Depends on Phase C (#17-18 Writing DNA, #22-23 Confidence Score).*
 
-- [ ] **#27 — Post Format Intelligence: Schema + Learning** (`services/personaLearning.ts` MODIFY): Update `aggregateAndUpdatePersona()` to compute format preference scores as proper 0-1 values per format type. Use hardened schema from #4. Calculate: `formatScore[format] = positiveCount / totalFormatFeedback`. Only update formats with ≥2 data points. (§3.1)
+- [x] **#27 — Post Format Intelligence: Schema + Learning** (`services/personaLearning.ts` MODIFY). Rewrote format scoring to use proper 0-1 values: `positiveCount / totalFeedbackForThatFormat`. Tracks per-format `formatPositive` and `formatTotal` maps. Only includes formats with ≥2 data points (filters noise from single feedback). ✅ DONE
 
-- [ ] **#28 — Post Format Intelligence: Generation Prompt** (`agents/contentGenerator.ts` MODIFY): Add `buildFormatStrategySection(persona)` — reads `feedbackProfile.formatPreferences`. If format has score > 0.6 → "Prioritize: {format} ({score×100}% positive)". If score < 0.2 → "Use sparingly: {format}". If insufficient data → "Experiment with: {format}". Inject after feedback section. (§3.1)
+- [x] **#28 — Post Format Intelligence: Generation Prompt** (`agents/contentGenerator.ts` MODIFY). Added `buildFormatStrategySection(persona)`. Reads `feedbackProfile.formatPreferences`: score > 0.6 → "Prioritise" (≥50% of ideas), score < 0.2 → "Use sparingly" (max 1), unknown → "Experiment with" (1-2 ideas). Injected after confidence directive. ✅ DONE
 
-- [ ] **#29 — Post Format Intelligence: Frontend Filter** (`components/suggestions/GenerateOptionsPanel.tsx` MODIFY): Add "Preferred formats" multi-select dropdown to options panel. Options: carousel, text-post, poll, video-script, list. Pass as `context.preferredFormats[]`. Content generator uses as hard constraint if provided (overrides learned preferences). (§3.1)
+- [x] **#29 — Post Format Intelligence: Frontend Filter** (`components/suggestions/GenerateOptionsPanel.tsx` MODIFY). Added `FormatFilter` multi-select component with 5 format options (carousel, text-post, poll, video-script, list). Togglable pill buttons. Passes as `context.preferredFormats[]`. Added to mode selection, profile mode, and topic-focus mode views. Added `preferredFormats` to `IGenerateContextOptions` in shared types. ✅ DONE
 
-- [ ] **#30 — Scheduling Hints: Domain Lookup Data** (`services/schedulingHints.ts` CREATE): Create `OPTIMAL_POSTING_TIMES` record mapping each `DomainCategory` to best days and time ranges (from industry research). Function `getSchedulingHint(domain, timezone?, engagementData?)` returns `{ bestDay, bestTimeRange, reasoning, confidence: 'domain-average' | 'personalized' }`. (§3.2)
+- [x] **#30 — Scheduling Hints: Domain Lookup Data** (`services/schedulingHints.ts` CREATE). `OPTIMAL_POSTING_TIMES` record mapping all 14 `DomainCategory` values to best day + time range + reasoning. `getSchedulingHint(domain)` returns `ISchedulingHint` with `confidence: 'domain-average'`. ✅ DONE
 
-- [ ] **#31 — Scheduling Hints: Integration** (`agents/contentGenerator.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `schedulingHint` optional field to suggestion item schema. Add `ISchedulingHint` to shared types. Content generator calls `getSchedulingHint()` and attaches to each suggestion. (§3.2)
+- [x] **#31 — Scheduling Hints: Integration** (`agents/contentGenerator.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY, `agents/mastra.ts` MODIFY). Added `ISchedulingHint` to shared types + `schedulingHint` optional field to `ISuggestion` + Mongoose sub-schema on `ISuggestionItem`. Pipeline Step 3.5 calls `getSchedulingHint(domain)`. Passed to `generateContentIdeas()`. `postProcessIdeas()` attaches hint to every suggestion. Persisted in ContentSuggestion. ✅ DONE
 
-- [ ] **#32 — Scheduling Hints: Frontend Display** (`components/suggestions/SuggestionCard.tsx` MODIFY): Display scheduling hint as subtle chip below the suggestion hook: "Best posted: Tuesday, 8-10 AM". Only show if `schedulingHint` exists. (§3.2)
+- [x] **#32 — Scheduling Hints: Frontend Display** (`components/suggestions/SuggestionCard.tsx` MODIFY). Shows amber chip below Topic + Angle: "📅 Best posted: {day}, {timeRange}". Only rendered when `schedulingHint` exists. ✅ DONE
 
-- [ ] **#33 — Content Series Detection** (`services/contentContinuity.ts` CREATE): Scan recent published drafts for topic clusters. If 2+ posts share topic keywords → flag as potential series. Function `detectContentSeries(userId)` returns `{ seriesName, postCount, previousTitles }[]`. Uses simple keyword overlap (no LLM). (§3.3)
+- [x] **#33 — Content Series Detection** (`services/contentContinuity.ts` CREATE). Scans up to 30 recent published/ready drafts. Extracts keywords from title + topic. Groups by greedy clustering with ≥50% keyword overlap. Derives series name from top-3 common keywords. Returns `IContentSeries[]` with 2+ post clusters only. ✅ DONE
 
-- [ ] **#34 — Content Series in Generation** (`agents/contentGenerator.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `seriesTag` optional field to suggestion item: `{ name, sequenceNumber, previousPosts }`. Add `ISeriesTag` to shared types. Content generator receives series data and adds directive: "Suggest 1-2 follow-up ideas continuing the '{seriesName}' series." (§3.3)
+- [x] **#34 — Content Series in Generation** (`agents/contentGenerator.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY, `agents/mastra.ts` MODIFY). Added `ISeriesTag` to shared types + `seriesTag` optional field on `ISuggestion` + Mongoose sub-schema. Pipeline Step 3.5 calls `detectContentSeries(userId)`. Content generator receives series data and adds directive: "Suggest 1-2 follow-up ideas". `postProcessIdeas()` matches ideas to series by keyword overlap and attaches `seriesTag`. ✅ DONE
 
-- [ ] **#35 — Content Series: Frontend Display** (`components/suggestions/SuggestionCard.tsx` MODIFY): Show series badge on SuggestionCard: "Part {N} of '{seriesName}'". Only shown when `seriesTag` exists. (§3.3)
+- [x] **#35 — Content Series: Frontend Display** (`components/suggestions/SuggestionCard.tsx` MODIFY). Shows purple chip: "🔗 Part {N} of '{seriesName}'". Only rendered when `seriesTag` exists. ✅ DONE
 
 ---
 

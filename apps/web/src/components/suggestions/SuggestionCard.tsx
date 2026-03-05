@@ -225,6 +225,28 @@ export function SuggestionCard({
           </p>
         </div>
 
+        {/* Scheduling Hint chip — Phase 4 #32 */}
+        {suggestion.schedulingHint && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-0.5 text-[11px] font-medium">
+              <span>📅</span>
+              Best posted: {suggestion.schedulingHint.bestDay},{" "}
+              {suggestion.schedulingHint.bestTimeRange}
+            </span>
+          </div>
+        )}
+
+        {/* Content Series badge — Phase 4 #35 */}
+        {suggestion.seriesTag && (
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-0.5 text-[11px] font-medium">
+              <span>🔗</span>
+              Part {suggestion.seriesTag.sequenceNumber} of &ldquo;
+              {suggestion.seriesTag.name}&rdquo;
+            </span>
+          </div>
+        )}
+
         {/* Expandable "Why it fits" */}
         <button
           onClick={() => setExpanded((e) => !e)}

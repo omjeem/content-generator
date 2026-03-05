@@ -90,7 +90,9 @@ export async function aggregateAndUpdatePersona(userId: string): Promise<{
 
   // ── 1. Topic + format scoring (#15 action weights, #16 recency decay) ─────
   const topicScores = new Map<string, number>();
-  const formatScores = new Map<string, number>();
+  // Phase 4 #27: Track per-format positive + total counts for proper 0-1 scores
+  const formatPositive = new Map<string, number>();
+  const formatTotal = new Map<string, number>();
   let ratingSum = 0;
   let ratingCount = 0;
   const now = Date.now();
@@ -133,15 +135,17 @@ export async function aggregateAndUpdatePersona(userId: string): Promise<{
       topicScores.set(topic, (topicScores.get(topic) ?? 0) + weight);
     }
 
-    // Format scoring — count positive signals (loved/good) and implicit positive actions
-    const isPositiveSignal =
-      fb.rating === "loved" ||
-      fb.rating === "good" ||
-      (!fb.rating && (fb.action === "published" || fb.action === "draft"));
-
-    if (format && isPositiveSignal) {
-      const fmtWeight = Math.abs(weight); // use absolute value for format distribution
-      formatScores.set(format, (formatScores.get(format) ?? 0) + fmtWeight);
+    // Phase 4 #27: Format scoring — proper positiveCount / totalCount per format
+    // Track every feedback with a known format toward total, and positive toward positive
+    if (format) {
+      formatTotal.set(format, (formatTotal.get(format) ?? 0) + 1);
+      const isPositiveSignal =
+        fb.rating === "loved" ||
+        fb.rating === "good" ||
+        (!fb.rating && (fb.action === "published" || fb.action === "draft"));
+      if (isPositiveSignal) {
+        formatPositive.set(format, (formatPositive.get(format) ?? 0) + 1);
+      }
     }
 
     if (fb.rating) {
@@ -165,13 +169,14 @@ export async function aggregateAndUpdatePersona(userId: string): Promise<{
   preferredTopics.sort((a, b) => (topicScores.get(b) ?? 0) - (topicScores.get(a) ?? 0));
   avoidTopics.sort((a, b) => (topicScores.get(a) ?? 0) - (topicScores.get(b) ?? 0));
 
-  // ── 3. Normalise format preferences ───────────────────────────────────────
-  const totalFormatSignal = [...formatScores.values()].reduce((a, b) => a + b, 0);
+  // ── 3. Normalise format preferences (#27: proper 0-1 scores) ──────────────
+  // Each format gets: positiveCount / totalFeedbackForThatFormat (0-1 range)
+  // Only include formats with ≥2 data points to avoid noise from single feedback
   const formatPreferences: Record<string, number> = {};
-  if (totalFormatSignal > 0) {
-    for (const [fmt, score] of formatScores.entries()) {
-      formatPreferences[fmt] = Math.round((score / totalFormatSignal) * 100) / 100;
-    }
+  for (const [fmt, total] of formatTotal.entries()) {
+    if (total < 2) continue; // #27: require ≥2 data points
+    const positive = formatPositive.get(fmt) ?? 0;
+    formatPreferences[fmt] = Math.round((positive / total) * 100) / 100;
   }
 
   const averageRating =

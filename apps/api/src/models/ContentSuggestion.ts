@@ -18,6 +18,10 @@ export interface ISuggestionItem {
   platform: SuggestionPlatform;
   /** Individual tweets for thread format — Twitter only (#33) */
   threadContent?: { tweetIndex: number; content: string; charCount: number }[];
+  /** Scheduling hint for optimal posting time (Phase 4 #31) */
+  schedulingHint?: { bestDay: string; bestTimeRange: string; reasoning: string; confidence: string };
+  /** Content series tag (Phase 4 #34) */
+  seriesTag?: { name: string; sequenceNumber: number; previousPosts: string[] };
 }
 
 /** Performance + cost metadata captured during runContentPipeline() (#54) */
@@ -81,6 +85,31 @@ const suggestionItemSchema = new Schema<ISuggestionItem>(
       ],
       default: [],
     },
+    // Scheduling hint — optimal posting time (Phase 4 #31)
+    schedulingHint: {
+      type: new Schema(
+        {
+          bestDay: { type: String },
+          bestTimeRange: { type: String },
+          reasoning: { type: String },
+          confidence: { type: String, enum: ["domain-average", "personalized"] },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    // Content series tag (Phase 4 #34)
+    seriesTag: {
+      type: new Schema(
+        {
+          name: { type: String },
+          sequenceNumber: { type: Number },
+          previousPosts: { type: [String], default: [] },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
   },
   { _id: false },
 );
@@ -129,6 +158,7 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
           chatRefinementContext: { type: String },
           platforms: { type: [String], default: undefined },
           selectedTrendIds: { type: [String], default: undefined },
+          preferredFormats: { type: [String], default: undefined },
         },
         { _id: false, strict: false }, // strict:false for backward compat
       ),

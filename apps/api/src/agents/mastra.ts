@@ -18,6 +18,9 @@ import { ContentSuggestion } from "../models/ContentSuggestion";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
 import { extractWritingDNA } from "../services/writingDNA";
 import { computeConfidenceScore } from "../services/personaConfidence";
+import { getSchedulingHint } from "../services/schedulingHints";
+import { detectContentSeries } from "../services/contentContinuity";
+import { classifyDomain } from "../services/trends";
 import { fireAndForget } from "../utils/fireAndForget";
 import { CircuitBreaker } from "../utils/circuitBreaker";
 import { PIPELINE } from "../config/constants";
@@ -307,6 +310,21 @@ export async function runContentPipeline(
     trendIsLive = false;
   }
 
+  // ── STEP 3.5: Scheduling Hint + Content Series (Phase 4 #31, #34) ───────────
+  // Both are fast, deterministic (no LLM) — scheduling hint is a lookup,
+  // series detection does 1 DB query. Run in parallel for max speed.
+  const domain = classifyDomain(
+    persona.industry ?? "business",
+    persona.topics.length ? persona.topics : persona.contentPillars,
+  );
+  const schedulingHint = getSchedulingHint(domain);
+  let contentSeries: Awaited<ReturnType<typeof detectContentSeries>> = [];
+  try {
+    contentSeries = await detectContentSeries(input.userId);
+  } catch {
+    // Non-fatal — proceed without series data
+  }
+
   // ── STEP 4: Content Generation (Agent 4) ─────────────────────────────────────
   let contentIdeas;
   let contentUsage = { inputTokens: 0, outputTokens: 0 };
@@ -320,6 +338,8 @@ export async function runContentPipeline(
         trends,
         context: input.context,
         platforms: input.platforms,
+        schedulingHint,
+        contentSeries,
       }),
       PIPELINE.STEP_TIMEOUTS.content,
       "Content generation",
@@ -371,18 +391,25 @@ export async function runContentPipeline(
       trendSource: trendIsLive ? "live" : "fallback",
       modelId: "gemini-2.5-flash",
     },
-    suggestions: contentIdeas.ideas.map((idea) => ({
-      topic: idea.topic,
-      angle: idea.angle,
-      format: idea.format,
-      hook: idea.hook,
-      whyItFits: idea.whyItFits,
-      seoKeywords: idea.seoKeywords ?? [],
-      clickbaitHooks: idea.clickbaitHooks ?? [],
-      postPointers: idea.postPointers ?? [],
-      callToAction: idea.callToAction ?? "",
-      platform: idea.platform ?? "linkedin",
-    })),
+    suggestions: contentIdeas.ideas.map((idea) => {
+      const ideaObj = idea as Record<string, unknown>;
+      return {
+        topic: idea.topic,
+        angle: idea.angle,
+        format: idea.format,
+        hook: idea.hook,
+        whyItFits: idea.whyItFits,
+        seoKeywords: idea.seoKeywords ?? [],
+        clickbaitHooks: idea.clickbaitHooks ?? [],
+        postPointers: idea.postPointers ?? [],
+        callToAction: idea.callToAction ?? "",
+        platform: idea.platform ?? "linkedin",
+        // Phase 4 #31: Scheduling hint
+        ...(ideaObj.schedulingHint ? { schedulingHint: ideaObj.schedulingHint } : {}),
+        // Phase 4 #34: Series tag
+        ...(ideaObj.seriesTag ? { seriesTag: ideaObj.seriesTag } : {}),
+      };
+    }),
   });
 
   // Track content generation token usage — fire-and-forget (after save so we have suggestionId)

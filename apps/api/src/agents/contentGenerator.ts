@@ -3,10 +3,11 @@ import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import type { IUserPersonaDocument } from "../models/UserPersona";
 import type { TrendResult } from "./trendResearch";
-import type { IGenerateContextOptions } from "@repo/shared-types";
+import type { IGenerateContextOptions, ISchedulingHint, ISeriesTag } from "@repo/shared-types";
 import type { TrendResearchResult } from "./trendResearch";
 import { extractJSON } from "../utils/extractJSON";
 import { getPlatformConfig } from "../config/platforms";
+import type { IContentSeries } from "../services/contentContinuity";
 
 // ── Output schema ─────────────────────────────────────────────────────────────
 
@@ -267,6 +268,53 @@ function buildWritingDNASection(persona: IUserPersonaDocument): string {
   return lines.join("\n");
 }
 
+// ── Format strategy section (Phase 4 #28) ──────────────────────────────────
+// Reads feedbackProfile.formatPreferences (proper 0-1 scores from #27).
+// Categorises each format as "prioritise", "use sparingly", or "experiment".
+
+function buildFormatStrategySection(persona: IUserPersonaDocument): string {
+  const fp = persona.feedbackProfile;
+  if (!fp || !fp.formatPreferences || Object.keys(fp.formatPreferences).length === 0) return "";
+
+  const lines: string[] = ["\n## FORMAT STRATEGY (based on feedback data)"];
+  const prioritise: string[] = [];
+  const sparingly: string[] = [];
+  const experiment: string[] = [];
+
+  for (const [fmt, score] of Object.entries(fp.formatPreferences)) {
+    if (typeof score !== "number") continue;
+    if (score > 0.6) {
+      prioritise.push(`${fmt} (${Math.round(score * 100)}% positive)`);
+    } else if (score < 0.2) {
+      sparingly.push(fmt);
+    }
+  }
+
+  // Formats not in feedback data → experiment
+  const knownFormats = new Set(Object.keys(fp.formatPreferences));
+  const allFormats = ["carousel", "text-post", "poll", "video-script", "list"];
+  for (const fmt of allFormats) {
+    if (!knownFormats.has(fmt)) {
+      experiment.push(fmt);
+    }
+  }
+
+  if (prioritise.length > 0) {
+    lines.push(`Prioritise: ${prioritise.join(", ")}`);
+    lines.push("→ RULE: At least 50% of ideas should use these high-performing formats.");
+  }
+  if (sparingly.length > 0) {
+    lines.push(`Use sparingly: ${sparingly.join(", ")}`);
+    lines.push("→ These formats received poor feedback. Include at most 1.");
+  }
+  if (experiment.length > 0) {
+    lines.push(`Experiment with: ${experiment.join(", ")}`);
+    lines.push("→ No feedback data yet. Include 1-2 ideas in these formats to test.");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Confidence score directive (Phase 4 #26) ──────────────────────────────
 // Adjusts generation strategy based on how well we know the creator.
 
@@ -342,8 +390,12 @@ export async function generateContentIdeas(input: {
   trends: TrendResult | TrendResearchResult["result"];
   context?: IGenerateContextOptions;
   platforms?: string[];
+  /** Scheduling hint to attach to every suggestion (Phase 4 #31) */
+  schedulingHint?: ISchedulingHint;
+  /** Detected content series for continuation prompts (Phase 4 #34) */
+  contentSeries?: IContentSeries[];
 }): Promise<ContentGenerationResult> {
-  const { persona, trends, context, platforms } = input;
+  const { persona, trends, context, platforms, schedulingHint, contentSeries } = input;
 
   const trendsList = trends.trends.length
     ? trends.trends
@@ -372,6 +424,25 @@ export async function generateContentIdeas(input: {
   // ── Confidence directive (Phase 4 #26) ────────────────────────────────
   const confidenceDirective = buildConfidenceDirective(persona);
 
+  // ── Format strategy section (Phase 4 #28) ─────────────────────────────
+  const formatStrategySection = buildFormatStrategySection(persona);
+
+  // ── Preferred formats hard constraint (Phase 4 #29) ───────────────────
+  const preferredFormats = context?.preferredFormats;
+  const formatConstraint = preferredFormats?.length
+    ? `\n## FORMAT CONSTRAINT (user-selected)\nONLY use these formats: ${preferredFormats.join(", ")}. Do NOT use any other format.`
+    : "";
+
+  // ── Content series directive (Phase 4 #34) ────────────────────────────
+  let seriesDirective = "";
+  if (contentSeries && contentSeries.length > 0) {
+    const seriesLines = contentSeries.map(
+      (s) => `- "${s.seriesName}" (${s.postCount} posts: ${s.previousTitles.slice(0, 3).join(", ")})`,
+    );
+    const nextPart = (contentSeries[0]?.postCount ?? 1) + 1;
+    seriesDirective = `\n## CONTENT SERIES DETECTED\nThis creator has ongoing content series:\n${seriesLines.join("\n")}\n→ Suggest 1-2 follow-up ideas continuing one of these series. Mark them as "Part ${nextPart}" continuations.`;
+  }
+
   // ── Platform requirements section (#34) ──────────────────────────────────
   // Only appended when Twitter or multi-platform is requested.
   // Passing context.platforms allows the dashboard to drive platform targeting.
@@ -399,12 +470,12 @@ ${trendAnchorDirective}
 
 ## CREATOR PROFILE (voice & style reference — NOT the topic source)
 ${personaSummary}
-${feedbackSection}${writingDNASection}${confidenceDirective}
+${feedbackSection}${writingDNASection}${confidenceDirective}${formatStrategySection}${formatConstraint}
 
 ## TRENDING TOPICS TO BASE IDEAS ON
 ${trendsList}
 ${hasTrends ? "\nEach generated idea MUST clearly connect to one of these trends. Use the creator's voice to write about THESE topics." : ""}
-${platformSection}
+${platformSection}${seriesDirective}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`;
 
@@ -453,8 +524,11 @@ Return ONLY the JSON object with the ideas array.`;
         );
       }
 
+      // ── Post-process: attach scheduling hints + series tags (#31, #34) ────
+      const enrichedIdeas = postProcessIdeas(ideas, schedulingHint, contentSeries);
+
       return {
-        ideas,
+        ideas: enrichedIdeas,
         usage: {
           inputTokens: result.usage?.inputTokens ?? 0,
           outputTokens: result.usage?.outputTokens ?? 0,
@@ -473,6 +547,63 @@ Return ONLY the JSON object with the ideas array.`;
   }
 
   throw lastError;
+}
+
+// ── Post-process: attach scheduling hints + series tags (#31, #34) ────────────
+
+function postProcessIdeas(
+  ideas: ContentIdeas,
+  schedulingHint?: ISchedulingHint,
+  contentSeries?: IContentSeries[],
+): ContentIdeas {
+  // Build a quick lookup for series matching by keyword overlap
+  const seriesKeywords = (contentSeries ?? []).map((s) => ({
+    series: s,
+    keywords: new Set(
+      s.seriesName
+        .toLowerCase()
+        .split(/[\s&]+/)
+        .filter((w) => w.length >= 3),
+    ),
+  }));
+
+  const enrichedIdeas = ideas.ideas.map((idea, idx) => {
+    const enriched = { ...idea } as Record<string, unknown>;
+
+    // Attach scheduling hint to every suggestion
+    if (schedulingHint) {
+      enriched.schedulingHint = schedulingHint;
+    }
+
+    // Match idea to a series if topics overlap
+    if (seriesKeywords.length > 0) {
+      const ideaWords = new Set(
+        idea.topic
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((w) => w.length >= 3),
+      );
+
+      for (const { series, keywords } of seriesKeywords) {
+        let overlap = 0;
+        for (const kw of keywords) {
+          if (ideaWords.has(kw)) overlap++;
+        }
+        if (overlap > 0 && overlap >= keywords.size * 0.5) {
+          enriched.seriesTag = {
+            name: series.seriesName,
+            sequenceNumber: series.postCount + 1,
+            previousPosts: series.previousTitles.slice(0, 3),
+          } satisfies ISeriesTag;
+          break;
+        }
+      }
+    }
+
+    return enriched;
+  });
+
+  return { ideas: enrichedIdeas } as ContentIdeas;
 }
 
 // ── Simplified retry prompt ────────────────────────────────────────────────────

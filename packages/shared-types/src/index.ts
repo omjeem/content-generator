@@ -172,6 +172,23 @@ export type PostFormat =
 /** Platform a suggestion or draft targets */
 export type SuggestionPlatform = "linkedin" | "twitter";
 
+// --- Feature: Scheduling Hints (Phase 4 #30-#32) ---
+
+export interface ISchedulingHint {
+  bestDay: string;
+  bestTimeRange: string;
+  reasoning: string;
+  confidence: "domain-average" | "personalized";
+}
+
+// --- Feature: Content Series Detection (Phase 4 #33-#35) ---
+
+export interface ISeriesTag {
+  name: string;
+  sequenceNumber: number;
+  previousPosts: string[];
+}
+
 export interface ISuggestion {
   topic: string;
   angle: string;
@@ -187,6 +204,10 @@ export interface ISuggestion {
   platform?: SuggestionPlatform;
   /** Individual tweets for thread format (Twitter only) */
   threadContent?: string[];
+  /** Scheduling hint for optimal posting time (Phase 4 #31) */
+  schedulingHint?: ISchedulingHint;
+  /** Content series tag — links to related previous posts (Phase 4 #34) */
+  seriesTag?: ISeriesTag;
 }
 
 export interface IContentSuggestion {
@@ -292,6 +313,8 @@ export interface IGenerateContextOptions {
   platforms?: SuggestionPlatform[];
   /** IDs of user-selected trends from the discovery cache (Phase 3 #22) */
   selectedTrendIds?: string[];
+  /** Preferred formats filter — hard constraint overriding learned preferences (Phase 4 #29) */
+  preferredFormats?: PostFormat[];
 }
 
 export interface ISuggestionsGenerateResponse {

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { suggestionsApi, ApiError } from "@/lib/api";
-import type { IGenerateContextOptions, IMessage, SuggestionPlatform } from "@repo/shared-types";
+import type { IGenerateContextOptions, IMessage, SuggestionPlatform, PostFormat } from "@repo/shared-types";
 
 type Mode = "profile" | "topic-focus" | "chat-refined";
 
@@ -64,6 +64,9 @@ export function GenerateOptionsPanel({
 
   // Platform selector state (#35)
   const [selectedPlatform, setSelectedPlatform] = useState<SuggestionPlatform | "both">("linkedin");
+
+  // Preferred formats multi-select (Phase 4 #29)
+  const [preferredFormats, setPreferredFormats] = useState<PostFormat[]>([]);
 
   // Topic focus state
   const [topicFocus, setTopicFocus] = useState("");
@@ -157,15 +160,24 @@ export function GenerateOptionsPanel({
     return [selectedPlatform];
   }
 
+  // Phase 4 #29: Toggle a format in the preferred list
+  function toggleFormat(fmt: PostFormat) {
+    setPreferredFormats((prev) =>
+      prev.includes(fmt) ? prev.filter((f) => f !== fmt) : [...prev, fmt],
+    );
+  }
+
   const handleGenerate = () => {
     const platforms = resolvePlatforms();
+    const fmts = preferredFormats.length > 0 ? preferredFormats : undefined;
     if (mode === "profile") {
-      onGenerate({ mode: "profile", platforms });
+      onGenerate({ mode: "profile", platforms, preferredFormats: fmts });
     } else if (mode === "topic-focus") {
       onGenerate({
         mode: "topic-focus",
         topicFocus: topicFocus.trim() || undefined,
         platforms,
+        preferredFormats: fmts,
       });
     } else if (mode === "chat-refined" && refinedContext) {
       onGenerate({
@@ -176,6 +188,7 @@ export function GenerateOptionsPanel({
         platformGoal:
           refinedContext.platformGoal as IGenerateContextOptions["platformGoal"],
         platforms,
+        preferredFormats: fmts,
       });
     }
   };
@@ -217,11 +230,16 @@ export function GenerateOptionsPanel({
           </div>
 
           {/* Platform selector — shared across all modes (#35) */}
-          <div className="mb-5">
+          <div className="mb-4">
             <PlatformSelector
               selected={selectedPlatform}
               onChange={setSelectedPlatform}
             />
+          </div>
+
+          {/* Format filter — Phase 4 #29 */}
+          <div className="mb-5">
+            <FormatFilter selected={preferredFormats} onToggle={toggleFormat} />
           </div>
 
           {onCancel && (
@@ -252,11 +270,14 @@ export function GenerateOptionsPanel({
             We&apos;ll use your full persona — writing style, goals, content
             pillars, and trending topics in your niche.
           </p>
-          <div className="mb-6">
+          <div className="mb-4">
             <PlatformSelector
               selected={selectedPlatform}
               onChange={setSelectedPlatform}
             />
+          </div>
+          <div className="mb-6">
+            <FormatFilter selected={preferredFormats} onToggle={toggleFormat} />
           </div>
           <div className="flex gap-3 justify-center">
             <Button variant="outline" onClick={() => setMode(null)}>
@@ -309,6 +330,7 @@ export function GenerateOptionsPanel({
               selected={selectedPlatform}
               onChange={setSelectedPlatform}
             />
+            <FormatFilter selected={preferredFormats} onToggle={toggleFormat} />
             <div className="flex gap-3 justify-center pt-2">
               <Button variant="outline" onClick={() => setMode(null)}>
                 ← Back
@@ -466,6 +488,60 @@ function PlatformSelector({
       {selected === "both" && (
         <p className="text-[10px] text-gray-500 text-center">
           ~50% LinkedIn ideas + ~50% Twitter/X ideas
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Format filter (Phase 4 #29) ───────────────────────────────────────────────
+
+const FORMAT_OPTIONS: { value: PostFormat; label: string; emoji: string }[] = [
+  { value: "carousel", label: "Carousel", emoji: "🎠" },
+  { value: "text-post", label: "Text Post", emoji: "📝" },
+  { value: "poll", label: "Poll", emoji: "📊" },
+  { value: "video-script", label: "Video Script", emoji: "🎬" },
+  { value: "list", label: "List", emoji: "📋" },
+];
+
+function FormatFilter({
+  selected,
+  onToggle,
+}: {
+  selected: PostFormat[];
+  onToggle: (fmt: PostFormat) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium text-gray-600 text-center">
+        Preferred formats{" "}
+        <span className="text-gray-400 font-normal">(optional)</span>
+      </p>
+      <div className="flex flex-wrap gap-2 justify-center">
+        {FORMAT_OPTIONS.map(({ value, label, emoji }) => {
+          const isSelected = selected.includes(value);
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onToggle(value)}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors",
+                isSelected
+                  ? "bg-violet-600 text-white border-violet-600"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-violet-400",
+              )}
+            >
+              <span className="text-xs">{emoji}</span>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {selected.length > 0 && (
+        <p className="text-[10px] text-violet-600 text-center">
+          Only {selected.join(", ")} format{selected.length > 1 ? "s" : ""} will
+          be generated
         </p>
       )}
     </div>
