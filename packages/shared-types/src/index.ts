@@ -64,6 +64,44 @@ export interface IFeedbackProfile {
   averageContentLength?: number;
 }
 
+// Writing Pattern DNA — deterministic voice fingerprint (Phase 4 #17)
+export interface IWritingDNA {
+  avgSentenceLength: number;
+  sentenceLengthVariance: number;
+  avgParagraphLength: number;
+  openingPatterns: {
+    question: number;
+    story: number;
+    statistic: number;
+    boldClaim: number;
+    other: number;
+  };
+  emojiFrequency: number;
+  emojiTypes: string[];
+  hashtagFrequency: number;
+  hashtagPlacement: "inline" | "end" | "mixed" | "none";
+  avgPostLength: number;
+  postLengthRange: [number, number];
+  usesListFormat: boolean;
+  usesBulletPoints: boolean;
+  lineBreakFrequency: number;
+  readingLevel: "simple" | "moderate" | "advanced";
+  firstPersonRatio: number;
+  ctaPatterns: string[];
+}
+
+// Persona Confidence Score — how well we know this creator (Phase 4 #22)
+export interface IPersonaConfidenceScore {
+  overall: number;
+  breakdown: {
+    postVolume: number;
+    interviewComplete: number;
+    feedbackVolume: number;
+    performanceData: number;
+    recency: number;
+  };
+}
+
 export interface IUserPersona {
   _id: string;
   userId: string;
@@ -91,6 +129,10 @@ export interface IUserPersona {
   // Continuous learning signals
   feedbackProfile?: IFeedbackProfile;
   lastLearningUpdate?: string;
+  // Writing DNA — deterministic voice fingerprint (Phase 4 #17)
+  writingDNA?: IWritingDNA;
+  // Confidence score — how well we know this creator (Phase 4 #22)
+  confidenceScore?: IPersonaConfidenceScore;
   createdAt: string;
   updatedAt: string;
 }

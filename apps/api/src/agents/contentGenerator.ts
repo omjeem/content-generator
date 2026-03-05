@@ -217,6 +217,72 @@ export function buildPersonaSummary(persona: IUserPersonaDocument): string {
   return lines.join("\n");
 }
 
+// ── Writing DNA section (Phase 4 #20) ─────────────────────────────────────
+// Only injected if writingDNA exists — guides the LLM on voice patterns.
+
+function buildWritingDNASection(persona: IUserPersonaDocument): string {
+  const dna = persona.writingDNA;
+  if (!dna) return "";
+
+  const lines: string[] = ["\n## WRITING PATTERN DNA (voice fingerprint)"];
+
+  // Opening style
+  const openings = dna.openingPatterns;
+  if (openings) {
+    const topOpening = Object.entries(openings).sort((a, b) => b[1] - a[1])[0];
+    if (topOpening && topOpening[1] > 0) {
+      lines.push(`Typical opening style: ${topOpening[0]} (${topOpening[1]} out of posts analyzed)`);
+    }
+  }
+
+  // Post length
+  if (dna.avgPostLength > 0) {
+    lines.push(`Average post length: ~${dna.avgPostLength} chars (range: ${dna.postLengthRange[0]}–${dna.postLengthRange[1]})`);
+  }
+
+  // Emoji usage
+  if (dna.emojiFrequency > 0.5) {
+    lines.push(`Emoji usage: ${dna.emojiFrequency} per 100 words — uses emojis actively (faves: ${dna.emojiTypes.slice(0, 3).join(" ")})`);
+  } else {
+    lines.push("Emoji usage: minimal or none — keep posts emoji-free");
+  }
+
+  // Reading level
+  lines.push(`Reading level: ${dna.readingLevel}`);
+
+  // Structure
+  if (dna.usesListFormat) lines.push("Frequently uses list format");
+  if (dna.usesBulletPoints) lines.push("Prefers bullet points for structure");
+
+  // Hashtag style
+  if (dna.hashtagPlacement !== "none") {
+    lines.push(`Hashtag style: ${dna.hashtagPlacement} placement, ~${dna.hashtagFrequency} per post`);
+  }
+
+  // CTA patterns
+  if (dna.ctaPatterns.length > 0) {
+    lines.push(`Common CTAs: "${dna.ctaPatterns.slice(0, 3).join('", "')}"`);
+  }
+
+  return lines.join("\n");
+}
+
+// ── Confidence score directive (Phase 4 #26) ──────────────────────────────
+// Adjusts generation strategy based on how well we know the creator.
+
+function buildConfidenceDirective(persona: IUserPersonaDocument): string {
+  const score = persona.confidenceScore?.overall;
+  if (score === undefined) return "";
+
+  if (score < 40) {
+    return "\n## CONFIDENCE NOTE: We have limited data on this creator. Use broader, exploratory topic suggestions. Include diverse formats to discover their preferences.";
+  }
+  if (score > 70) {
+    return "\n## CONFIDENCE NOTE: We have strong data on this creator. You can be highly specific. Use niche topics matching their proven expertise and preferred formats.";
+  }
+  return ""; // 40-70: no extra directive needed
+}
+
 // ── Platform requirements section (#34) ──────────────────────────────────────
 // Injected into the prompt when the user has requested specific platforms.
 // Empty string when only LinkedIn is requested (the default) to save tokens.
@@ -300,6 +366,12 @@ export async function generateContentIdeas(input: {
   // with fewer data points and add unnecessary tokens.
   const feedbackSection = buildFeedbackSection(persona);
 
+  // ── Writing DNA section (Phase 4 #20) ──────────────────────────────────
+  const writingDNASection = buildWritingDNASection(persona);
+
+  // ── Confidence directive (Phase 4 #26) ────────────────────────────────
+  const confidenceDirective = buildConfidenceDirective(persona);
+
   // ── Platform requirements section (#34) ──────────────────────────────────
   // Only appended when Twitter or multi-platform is requested.
   // Passing context.platforms allows the dashboard to drive platform targeting.
@@ -327,7 +399,7 @@ ${trendAnchorDirective}
 
 ## CREATOR PROFILE (voice & style reference — NOT the topic source)
 ${personaSummary}
-${feedbackSection}
+${feedbackSection}${writingDNASection}${confidenceDirective}
 
 ## TRENDING TOPICS TO BASE IDEAS ON
 ${trendsList}

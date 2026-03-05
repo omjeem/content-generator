@@ -13,6 +13,8 @@ import {
   createPersonaSnapshot,
   computePersonaDiff,
 } from "../services/personaMerge";
+import { extractWritingDNA } from "../services/writingDNA";
+import { computeConfidenceScore } from "../services/personaConfidence";
 import mongoose from "mongoose";
 import crypto from "crypto";
 
@@ -153,6 +155,9 @@ router.post(
         totalTokens: usage.inputTokens + usage.outputTokens,
       });
 
+      // Deterministic Writing DNA extraction (Phase 4 #19) — free, fast, no LLM
+      const writingDNA = extractWritingDNA(posts);
+
       const batchId = crypto.randomUUID();
       const source = body.linkedinUrl ? "linkedin-scrape" : "manual";
       const now = new Date();
@@ -169,6 +174,7 @@ router.post(
             postFormats: analysis.postFormats,
             totalPostsAnalyzed: posts.length,
             lastPostAddedAt: now,
+            writingDNA,
           },
           $inc: { personaVersion: 1 },
           $push: {
@@ -182,6 +188,13 @@ router.post(
         },
         { upsert: true, new: true },
       );
+
+      // Compute and persist confidence score (Phase 4 #24)
+      if (persona) {
+        const confidenceScore = await computeConfidenceScore(persona);
+        persona.confidenceScore = confidenceScore;
+        await persona.save();
+      }
 
       res.json({
         message: "Persona analysis complete",
@@ -393,6 +406,17 @@ router.post(
         updateQuery,
         { new: true },
       );
+
+      // Recompute Writing DNA from ALL posts (Phase 4 #19)
+      if (updatedPersona) {
+        const allPosts = updatedPersona.scrapedPosts ?? [];
+        if (allPosts.length > 0) {
+          updatedPersona.writingDNA = extractWritingDNA(allPosts);
+        }
+        // Recompute confidence score (Phase 4 #24)
+        updatedPersona.confidenceScore = await computeConfidenceScore(updatedPersona);
+        await updatedPersona.save();
+      }
 
       // Compute diff for display in the frontend (#28)
       const diff = updatedPersona

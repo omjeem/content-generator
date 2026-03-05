@@ -347,6 +347,45 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* ── Confidence score badge (Phase 4 #25) ───────────────────────── */}
+      {persona?.confidenceScore && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-600">
+              We understand you
+            </span>
+            <span className={`text-lg font-bold ${
+              persona.confidenceScore.overall >= 70
+                ? "text-green-600"
+                : persona.confidenceScore.overall >= 40
+                  ? "text-amber-600"
+                  : "text-red-500"
+            }`}>
+              {persona.confidenceScore.overall}%
+            </span>
+          </div>
+          <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${
+                persona.confidenceScore.overall >= 70
+                  ? "bg-green-500"
+                  : persona.confidenceScore.overall >= 40
+                    ? "bg-amber-400"
+                    : "bg-red-400"
+              }`}
+              style={{ width: `${persona.confidenceScore.overall}%` }}
+            />
+          </div>
+          <span className="text-xs text-gray-500 whitespace-nowrap">
+            {persona.confidenceScore.overall < 40
+              ? "Add more posts to improve"
+              : persona.confidenceScore.overall < 70
+                ? "Good — keep providing feedback"
+                : "Excellent — highly personalized"}
+          </span>
+        </div>
+      )}
+
       {/* ── Token quota exhausted banner ──────────────────────────────────── */}
       {quotaExceeded && (
         <div className="mb-6 flex items-start gap-4 rounded-xl border border-red-200 bg-red-50 p-5">

@@ -4,6 +4,8 @@
 **Started**: 2026-03-05
 **Last Updated**: 2026-03-05
 **Phase A**: COMPLETE ✅
+**Phase B**: COMPLETE ✅
+**Phase C**: COMPLETE ✅
 
 ---
 
@@ -68,29 +70,29 @@ If context runs out, come back here and:
 
 ---
 
-## Phase C — Deeper Persona Understanding (Section 2)
+## Phase C — Deeper Persona Understanding (Section 2) ✅ COMPLETE
 
 *Priority: CRITICAL for core goal. Depends on Phase A (#1 constants, #4 schema hardening). Start after A1-A2.*
 
-- [ ] **#17 — Create Writing Pattern DNA service** (`services/writingDNA.ts` CREATE): Deterministic (no LLM) extraction of 15+ writing patterns from post array. Outputs: `avgSentenceLength`, `sentenceLengthVariance`, `avgParagraphLength`, `openingPatterns` (question/story/statistic/boldClaim/other counts), `emojiFrequency` (per 100 words), `emojiTypes` (top 5), `hashtagFrequency` (per post), `hashtagPlacement` (inline/end/mixed), `avgPostLength` (chars), `postLengthRange` [min, max], `usesListFormat` (boolean), `usesBulletPoints` (boolean), `lineBreakFrequency` (per 100 words), `readingLevel` (simple/moderate/advanced via avg syllables), `firstPersonRatio` (0-1), `ctaPatterns` (extracted CTA phrases). (§2.1)
+- [x] **#17 — Created Writing Pattern DNA service** (`services/writingDNA.ts` CREATE). Deterministic (no LLM) extraction of 15+ patterns: avgSentenceLength, sentenceLengthVariance, avgParagraphLength, openingPatterns (question/story/statistic/boldClaim/other as ratios), emojiFrequency (per 100 words), emojiTypes (top 5), hashtagFrequency (per post), hashtagPlacement (inline/end/mixed/none), avgPostLength (chars), postLengthRange [min, max], usesListFormat, usesBulletPoints, lineBreakFrequency (per 100 words), readingLevel (simple/moderate/advanced via syllable counting), firstPersonRatio (0-1), ctaPatterns (extracted CTA phrases). ✅ DONE
 
-- [ ] **#18 — Add `writingDNA` field to UserPersona model** (`models/UserPersona.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `writingDNA` sub-schema to `UserPersona` matching the output of #17. Add `IWritingDNA` interface to shared types. All fields optional (populated lazily). (§2.1)
+- [x] **#18 — Added `writingDNA` field to UserPersona model** (`models/UserPersona.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY). Added `IWritingDNA` interface to shared types (18 fields). Added full Mongoose sub-schema with proper types, defaults, and `_id: false`. ✅ DONE
 
-- [ ] **#19 — Integrate Writing DNA into persona analysis** (`agents/personaAnalyst.ts` MODIFY, `routes/persona.ts` MODIFY): After LLM persona analysis completes, call `extractWritingDNA(posts)` deterministically (free, fast). Store result in `persona.writingDNA`. Also call on `/add-posts` route for incremental updates (recompute from all posts). (§2.1)
+- [x] **#19 — Integrated Writing DNA into persona analysis** (`routes/persona.ts` MODIFY, `agents/mastra.ts` MODIFY). In `/analyze` route: calls `extractWritingDNA(posts)` before upsert, includes `writingDNA` in `$set`. In `/add-posts` route: recomputes from ALL posts via `extractWritingDNA(allPosts)`. In `mastra.ts` pipeline Step 1: calls `extractWritingDNA(posts)` and stores in persona upsert. ✅ DONE
 
-- [ ] **#20 — Consume Writing DNA in content generator** (`agents/contentGenerator.ts` MODIFY): Add `buildWritingDNASection(persona)` — returns prompt section only if `writingDNA` exists. Include: "Your creator's typical opening is {topPattern}. Average post length: {N} chars. They {use/don't use} emojis. Reading level: {level}." This helps the LLM generate hooks matching the creator's proven patterns. (§2.1)
+- [x] **#20 — Consumed Writing DNA in content generator** (`agents/contentGenerator.ts` MODIFY). Added `buildWritingDNASection(persona)` — returns prompt section with opening style distribution, post length target, emoji usage, reading level, list format, hashtag style, CTA patterns. Injected after feedback section. ✅ DONE
 
-- [ ] **#21 — Consume Writing DNA in post editor** (`agents/postEditor.ts` MODIFY): Add Writing DNA context to `buildEditorPrompt()` so the AI co-writer maintains voice consistency: sentence length targets, emoji usage, CTA phrasing style, list/bullet preferences. (§2.1)
+- [x] **#21 — Consumed Writing DNA in post editor** (`agents/postEditor.ts` MODIFY). Added Writing DNA voice hints block inside `buildEditorPrompt()` after CREATOR VOICE section: sentence length targets, emoji usage guidance, list format preference, CTA style, reading level vocabulary guidance. ✅ DONE
 
-- [ ] **#22 — Create Persona Confidence Score calculator** (`services/personaConfidence.ts` CREATE): Deterministic scoring (no LLM): `postVolume` = min(25, totalPostsAnalyzed × 2.5), `interviewComplete` = 4 per filled field (max 20), `feedbackVolume` = min(25, totalFeedbackCount × 2.5), `performanceData` = min(15, postsWithEngagement × 5), `recency` = 15 − (daysSinceLastActivity × 0.5, min 0). Overall = sum of all (0-100). (§2.4)
+- [x] **#22 — Created Persona Confidence Score calculator** (`services/personaConfidence.ts` CREATE). 5-dimension scoring: postVolume (max 25, 2.5 per post), interviewComplete (max 20, 4 per field), feedbackVolume (max 25, 2.5 per feedback), performanceData (max 15, 5 per published draft), recency (max 15, decays 0.5/day). Overall 0-100. 2 fast DB queries (SuggestionFeedback count, published PostDraft count). ✅ DONE
 
-- [ ] **#23 — Add confidence score to UserPersona** (`models/UserPersona.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY): Add `confidenceScore` sub-schema: `{ overall: Number, breakdown: { postVolume, interviewComplete, feedbackVolume, performanceData, recency } }`. Add `IPersonaConfidenceScore` to shared types. (§2.4)
+- [x] **#23 — Added confidence score to UserPersona** (`models/UserPersona.ts` MODIFY, `packages/shared-types/src/index.ts` MODIFY). Added `IPersonaConfidenceScore` interface to shared types with `overall` and `breakdown`. Added Mongoose sub-schema with proper types and `_id: false`. ✅ DONE
 
-- [ ] **#24 — Compute and persist confidence score** (`routes/persona.ts` MODIFY, `agents/mastra.ts` MODIFY): Recompute confidence score after: persona analysis, post addition, feedback learning update. Store on persona document. Return in `GET /api/persona` response. (§2.4)
+- [x] **#24 — Computed and persisted confidence score** (`routes/persona.ts` MODIFY, `agents/mastra.ts` MODIFY). Recomputes after: persona analysis (both route and pipeline), post addition (route). In `mastra.ts` pipeline Step 1: fire-and-forget confidence computation after persona upsert. In persona routes: computed and saved after each persona save. ✅ DONE
 
-- [ ] **#25 — Display confidence score on dashboard** (`app/dashboard/page.tsx` MODIFY): Show confidence badge in profile status card: "We understand you {score}%". If < 40: "Add more posts to improve". If 40-70: "Good — keep providing feedback". If > 70: "Excellent — suggestions are highly personalized". (§2.4)
+- [x] **#25 — Displayed confidence score on dashboard** (`app/dashboard/page.tsx` MODIFY). Shows "We understand you {score}%" with colored progress bar. Three states: <40 red "Add more posts to improve", 40-70 amber "Keep providing feedback", >70 green "Excellent — highly personalized". ✅ DONE
 
-- [ ] **#26 — Use confidence score in content generator** (`agents/contentGenerator.ts` MODIFY): If confidence < 40 → add prompt directive: "Use broader, exploratory topic suggestions. Include diverse formats." If confidence > 70 → add: "You can be highly specific. Use niche topics matching the creator's proven expertise." (§2.4)
+- [x] **#26 — Used confidence score in content generator** (`agents/contentGenerator.ts` MODIFY). Added `buildConfidenceDirective(persona)` — returns directive based on score: <40 = broader/exploratory topics + diverse formats, >70 = highly specific niche topics + proven patterns. Injected after writingDNA section. ✅ DONE
 
 ---
 

@@ -69,6 +69,38 @@ export interface IUserPersonaDocument extends Document {
   feedbackProfile?: IFeedbackProfile; // auto-updated by personaLearning service
   lastLearningUpdate?: Date; // when feedbackProfile was last aggregated
 
+  // ── Writing DNA — deterministic voice fingerprint (Phase 4 #17/18) ────
+  writingDNA?: {
+    avgSentenceLength: number;
+    sentenceLengthVariance: number;
+    avgParagraphLength: number;
+    openingPatterns: { question: number; story: number; statistic: number; boldClaim: number; other: number };
+    emojiFrequency: number;
+    emojiTypes: string[];
+    hashtagFrequency: number;
+    hashtagPlacement: string;
+    avgPostLength: number;
+    postLengthRange: [number, number];
+    usesListFormat: boolean;
+    usesBulletPoints: boolean;
+    lineBreakFrequency: number;
+    readingLevel: string;
+    firstPersonRatio: number;
+    ctaPatterns: string[];
+  };
+
+  // ── Confidence score (Phase 4 #22/23) ─────────────────────────────────
+  confidenceScore?: {
+    overall: number;
+    breakdown: {
+      postVolume: number;
+      interviewComplete: number;
+      feedbackVolume: number;
+      performanceData: number;
+      recency: number;
+    };
+  };
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -189,6 +221,66 @@ const userPersonaSchema = new Schema<IUserPersonaDocument>(
       ),
     },
     lastLearningUpdate: { type: Date },
+
+    // Writing DNA — Phase 4 #18
+    writingDNA: {
+      type: new Schema(
+        {
+          avgSentenceLength: { type: Number, default: 0 },
+          sentenceLengthVariance: { type: Number, default: 0 },
+          avgParagraphLength: { type: Number, default: 0 },
+          openingPatterns: {
+            type: new Schema(
+              {
+                question: { type: Number, default: 0 },
+                story: { type: Number, default: 0 },
+                statistic: { type: Number, default: 0 },
+                boldClaim: { type: Number, default: 0 },
+                other: { type: Number, default: 0 },
+              },
+              { _id: false },
+            ),
+            default: {},
+          },
+          emojiFrequency: { type: Number, default: 0 },
+          emojiTypes: { type: [String], default: [] },
+          hashtagFrequency: { type: Number, default: 0 },
+          hashtagPlacement: { type: String, enum: ["inline", "end", "mixed", "none"], default: "none" },
+          avgPostLength: { type: Number, default: 0 },
+          postLengthRange: { type: [Number], default: [0, 0] },
+          usesListFormat: { type: Boolean, default: false },
+          usesBulletPoints: { type: Boolean, default: false },
+          lineBreakFrequency: { type: Number, default: 0 },
+          readingLevel: { type: String, enum: ["simple", "moderate", "advanced"], default: "moderate" },
+          firstPersonRatio: { type: Number, default: 0 },
+          ctaPatterns: { type: [String], default: [] },
+        },
+        { _id: false },
+      ),
+    },
+
+    // Confidence score — Phase 4 #23
+    confidenceScore: {
+      type: new Schema(
+        {
+          overall: { type: Number, default: 0 },
+          breakdown: {
+            type: new Schema(
+              {
+                postVolume: { type: Number, default: 0 },
+                interviewComplete: { type: Number, default: 0 },
+                feedbackVolume: { type: Number, default: 0 },
+                performanceData: { type: Number, default: 0 },
+                recency: { type: Number, default: 0 },
+              },
+              { _id: false },
+            ),
+            default: {},
+          },
+        },
+        { _id: false },
+      ),
+    },
   },
   { timestamps: true },
 );

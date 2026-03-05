@@ -16,6 +16,8 @@ import { postEditorAgent } from "./postEditor";
 import { UserPersona } from "../models/UserPersona";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import { extractWritingDNA } from "../services/writingDNA";
+import { computeConfidenceScore } from "../services/personaConfidence";
 import { fireAndForget } from "../utils/fireAndForget";
 import { CircuitBreaker } from "../utils/circuitBreaker";
 import { PIPELINE } from "../config/constants";
@@ -170,6 +172,9 @@ export async function runContentPipeline(
         "persona-token-tracking",
       );
 
+      // Extract Writing DNA — deterministic, no LLM (#17)
+      const writingDNA = extractWritingDNA(posts);
+
       // Upsert and capture the updated document so Step 2 can skip another findOne
       personaAfterStep1 = await UserPersona.findOneAndUpdate(
         { userId: userObjectId },
@@ -181,10 +186,22 @@ export async function runContentPipeline(
             tone: analysis.tone,
             topics: analysis.topics,
             postFormats: analysis.postFormats,
+            writingDNA,
           },
         },
         { upsert: true, new: true },
       );
+
+      // Compute & persist confidence score — deterministic, 2 fast DB queries (#22)
+      fireAndForget(async () => {
+        const score = await computeConfidenceScore(personaAfterStep1!);
+        await UserPersona.updateOne(
+          { _id: personaAfterStep1!._id },
+          { $set: { confidenceScore: score } },
+        );
+        // Update in-memory reference so downstream steps see the score
+        personaAfterStep1!.confidenceScore = score;
+      }, "pipeline-confidence-score");
 
       console.log("[pipeline] Step 1: Persona analysis complete.");
     } else if (needsAnalysis) {

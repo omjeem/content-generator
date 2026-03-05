@@ -243,6 +243,25 @@ Industry: ${persona.industry ?? "Business"} | Goal: ${persona.platformGoal ?? "t
 Audience: ${persona.targetAudience ?? "Business professionals"}
 Tone: ${persona.tone ?? "Professional"} | Style: ${persona.writingStyle ?? "Clear and direct"}
 Content pillars: ${persona.contentPillars.slice(0, 3).join(", ") || persona.topics.slice(0, 3).join(", ") || "Leadership, Growth"}`);
+
+    // Writing DNA voice consistency (Phase 4 #21)
+    const dna = persona.writingDNA;
+    if (dna) {
+      const voiceHints: string[] = [];
+      if (dna.avgSentenceLength > 0) voiceHints.push(`Target ~${dna.avgSentenceLength} words per sentence`);
+      if (dna.emojiFrequency > 0.5) {
+        voiceHints.push(`Use emojis (${dna.emojiTypes.slice(0, 3).join(" ")} style, ~${dna.emojiFrequency}/100 words)`);
+      } else {
+        voiceHints.push("Avoid emojis — this creator doesn't use them");
+      }
+      if (dna.usesListFormat) voiceHints.push("Use list/bullet format when appropriate");
+      if (dna.ctaPatterns.length > 0) voiceHints.push(`CTA style: "${dna.ctaPatterns[0]}"`);
+      if (dna.readingLevel === "simple") voiceHints.push("Keep language simple and direct");
+      else if (dna.readingLevel === "advanced") voiceHints.push("Can use sophisticated vocabulary");
+      if (voiceHints.length > 0) {
+        sections.push(`## WRITING DNA\n${voiceHints.join("\n")}`);
+      }
+    }
   }
 
   // Content brief
