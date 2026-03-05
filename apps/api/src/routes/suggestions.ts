@@ -23,6 +23,7 @@ import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { sanitizeMessage } from "../utils/sanitizeInput";
 import { extractJSON } from "../utils/extractJSON";
+import { generationLimiter, chatLimiter } from "../middleware/rateLimit";
 import type { ISuggestion } from "@repo/shared-types";
 
 const router = Router();
@@ -130,6 +131,7 @@ const generateSchema = z.object({
  */
 router.post(
   "/generate",
+  generationLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = generateSchema.parse(req.body);
@@ -245,6 +247,7 @@ const generateFromTrendsSchema = z.object({
 
 router.post(
   "/generate-from-trends",
+  generationLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = generateFromTrendsSchema.parse(req.body);
@@ -586,6 +589,7 @@ const generateFromTopicSchema = z.object({
 
 router.post(
   "/generate-from-topic",
+  generationLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = generateFromTopicSchema.parse(req.body);
@@ -879,6 +883,7 @@ const refineContextSchema = z.object({
 
 router.post(
   "/refine-context",
+  chatLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { messages: rawMessages } = refineContextSchema.parse(req.body);

@@ -185,7 +185,7 @@ export async function researchTrendsForUser(input: {
   let fetchError: string | undefined;
 
   // Check cache first — avoids duplicate API calls within a 30-min window (#13)
-  const cachedItems = getCachedTrends(cacheKey);
+  const cachedItems = await getCachedTrends(cacheKey);
   if (cachedItems) {
     console.log(
       `[trendResearch] Cache HIT for key=${cacheKey} (${cachedItems.length} items)`,
@@ -241,7 +241,7 @@ export async function researchTrendsForUser(input: {
 
       // Cache successful results
       if (rawItems.length > 0) {
-        setCachedTrends(cacheKey, rawItems);
+        await setCachedTrends(cacheKey, rawItems);
       }
     } catch (err) {
       fetchError = (err as Error).message;

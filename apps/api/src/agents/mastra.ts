@@ -17,7 +17,32 @@ import { UserPersona } from "../models/UserPersona";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
 import { fireAndForget } from "../utils/fireAndForget";
+import { CircuitBreaker } from "../utils/circuitBreaker";
+import { PIPELINE } from "../config/constants";
 import type { ISuggestion, IGenerateContextOptions } from "@repo/shared-types";
+
+// ── Pipeline utilities (#12, #13) ────────────────────────────────────────────
+
+/** Wraps a promise with a timeout — rejects with descriptive error on expiry (#12) */
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
+/** Singleton circuit breaker for the content pipeline (#13) */
+const pipelineBreaker = new CircuitBreaker("content-pipeline");
 
 // ── Mastra instance ───────────────────────────────────────────────────────────
 
@@ -126,7 +151,11 @@ export async function runContentPipeline(
         };
       }
 
-      const { analysis, usage: personaUsage } = await analyzePersona(posts);
+      const { analysis, usage: personaUsage } = await withTimeout(
+        analyzePersona(posts),
+        PIPELINE.STEP_TIMEOUTS.persona,
+        "Persona analysis",
+      );
 
       // Track persona analysis token usage — fire-and-forget
       fireAndForget(
@@ -221,13 +250,17 @@ export async function runContentPipeline(
       result: trendResult,
       usage: trendUsage,
       isLive,
-    } = await researchTrendsForUser({
-      industry: persona.industry ?? "business",
-      topics: persona.topics.length ? persona.topics : persona.contentPillars,
-      contentPillars: persona.contentPillars, // for balanced selection (#15)
-      tone: persona.tone, // for domain-aware angle language
-      recentTrends: recentTrends.length > 0 ? recentTrends : undefined, // #6
-    });
+    } = await withTimeout(
+      researchTrendsForUser({
+        industry: persona.industry ?? "business",
+        topics: persona.topics.length ? persona.topics : persona.contentPillars,
+        contentPillars: persona.contentPillars, // for balanced selection (#15)
+        tone: persona.tone, // for domain-aware angle language
+        recentTrends: recentTrends.length > 0 ? recentTrends : undefined, // #6
+      }),
+      PIPELINE.STEP_TIMEOUTS.trends,
+      "Trend research",
+    );
     trendFetchDurationMs = Date.now() - trendStart;
     trends = trendResult;
     trendIsLive = isLive;
@@ -264,12 +297,16 @@ export async function runContentPipeline(
   try {
     console.log("[pipeline] Step 4: Generating content ideas...");
     const llmStart = Date.now();
-    const genResult = await generateContentIdeas({
-      persona,
-      trends,
-      context: input.context,
-      platforms: input.platforms,
-    });
+    const genResult = await withTimeout(
+      generateContentIdeas({
+        persona,
+        trends,
+        context: input.context,
+        platforms: input.platforms,
+      }),
+      PIPELINE.STEP_TIMEOUTS.content,
+      "Content generation",
+    );
     llmDurationMs = Date.now() - llmStart;
     contentIdeas = genResult.ideas;
     contentUsage = genResult.usage;
@@ -356,28 +393,48 @@ export async function runContentPipeline(
   };
 }
 
-// ── Retry wrapper ─────────────────────────────────────────────────────────────
+// ── Retry wrapper with circuit breaker (#13) and exponential backoff (#14) ───
 
 export async function runContentPipelineWithRetry(
   input: PipelineInput,
-  maxRetries = 2,
+  maxRetries = PIPELINE.MAX_RETRY_ATTEMPTS,
 ): Promise<PipelineResult> {
-  let lastResult: PipelineResult = {
-    status: "error",
-    message: "Pipeline not started",
-  };
+  // Circuit breaker check — fast-fail if AI service is down (#13)
+  try {
+    return await pipelineBreaker.execute(async () => {
+      let lastResult: PipelineResult = {
+        status: "error",
+        message: "Pipeline not started",
+      };
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    lastResult = await runContentPipeline(input);
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        // Overall pipeline timeout (#12)
+        lastResult = await withTimeout(
+          runContentPipeline(input),
+          PIPELINE.STEP_TIMEOUTS.overall,
+          "Overall pipeline",
+        );
 
-    // Only retry on transient errors, not on logic gates (interview_required etc.)
-    if (lastResult.status !== "error") return lastResult;
+        // Only retry on transient errors, not on logic gates (interview_required etc.)
+        if (lastResult.status !== "error") return lastResult;
 
-    if (attempt < maxRetries) {
-      console.warn(`[pipeline] Attempt ${attempt} failed. Retrying...`);
-      await new Promise((r) => setTimeout(r, 1000 * attempt));
-    }
+        if (attempt < maxRetries) {
+          // Exponential backoff: 1s, 2s, 4s, ... (#14)
+          const delay = Math.pow(2, attempt - 1) * 1000;
+          console.warn(
+            `[pipeline] Attempt ${attempt} failed. Retrying in ${delay}ms...`,
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+
+      return lastResult;
+    });
+  } catch (err) {
+    // Circuit breaker open or timeout
+    return {
+      status: "error",
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
-
-  return lastResult;
 }

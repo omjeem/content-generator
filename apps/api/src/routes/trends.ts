@@ -5,6 +5,7 @@ import { UserPersona } from "../models/UserPersona";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { storeTrendDiscovery } from "../services/trendDiscoveryCache";
 import { trackTokenUsage } from "../services/tokenUsage";
+import { generationLimiter } from "../middleware/rateLimit";
 import mongoose from "mongoose";
 
 const router = Router();
@@ -56,7 +57,7 @@ router.use(authenticate);
  *       400:
  *         description: Persona not found — complete analysis first
  */
-router.get("/", async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.get("/", generationLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const geo = (req.query.geo as string | undefined) ?? "US";
 
@@ -114,6 +115,7 @@ router.get("/", async (req: AuthRequest, res: Response, next: NextFunction) => {
  */
 router.get(
   "/discover",
+  generationLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const geo = (req.query.geo as string | undefined) ?? "US";

@@ -1,28 +1,27 @@
 /**
- * trendCache.ts
+ * trendCache.ts — Two-tier trend cache (#16)
  *
- * In-memory TTL cache for raw trend API results.
+ * L1: In-memory Map with 5-min TTL (fast, process-local)
+ * L2: MongoDB TrendCache collection with 30-min TTL (persistent, survives restarts)
  *
- * Motivation: Every generation call currently makes fresh network requests to
- * Tavily, Hacker News, and RSS feeds. Two generations 30 seconds apart for the
- * same user produce identical network traffic. This cache de-dupes those calls.
+ * Lookup order: L1 → L2 → miss (caller fetches from APIs → stores in both)
  *
- * Cache key: `trends:{industry}:{sorted_keywords}:{geo}`
- * TTL:       30 minutes (1,800 seconds)
- *
- * Uses a simple Map with expiry timestamps — no external dependencies required.
+ * Cache key: `trends:{industry}:{sorted_keywords}:{geo}:{timeBucket}`
+ * Time bucket: 6-hour rotation ensures freshness even for same-key queries.
  */
 
 import type { RawTrendItem } from "./trends";
+import { TrendCache } from "../models/TrendCache";
+import { CACHE } from "../config/constants";
 
-const TTL_MS = 30 * 60 * 1000; // 30 minutes
+// ── L1: In-memory cache ─────────────────────────────────────────────────────
 
-interface CacheEntry {
+interface L1Entry {
   items: RawTrendItem[];
   expiresAt: number;
 }
 
-const cache = new Map<string, CacheEntry>();
+const l1Cache = new Map<string, L1Entry>();
 
 // ── Cache key ────────────────────────────────────────────────────────────────
 
@@ -50,39 +49,98 @@ export function buildTrendCacheKey(
   return `trends:${normalizedIndustry}:${sortedKeywords}:${normalizedGeo}:${timeBucket}`;
 }
 
-// ── Get / Set ─────────────────────────────────────────────────────────────────
+// ── Get (L1 → L2) ──────────────────────────────────────────────────────────
 
 /**
- * Return cached trend items for the given key, or undefined if not cached / expired.
+ * Return cached trend items for the given key.
+ * Checks L1 (memory) first, then L2 (MongoDB).
+ * Returns undefined on complete cache miss.
  */
-export function getCachedTrends(key: string): RawTrendItem[] | undefined {
-  const entry = cache.get(key);
-  if (!entry) return undefined;
-
-  if (Date.now() > entry.expiresAt) {
-    cache.delete(key); // clean up expired entry
-    return undefined;
+export async function getCachedTrends(
+  key: string,
+): Promise<RawTrendItem[] | undefined> {
+  // L1 check — fast, in-process
+  const l1 = l1Cache.get(key);
+  if (l1) {
+    if (Date.now() <= l1.expiresAt) {
+      return l1.items;
+    }
+    l1Cache.delete(key); // expired
   }
 
-  return entry.items;
+  // L2 check — MongoDB (TTL-managed, survives restarts)
+  try {
+    const doc = await TrendCache.findOne({ cacheKey: key }).lean();
+    if (doc) {
+      const items = doc.items as RawTrendItem[];
+      // Promote to L1 for subsequent fast access
+      l1Cache.set(key, {
+        items,
+        expiresAt: Date.now() + CACHE.L1_CACHE_TTL_MS,
+      });
+      return items;
+    }
+  } catch (err) {
+    // L2 failure is non-fatal — treat as cache miss
+    console.warn("[trendCache] L2 read error (non-fatal):", err);
+  }
+
+  return undefined;
 }
 
+// ── Set (L1 + L2) ──────────────────────────────────────────────────────────
+
 /**
- * Store trend items in the cache with a 30-minute TTL.
+ * Store trend items in both L1 (memory) and L2 (MongoDB) caches.
+ * L1 TTL: 5 minutes | L2 TTL: 30 minutes (via MongoDB TTL index)
  */
-export function setCachedTrends(key: string, items: RawTrendItem[]): void {
-  cache.set(key, {
+export async function setCachedTrends(
+  key: string,
+  items: RawTrendItem[],
+): Promise<void> {
+  // L1 — always succeeds
+  l1Cache.set(key, {
     items,
-    expiresAt: Date.now() + TTL_MS,
+    expiresAt: Date.now() + CACHE.L1_CACHE_TTL_MS,
   });
+
+  // L2 — fire-and-forget (non-blocking)
+  try {
+    await TrendCache.findOneAndUpdate(
+      { cacheKey: key },
+      { $set: { items, createdAt: new Date() } },
+      { upsert: true },
+    );
+  } catch (err) {
+    // L2 write failure is non-fatal — L1 still serves
+    console.warn("[trendCache] L2 write error (non-fatal):", err);
+  }
 }
 
-// ── Cache stats (for health check / debugging) ────────────────────────────────
+// ── Cache stats (for health check / debugging) ────────────────────────────
 
-export function getTrendCacheStats(): { size: number; ttlMinutes: number } {
-  // Prune expired entries before reporting
-  for (const [key, entry] of cache.entries()) {
-    if (Date.now() > entry.expiresAt) cache.delete(key);
+export async function getTrendCacheStats(): Promise<{
+  l1Size: number;
+  l1TtlMinutes: number;
+  l2Size: number;
+  l2TtlMinutes: number;
+}> {
+  // Prune expired L1 entries before reporting
+  for (const [key, entry] of l1Cache.entries()) {
+    if (Date.now() > entry.expiresAt) l1Cache.delete(key);
   }
-  return { size: cache.size, ttlMinutes: TTL_MS / 60_000 };
+
+  let l2Size = 0;
+  try {
+    l2Size = await TrendCache.countDocuments();
+  } catch {
+    // non-fatal
+  }
+
+  return {
+    l1Size: l1Cache.size,
+    l1TtlMinutes: CACHE.L1_CACHE_TTL_MS / 60_000,
+    l2Size,
+    l2TtlMinutes: CACHE.TREND_TTL_MS / 60_000,
+  };
 }

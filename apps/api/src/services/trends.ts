@@ -50,6 +50,8 @@ export interface RawTrendItem {
   source: string; // "hackernews" | "rss:TechCrunch" | "tavily" | "google-news" | etc.
   score?: number; // HN points or Tavily relevance score
   publishedAt?: string;
+  /** Alternate URLs from duplicate items merged during dedup (#15) */
+  alternateUrls?: string[];
 }
 
 // ── Domain Classification (#DA1) ──────────────────────────────────────────────
@@ -1567,34 +1569,81 @@ export async function getDailyTrends(geo = "US"): Promise<string[]> {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Deduplicates items by title similarity and caps total count.
- * Items with higher scores are ranked first.
+ * Source quality ranking for dedup winner selection (#15):
+ *   Tavily (4) > HN high-score (3) > RSS (2) > HN low-score (1) > Google News (0)
+ */
+function sourceQuality(item: RawTrendItem): number {
+  if (item.source === "tavily") return 4;
+  if (item.source === "hackernews" && (item.score ?? 0) >= 50) return 3;
+  if (item.source.startsWith("rss:")) return 2;
+  if (item.source === "hackernews") return 1;
+  return 0; // google-news and others
+}
+
+/**
+ * Normalise a title for dedup grouping (#15):
+ * lowercase → strip non-alphanumeric → split into words → sort → join.
+ * Sorting words makes "OpenAI launches GPT-5" and "GPT-5 launched by OpenAI"
+ * produce the same key.
+ */
+function normalizeTitleKey(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
+/**
+ * Deduplicates items across sources and ranks by quality (#15).
+ *
+ * Algorithm:
+ *   1. Normalise each title (lowercase, strip punctuation, sort words)
+ *   2. Group duplicates by normalised key
+ *   3. Keep the highest-quality source as the winner
+ *   4. Store alternate URLs from losers on the winning item
+ *   5. Sort winners by score + source priority, cap at 30
  */
 function deduplicateAndRank(items: RawTrendItem[]): RawTrendItem[] {
-  const seen = new Set<string>();
-  const unique: RawTrendItem[] = [];
+  const groups = new Map<string, RawTrendItem[]>();
 
   for (const item of items) {
-    // Normalise title for dedup check (lowercase, strip punctuation)
-    const key = item.title
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]/g, "")
-      .slice(0, 60);
-    if (!seen.has(key)) {
-      seen.add(key);
-      unique.push(item);
+    const key = normalizeTitleKey(item.title);
+    const group = groups.get(key);
+    if (group) {
+      group.push(item);
+    } else {
+      groups.set(key, [item]);
     }
   }
 
-  // Sort: Tavily (scored) first, then HN (by points), then RSS/Google News
+  const unique: RawTrendItem[] = [];
+
+  for (const group of groups.values()) {
+    // Sort group by source quality descending — winner is first
+    group.sort((a, b) => sourceQuality(b) - sourceQuality(a));
+    const winner = { ...group[0]! };
+
+    // Collect alternate URLs from duplicates
+    const altUrls: string[] = [];
+    for (let i = 1; i < group.length; i++) {
+      if (group[i]!.url) altUrls.push(group[i]!.url!);
+    }
+    if (altUrls.length > 0) {
+      winner.alternateUrls = altUrls;
+    }
+
+    unique.push(winner);
+  }
+
+  // Sort: highest quality first, then by score
   unique.sort((a, b) => {
     const aScore = a.score ?? 0;
     const bScore = b.score ?? 0;
     if (aScore !== bScore) return bScore - aScore;
-    // Prefer Tavily > HN > Google News > RSS
-    const sourcePriority = (s: string) =>
-      s === "tavily" ? 4 : s === "hackernews" ? 3 : s === "google-news" ? 2 : 1;
-    return sourcePriority(b.source) - sourcePriority(a.source);
+    return sourceQuality(b) - sourceQuality(a);
   });
 
   return unique.slice(0, 30); // max 30 items passed to the agent

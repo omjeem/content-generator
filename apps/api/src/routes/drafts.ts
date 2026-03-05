@@ -32,6 +32,7 @@ import { SuggestionFeedback } from "../models/SuggestionFeedback";
 import { aggregateAndUpdatePersona } from "../services/personaLearning";
 import { runAiDetection, runHumanizer } from "../services/aiDetection";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import { chatLimiter, aiCheckLimiter } from "../middleware/rateLimit";
 
 const router = Router();
 router.use(authenticate);
@@ -370,6 +371,7 @@ router.delete(
  */
 router.post(
   "/:id/chat",
+  chatLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = chatSchema.parse(req.body);
@@ -623,6 +625,7 @@ const aiCheckSchema = z.object({
 
 router.post(
   "/:id/ai-check",
+  aiCheckLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = aiCheckSchema.parse(req.body);
@@ -725,6 +728,7 @@ const humanizeSchema = z.object({
 
 router.post(
   "/:id/humanize",
+  aiCheckLimiter,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = humanizeSchema.parse(req.body);
