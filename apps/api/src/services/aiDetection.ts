@@ -71,10 +71,21 @@ ${content}`;
     prompt,
   });
 
-  // Parse response
-  const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
-  const parsed = JSON.parse(cleaned);
-  const result = AiCheckResultSchema.parse(parsed);
+  // Phase 4 #8: Wrap parse with try/catch — return heuristic fallback on failure
+  let result: AiCheckResult;
+  try {
+    const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+    result = AiCheckResultSchema.parse(parsed);
+  } catch (parseErr) {
+    console.error("[aiDetection] Parse failed, returning fallback:", parseErr);
+    result = {
+      score: -1,
+      verdict: "mixed" as const,
+      signals: ["Analysis could not be completed — response was malformed"],
+      suggestions: ["AI detection failed — please try again"],
+    };
+  }
 
   return {
     result,
@@ -140,14 +151,18 @@ Return ONLY valid JSON (no markdown, no extra text):
   });
 
   const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
-  const parsed = JSON.parse(cleaned);
-  const result = HumanizeResultSchema.parse(parsed);
-
-  return {
-    result,
-    usage: {
-      inputTokens: genUsage?.inputTokens ?? 0,
-      outputTokens: genUsage?.outputTokens ?? 0,
-    },
-  };
+  try {
+    const parsed = JSON.parse(cleaned);
+    const result = HumanizeResultSchema.parse(parsed);
+    return {
+      result,
+      usage: {
+        inputTokens: genUsage?.inputTokens ?? 0,
+        outputTokens: genUsage?.outputTokens ?? 0,
+      },
+    };
+  } catch (parseErr) {
+    console.error("[humanizer] Parse failed:", parseErr);
+    throw new Error("Humanization failed — AI response was malformed. Please try again.");
+  }
 }

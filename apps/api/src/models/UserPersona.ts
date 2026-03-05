@@ -109,14 +109,30 @@ const userPersonaSchema = new Schema<IUserPersonaDocument>(
       unique: true,
     },
     linkedinUrl: { type: String, trim: true },
-    scrapedPosts: { type: [String], default: [] },
+    // Phase 4 #6: Cap scrapedPosts at 500 entries
+    scrapedPosts: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (v: string[]) => v.length <= 500,
+        message: "scrapedPosts cannot exceed 500 entries",
+      },
+    },
 
     // Post tracking
     postMetadata: { type: [postBatchMetadataSchema], default: [] },
     totalPostsAnalyzed: { type: Number, default: 0 },
     lastPostAddedAt: { type: Date },
     personaVersion: { type: Number, default: 0 },
-    analysisHistory: { type: [personaSnapshotSchema], default: [] },
+    // Phase 4 #6: Cap analysisHistory at 20 snapshots
+    analysisHistory: {
+      type: [personaSnapshotSchema],
+      default: [],
+      validate: {
+        validator: (v: IPersonaSnapshot[]) => v.length <= 20,
+        message: "analysisHistory cannot exceed 20 snapshots",
+      },
+    },
 
     // Gemini-derived analysis
     writingStyle: { type: String },
@@ -147,7 +163,22 @@ const userPersonaSchema = new Schema<IUserPersonaDocument>(
         {
           preferredTopics: { type: [String], default: [] },
           avoidTopics: { type: [String], default: [] },
-          formatPreferences: { type: Schema.Types.Mixed, default: {} },
+          // Phase 4 #4: Hardened from Schema.Types.Mixed to explicit typed sub-schema
+          formatPreferences: {
+            type: new Schema(
+              {
+                carousel: { type: Number, default: 0 },
+                "text-post": { type: Number, default: 0 },
+                poll: { type: Number, default: 0 },
+                "video-script": { type: Number, default: 0 },
+                list: { type: Number, default: 0 },
+                tweet: { type: Number, default: 0 },
+                thread: { type: Number, default: 0 },
+              },
+              { _id: false, strict: false }, // strict:false for backward compat
+            ),
+            default: {},
+          },
           tonePreference: { type: String },
           averageRating: { type: Number, default: 0 },
           totalFeedbackCount: { type: Number, default: 0 },

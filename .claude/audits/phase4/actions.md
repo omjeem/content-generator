@@ -3,6 +3,7 @@
 **Source**: `/Users/hexahealth/Documents/PP/content-generator/.claude/audits/phase4/improvement.md`
 **Started**: 2026-03-05
 **Last Updated**: 2026-03-05
+**Phase A**: COMPLETE ✅
 
 ---
 
@@ -17,35 +18,35 @@ If context runs out, come back here and:
 
 ---
 
-## Phase A — Quick Wins: Code Quality & Tech Debt (Sections 6.1–6.4, Appendix)
+## Phase A — Quick Wins: Code Quality & Tech Debt (Sections 6.1–6.4, Appendix) ✅ COMPLETE
 
 *Priority: CRITICAL — fixes bugs, hardens schemas, cleans dead code. No dependencies. DO FIRST.*
 
 ### Sub-Phase A1 — Constants Extraction & Dead Code Cleanup (§6.2, Appendix)
 
-- [ ] **#1 — Create centralized constants file** (`config/constants.ts` CREATE): Extract all magic numbers scattered across the codebase into a single `constants.ts` file. Groups: `SCORING` (exact match, partial match, industry match, source bonus, penalties, thresholds), `LEARNING` (action weights, signal weights, decay half-life, topic thresholds, trigger intervals), `PIPELINE` (step timeouts, retry attempts, circuit breaker config), `GENERATION` (min/max ideas, hook limits, keyword/pointer ranges), `CACHE` (trend TTL, topic TTL, L1 TTL), `LIMITS` (max posts, max snapshots, fallback min chars, max topics). (§Appendix: Constants Extraction)
+- [x] **#1 — Create centralized constants file** (`config/constants.ts` CREATE): Extracted SCORING, LEARNING, PIPELINE, GENERATION, CACHE, LIMITS groups. ✅ DONE
 
-- [ ] **#2 — Dead code cleanup across agents** (`agents/personaAnalyst.ts` MODIFY, `services/feedbackProcessor.ts` MODIFY, `routes/drafts.ts` MODIFY): (a) Remove or comment-out unused `linkedinScrapeTool` definition in `personaAnalyst.ts` if still present. (b) Fix typo `_maybeTrigerLearning` → `_maybeTriggerLearning` in both `feedbackProcessor.ts` and any callers. (c) Clean up stale `applyContent` references in `drafts.ts` chat schema if still accepted but unused. (§6.2)
+- [x] **#2 — Dead code cleanup across agents**: (a) Removed unused `linkedinScrapeTool` + `createTool`/`ScrapingBlockedError` imports from personaAnalyst.ts. (b) Fixed typo `_maybeTrigerLearning` → `_maybeTriggerLearning` in feedbackProcessor.ts (both declaration and call). (c) Verified `chatSchema` in drafts.ts already clean — only stale comment remains. ✅ DONE
 
-- [ ] **#3 — Create fire-and-forget safety wrapper** (`utils/fireAndForget.ts` CREATE, multiple files MODIFY): Create `fireAndForget(fn, label)` utility that wraps `fn().catch(err => console.error('[fire-and-forget:${label}]', err.message))`. Replace bare fire-and-forget calls in: `mastra.ts` (3 locations for `trackTokenUsage`), `feedback.ts` (1 location for `processFeedback`). Leave already-wrapped calls in `drafts.ts` and `draftService.ts` as-is. (§Appendix: Fire-and-Forget Audit)
+- [x] **#3 — Create fire-and-forget safety wrapper** (`utils/fireAndForget.ts` CREATE): Created `fireAndForget(fn, label)` that handles both sync-void and async returns. Applied to 3 `trackTokenUsage` calls in mastra.ts and 1 `processFeedback` call in feedback.ts. ✅ DONE
 
 ### Sub-Phase A2 — Schema Hardening (§6.3)
 
-- [ ] **#4 — Harden `formatPreferences` in UserPersona** (`models/UserPersona.ts` MODIFY): Replace `Schema.Types.Mixed` with explicit typed sub-schema: `{ carousel: Number, 'text-post': Number, poll: Number, 'video-script': Number, list: Number, tweet: Number, thread: Number }`. All default to `0`. (§6.3 row 1)
+- [x] **#4 — Harden `formatPreferences` in UserPersona**: Replaced `Schema.Types.Mixed` with explicit typed sub-schema with `strict:false` for backward compat. ✅ DONE
 
-- [ ] **#5 — Harden `contextOptions` in ContentSuggestion** (`models/ContentSuggestion.ts` MODIFY): Replace `Schema.Types.Mixed` with explicit sub-schema: `{ mode: String, topicFocus: String, targetAudienceOverride: String, platformGoal: String, contentMix: String, chatRefinementContext: String, platforms: [String], selectedTrendIds: [String] }`. (§6.3 row 2)
+- [x] **#5 — Harden `contextOptions` in ContentSuggestion**: Replaced `Schema.Types.Mixed` with explicit sub-schema (mode, topicFocus, targetAudienceOverride, etc.) with `strict:false`. ✅ DONE
 
-- [ ] **#6 — Add validators and limits to schemas** (`models/UserPersona.ts` MODIFY, `models/ContentSuggestion.ts` MODIFY, `routes/feedback.ts` MODIFY): (a) Add `validate: { validator: (v) => v.length <= 500 }` to `scrapedPosts` array in UserPersona. (b) Add `validate: { validator: (v) => v.length <= 20 }` to `analysisHistory` in UserPersona (or auto-trim oldest on save). (c) Add `validate: { validator: (v) => v.length >= 1 }` to `suggestions` array in ContentSuggestion. (d) Add `.trim()` to `feedbackText` in feedback Zod schema. (§6.3 rows 3-6)
+- [x] **#6 — Add validators and limits to schemas**: (a) scrapedPosts max 500 validator. (b) analysisHistory max 20 validator. (c) suggestions min 1 validator. (d) `.trim()` on feedbackText Zod schema. ✅ DONE
 
 ### Sub-Phase A3 — Error Recovery (§6.4)
 
-- [ ] **#7 — Add error handling to `processFeedback` in feedback route** (`routes/feedback.ts` MODIFY): Wrap the fire-and-forget `processFeedback()` call with the `fireAndForget()` wrapper from #3. Ensures crashes are logged, not silently swallowed. (§6.4 row 2)
+- [x] **#7 — Wrapped processFeedback with fireAndForget** in feedback.ts. ✅ DONE
 
-- [ ] **#8 — Add try/catch to `aiDetection.ts` JSON parse** (`services/aiDetection.ts` MODIFY): Wrap `JSON.parse()` / Zod parse in `runAiDetection()` with try/catch. On parse failure, return heuristic-only fallback result with `{ score: -1, verdict: 'parse-error', signals: [], suggestions: ['AI detection failed — try again'] }`. (§6.4 row 3)
+- [x] **#8 — Added try/catch to aiDetection.ts JSON parse**: Returns fallback `{ score: -1, verdict: 'mixed', signals: [...], suggestions: [...] }` on parse failure. Also added parse error handling to runHumanizer. ✅ DONE
 
-- [ ] **#9 — Add retry button for failed generation on dashboard** (`app/dashboard/page.tsx` MODIFY): Cache `lastGenerationOptions` in state. When generation fails, show error message WITH a "Retry with same options" button that calls `handleGenerate(lastGenerationOptions)`. (§6.4 row 4)
+- [x] **#9 — Added retry button for failed generation on dashboard**: Caches `lastGenerationContext` in state. Error state shows "Retry with Same Options" + "Change Options" buttons. ✅ DONE
 
-- [ ] **#10 — Re-check token quota before each generation** (`app/dashboard/page.tsx` MODIFY): Move `fetchTokenUsage()` call into `handleGenerate()` so it re-checks quota right before each generation attempt, not just on mount. Show inline error if quota is now exceeded. (§6.4 row 5)
+- [x] **#10 — Re-check token quota before each generation**: `handleGenerate()` now calls `tokenApi.getUsage()` before starting generation. Blocks and shows quota exceeded if limit reached. ✅ DONE
 
 ---
 

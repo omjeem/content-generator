@@ -1,11 +1,9 @@
 import { Agent } from "@mastra/core/agent";
-import { createTool } from "@mastra/core/tools";
 import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import {
   scrapeLinkedInProfile,
   parseManualPosts,
-  ScrapingBlockedError,
 } from "../services/linkedin";
 import { extractJSON } from "../utils/extractJSON";
 import { sanitizePosts, wrapPostContent } from "../utils/sanitizeInput";
@@ -33,43 +31,6 @@ export const PersonaSchema = z.object({
 });
 
 export type PersonaAnalysis = z.infer<typeof PersonaSchema>;
-
-// ── Scrape tool ───────────────────────────────────────────────────────────────
-
-const linkedinScrapeTool = createTool({
-  id: "scrape-linkedin",
-  description: "Scrapes a LinkedIn profile URL and returns raw post texts",
-  inputSchema: z.object({
-    profileUrl: z.string(),
-  }),
-  outputSchema: z.object({
-    posts: z.array(z.string()),
-    source: z.enum(["scraped", "blocked"]),
-    errorMessage: z.string().optional(),
-  }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  execute: async (toolInput: any) => {
-    const profileUrl: string =
-      toolInput?.profileUrl ?? toolInput?.context?.profileUrl ?? "";
-    try {
-      const posts = await scrapeLinkedInProfile(profileUrl);
-      return { posts, source: "scraped" as const };
-    } catch (err) {
-      if (err instanceof ScrapingBlockedError) {
-        return {
-          posts: [],
-          source: "blocked" as const,
-          errorMessage: err.message,
-        };
-      }
-      return {
-        posts: [],
-        source: "blocked" as const,
-        errorMessage: "Unknown scraping error",
-      };
-    }
-  },
-});
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
 

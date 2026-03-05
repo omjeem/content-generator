@@ -50,7 +50,7 @@ async function _runBackgroundProcessing(
   }
 
   // Step 2: check if we should trigger persona learning
-  await _maybeTrigerLearning(feedback.userId.toString());
+  await _maybeTriggerLearning(feedback.userId.toString());
 }
 
 // ── Step 1: LLM signal parsing ────────────────────────────────────────────────
@@ -117,7 +117,7 @@ Analyze this feedback and return ONLY a valid JSON object:
  *
  * Uses canonical aggregateAndUpdatePersona from personaLearning.ts (#51).
  */
-async function _maybeTrigerLearning(userId: string): Promise<void> {
+async function _maybeTriggerLearning(userId: string): Promise<void> {
   try {
     const count = await SuggestionFeedback.countDocuments({
       userId: new mongoose.Types.ObjectId(userId),

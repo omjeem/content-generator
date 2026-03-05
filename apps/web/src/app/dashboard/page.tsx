@@ -69,6 +69,9 @@ export default function DashboardPage() {
   const [topicBrowseLoading, setTopicBrowseLoading] = useState(false);
   const [topicGenerating, setTopicGenerating] = useState(false);
 
+  // Phase 4 #9: Cache last generation options for retry
+  const [lastGenerationContext, setLastGenerationContext] = useState<IGenerateContextOptions | null>(null);
+
   // Load persona + token quota on mount
   useEffect(() => {
     personaApi
@@ -98,10 +101,25 @@ export default function DashboardPage() {
   // Quick generate (existing one-shot flow)
   const handleGenerate = useCallback(
     async (context: IGenerateContextOptions) => {
+      // Phase 4 #9: Cache options for retry
+      setLastGenerationContext(context);
       setGenerateError("");
       setGenerateState("loading");
       setGenerateFlow("one-shot");
       setSuggestions([]);
+
+      // Phase 4 #10: Re-check token quota before each generation
+      try {
+        const freshQuota = await tokenApi.getUsage();
+        setTokenUsage(freshQuota);
+        if (!freshQuota.allowed) {
+          setQuotaExceeded(true);
+          setGenerateState("idle");
+          return;
+        }
+      } catch {
+        // Non-fatal — proceed if quota check fails
+      }
 
       try {
         const result = await suggestionsApi.generate({ context });
@@ -477,7 +495,7 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* Error */}
+          {/* Error — Phase 4 #9: includes "Retry with same options" button */}
           {generateState === "error" && (
             <Card>
               <CardContent className="p-8 text-center">
@@ -491,11 +509,18 @@ export default function DashboardPage() {
                   >
                     Cancel
                   </Button>
+                  {lastGenerationContext && (
+                    <Button
+                      onClick={() => void handleGenerate(lastGenerationContext)}
+                    >
+                      Retry with Same Options
+                    </Button>
+                  )}
                   <Button
+                    variant="outline"
                     onClick={() => setGenerateState("idle")}
-                    size="lg"
                   >
-                    Try Again
+                    Change Options
                   </Button>
                 </div>
               </CardContent>

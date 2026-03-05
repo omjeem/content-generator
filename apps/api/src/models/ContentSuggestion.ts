@@ -102,14 +102,38 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
       type: String,
       enum: ["live", "fallback"],
     },
-    suggestions: { type: [suggestionItemSchema], required: true },
+    // Phase 4 #6: Require at least 1 suggestion
+    suggestions: {
+      type: [suggestionItemSchema],
+      required: true,
+      validate: {
+        validator: (v: ISuggestionItem[]) => v.length >= 1,
+        message: "suggestions must contain at least 1 item",
+      },
+    },
     // Generation metadata (#17) — defaults to 'profile' for backward-compat
     generationMode: {
       type: String,
       enum: ["profile", "topic-focus", "chat-refined", "trend-selected", "persona-topics"],
       default: "profile",
     },
-    contextOptions: { type: Schema.Types.Mixed },
+    // Phase 4 #5: Hardened from Schema.Types.Mixed to explicit typed sub-schema
+    contextOptions: {
+      type: new Schema(
+        {
+          mode: { type: String },
+          topicFocus: { type: String },
+          targetAudienceOverride: { type: String },
+          platformGoal: { type: String },
+          contentMix: { type: String },
+          chatRefinementContext: { type: String },
+          platforms: { type: [String], default: undefined },
+          selectedTrendIds: { type: [String], default: undefined },
+        },
+        { _id: false, strict: false }, // strict:false for backward compat
+      ),
+      default: undefined,
+    },
     // Generation analytics (#54) — optional, populated by runContentPipeline()
     generationMeta: {
       type: new Schema(

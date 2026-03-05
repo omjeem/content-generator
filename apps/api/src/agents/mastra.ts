@@ -16,6 +16,7 @@ import { postEditorAgent } from "./postEditor";
 import { UserPersona } from "../models/UserPersona";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import { fireAndForget } from "../utils/fireAndForget";
 import type { ISuggestion, IGenerateContextOptions } from "@repo/shared-types";
 
 // ── Mastra instance ───────────────────────────────────────────────────────────
@@ -128,14 +129,17 @@ export async function runContentPipeline(
       const { analysis, usage: personaUsage } = await analyzePersona(posts);
 
       // Track persona analysis token usage — fire-and-forget
-      trackTokenUsage({
-        userId: input.userId,
-        agent: "persona-analyst",
-        operation: "persona_analysis",
-        inputTokens: personaUsage.inputTokens,
-        outputTokens: personaUsage.outputTokens,
-        totalTokens: personaUsage.inputTokens + personaUsage.outputTokens,
-      });
+      fireAndForget(
+        () => trackTokenUsage({
+          userId: input.userId,
+          agent: "persona-analyst",
+          operation: "persona_analysis",
+          inputTokens: personaUsage.inputTokens,
+          outputTokens: personaUsage.outputTokens,
+          totalTokens: personaUsage.inputTokens + personaUsage.outputTokens,
+        }),
+        "persona-token-tracking",
+      );
 
       // Upsert and capture the updated document so Step 2 can skip another findOne
       personaAfterStep1 = await UserPersona.findOneAndUpdate(
@@ -229,14 +233,17 @@ export async function runContentPipeline(
     trendIsLive = isLive;
 
     // Track trend research token usage — fire-and-forget
-    trackTokenUsage({
-      userId: input.userId,
-      agent: "trend-research",
-      operation: "trend_research",
-      inputTokens: trendUsage.inputTokens,
-      outputTokens: trendUsage.outputTokens,
-      totalTokens: trendUsage.inputTokens + trendUsage.outputTokens,
-    });
+    fireAndForget(
+      () => trackTokenUsage({
+        userId: input.userId,
+        agent: "trend-research",
+        operation: "trend_research",
+        inputTokens: trendUsage.inputTokens,
+        outputTokens: trendUsage.outputTokens,
+        totalTokens: trendUsage.inputTokens + trendUsage.outputTokens,
+      }),
+      "trend-token-tracking",
+    );
 
     console.log(
       `[pipeline] Step 3: Found ${trends.trends.length} relevant trends (${isLive ? "live" : "fallback"}).`,
@@ -325,15 +332,18 @@ export async function runContentPipeline(
   });
 
   // Track content generation token usage — fire-and-forget (after save so we have suggestionId)
-  trackTokenUsage({
-    userId: input.userId,
-    agent: "content-generator",
-    operation: "content_generation",
-    inputTokens: contentUsage.inputTokens,
-    outputTokens: contentUsage.outputTokens,
-    totalTokens: contentUsage.inputTokens + contentUsage.outputTokens,
-    metadata: { suggestionId: String(saved._id) },
-  });
+  fireAndForget(
+    () => trackTokenUsage({
+      userId: input.userId,
+      agent: "content-generator",
+      operation: "content_generation",
+      inputTokens: contentUsage.inputTokens,
+      outputTokens: contentUsage.outputTokens,
+      totalTokens: contentUsage.inputTokens + contentUsage.outputTokens,
+      metadata: { suggestionId: String(saved._id) },
+    }),
+    "content-token-tracking",
+  );
 
   console.log(`[pipeline] Done. Saved suggestion set: ${saved._id}`);
 

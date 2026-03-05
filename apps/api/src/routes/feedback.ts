@@ -13,6 +13,7 @@ import { authenticate, AuthRequest } from "../middleware/auth";
 import { SuggestionFeedback } from "../models/SuggestionFeedback";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { processFeedback } from "../services/feedbackProcessor";
+import { fireAndForget } from "../utils/fireAndForget";
 
 const router = Router();
 router.use(authenticate);
@@ -23,7 +24,7 @@ const feedbackBodySchema = z.object({
   suggestionIndex: z.number().int().min(0),
   rating: z.enum(["loved", "good", "meh", "bad"]).optional(),
   action: z.enum(["saved", "draft", "published", "dismissed"]),
-  feedbackText: z.string().max(1000).optional(),
+  feedbackText: z.string().trim().max(1000).optional(),
 });
 
 // ── POST /api/suggestions/:setId/feedback ─────────────────────────────────────
@@ -139,7 +140,11 @@ router.post(
       );
 
       // Fire-and-forget background processing (signal parsing + learning trigger)
-      processFeedback(feedback);
+      // Phase 4 #7: Wrapped with fireAndForget for structured error logging
+      fireAndForget(
+        () => { processFeedback(feedback); return Promise.resolve(); },
+        "feedback-processing",
+      );
 
       res.status(201).json({
         message: "Feedback saved",
