@@ -19,5 +19,6 @@
         "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
       }
     }
-  ]
+  ],
+  "autoVerify": false
 }
