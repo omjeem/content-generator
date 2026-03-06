@@ -10,34 +10,35 @@
 import rateLimit from "express-rate-limit";
 import type { AuthRequest } from "./auth";
 
-const keyGenerator = (req: AuthRequest): string => req.userId ?? req.ip ?? "anon";
+const keyGenerator = (req: AuthRequest): string => req.userId ?? "anon";
 
-/** 5 requests per minute — content generation endpoints */
-export const generationLimiter = rateLimit({
-  windowMs: 60_000,
-  max: 5,
+const sharedConfig = {
   keyGenerator,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { xForwardedForHeader: false, ip: false },
+} as const;
+
+/** 5 requests per minute — content generation endpoints */
+export const generationLimiter = rateLimit({
+  ...sharedConfig,
+  windowMs: 60_000,
+  max: 5,
   message: { error: "Too many generation requests. Please wait a minute before trying again." },
 });
 
 /** 20 requests per minute — chat and refine-context endpoints */
 export const chatLimiter = rateLimit({
+  ...sharedConfig,
   windowMs: 60_000,
   max: 20,
-  keyGenerator,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many chat requests. Please slow down." },
 });
 
 /** 10 requests per minute — AI detection and humanization */
 export const aiCheckLimiter = rateLimit({
+  ...sharedConfig,
   windowMs: 60_000,
   max: 10,
-  keyGenerator,
-  standardHeaders: true,
-  legacyHeaders: false,
   message: { error: "Too many AI check requests. Please wait a moment." },
 });

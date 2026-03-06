@@ -12,7 +12,7 @@ domain-aware trend fetching, feedback learning, and AI co-writing.
 
 **Working Directory**: `/Users/hexahealth/Documents/PP/content-generator/`
 **Monorepo**: Turborepo | **Backend**: Express + TypeScript | **Frontend**: Next.js 14
-**AI**: Mastra AI + Gemini 2.5 Flash | **DB**: MongoDB (11 collections) | **Auth**: JWT (httpOnly cookies)
+**AI**: Mastra AI + Gemini 2.5 Flash | **DB**: MongoDB (13 collections) | **Auth**: JWT (httpOnly cookies)
 
 > For quick project context → `.claude/project-context.md`
 > For full architecture + flow diagrams → `.claude/architecture.md`
@@ -47,7 +47,7 @@ content-generator/
 │   │   └── src/
 │   │       ├── index.ts               ← App entry + route registration
 │   │       ├── config/                ← db.ts (MongoDB), env.ts (Zod validation)
-│   │       ├── models/                ← 11 Mongoose models
+│   │       ├── models/                ← 13 Mongoose models
 │   │       │   ├── User.ts            ← Auth accounts
 │   │       │   ├── UserPersona.ts     ← Profile analysis + feedback profile
 │   │       │   ├── ChatSession.ts     ← Conversation history
@@ -58,18 +58,21 @@ content-generator/
 │   │       │   ├── TokenRequest.ts    ← Token increase requests
 │   │       │   ├── AdminAuditLog.ts   ← Admin action audit trail
 │   │       │   ├── SystemConfig.ts    ← Platform config
-│   │       │   └── RefreshToken.ts    ← JWT refresh tokens
-│   │       ├── routes/                ← 10 route files
+│   │       │   ├── RefreshToken.ts    ← JWT refresh tokens
+│   │       │   ├── TrendCache.ts      ← Persistent L2 trend cache
+│   │       │   └── AudienceInsight.ts ← Audience engagement records
+│   │       ├── routes/                ← 11 route files
 │   │       │   ├── auth.ts            ← register, login, logout, me, refresh
-│   │       │   ├── persona.ts         ← analyze, get, add-posts, posts, history
+│   │       │   ├── persona.ts         ← analyze, get, add-posts, posts, history, peers
 │   │       │   ├── onboarding.ts      ← chat, session, status
 │   │       │   ├── trends.ts          ← get trends, discover
-│   │       │   ├── suggestions.ts     ← generate, refine-context, list, topic-ideas
+│   │       │   ├── suggestions.ts     ← generate, refine-context, list, topic-ideas, regenerate
 │   │       │   ├── personaChat.ts     ← chat, apply-changes, history
-│   │       │   ├── feedback.ts        ← submit rating, get feedback
-│   │       │   ├── drafts.ts          ← CRUD, editor-chat, ai-check, humanize
+│   │       │   ├── feedback.ts        ← submit rating, get feedback, implicit, reset
+│   │       │   ├── drafts.ts          ← CRUD, editor-chat, ai-check, humanize, performance
 │   │       │   ├── tokenUsage.ts      ← summary, request-increase
-│   │       │   └── admin.ts           ← users, analytics, token-requests, audit
+│   │       │   ├── admin.ts           ← users, analytics, token-requests, audit
+│   │       │   └── audience.ts        ← record engagement, get insights
 │   │       ├── middleware/            ← auth.ts, adminAuth.ts, errorHandler.ts
 │   │       ├── agents/                ← 6 agents + orchestrator
 │   │       │   ├── mastra.ts          ← Orchestrator (sequences agents 1→2→3→4)
@@ -79,9 +82,9 @@ content-generator/
 │   │       │   ├── contentGenerator.ts← Agent 4: Suggestion brief generation
 │   │       │   ├── personaChat.ts     ← Agent 5: Live persona editor
 │   │       │   └── postEditor.ts      ← Agent 6: AI co-writing assistant
-│   │       ├── services/              ← 16 service files
+│   │       ├── services/              ← 19 service files
 │   │       │   ├── trends.ts          ← Multi-tier domain-aware trend fetching
-│   │       │   ├── trendCache.ts      ← 30-min in-memory trend cache
+│   │       │   ├── trendCache.ts      ← Two-tier cache (L1 memory + L2 MongoDB)
 │   │       │   ├── trendDiscoveryCache.ts ← Per-user discovery session cache
 │   │       │   ├── linkedin.ts        ← Puppeteer scraper
 │   │       │   ├── feedbackProcessor.ts ← Fire-and-forget signal extraction
@@ -93,8 +96,16 @@ content-generator/
 │   │       │   ├── chatSessionService.ts ← Chat persistence
 │   │       │   ├── userPersonaService.ts ← Persona queries
 │   │       │   ├── healthCheck.ts     ← Health monitoring
-│   │       │   └── adminSeed.ts       ← First-run admin creation
-│   │       ├── utils/                 ← scoring.ts, extractJSON.ts, sanitizeInput.ts
+│   │       │   ├── adminSeed.ts       ← First-run admin creation
+│   │       │   ├── writingDNA.ts      ← Deterministic voice fingerprint
+│   │       │   ├── personaConfidence.ts ← 5-dimension confidence scorer
+│   │       │   ├── schedulingHints.ts ← Domain posting time lookup
+│   │       │   ├── contentContinuity.ts ← Content series detection
+│   │       │   ├── audienceTracker.ts ← Audience engagement tracking
+│   │       │   ├── performanceTracker.ts ← Performance-weighted learning
+│   │       │   └── abTest.ts         ← A/B test framework
+│   │       ├── utils/                 ← scoring.ts, extractJSON.ts, sanitizeInput.ts, fireAndForget.ts, circuitBreaker.ts
+│   │       ├── middleware/            ← auth.ts, adminAuth.ts, errorHandler.ts, rateLimit.ts
 │   │       └── swagger/setup.ts       ← Swagger UI at /api/docs
 │   │
 │   └── web/                           ← Next.js 14 App Router (port 3000)
@@ -136,6 +147,7 @@ content-generator/
 - [x] Phase 6: Wire frontend to backend + end-to-end testing
 - [x] Phase 7: Flexible generation (3 modes), Persona Chat, Rich Content Briefs (2026-02-21)
 - [x] Post-Phase: Domain-aware trends, trend anchoring, feedback loop, AI detector, admin (2026-03)
+- [x] Phase 4 Audit: Code quality, reliability, Writing DNA, confidence scoring, scheduling hints, content series, implicit feedback, performance tracking, audience resonance, A/B testing, peer awareness, UX polish (2026-03-05 to 2026-03-06) — 54 items across 8 sub-phases
 
 ---
 

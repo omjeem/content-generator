@@ -1,7 +1,7 @@
 # Development Rules & Conventions
 
 > Read this to understand how this codebase works and avoid common pitfalls.
-> Last synced: 2026-03-04
+> Last synced: 2026-03-06
 
 ---
 
@@ -31,15 +31,39 @@ LLM agents return structured data embedded in natural text:
 Extract with regex, parse JSON, strip from visible reply. Used by 4 agents.
 
 ### Fire-and-Forget
-Side effects that shouldn't block the response:
+Side effects that shouldn't block the response. Always use the `fireAndForget()` wrapper:
 ```typescript
-// DO: fire-and-forget (no await)
-trackTokenUsage({ userId, agent: "...", ... });
-processFeedback(feedbackDoc);
+import { fireAndForget } from "../utils/fireAndForget";
+
+// DO: use wrapper for safe fire-and-forget
+fireAndForget(() => trackTokenUsage({ userId, agent: "...", ... }), "token-tracking");
+fireAndForget(() => processFeedback(feedbackDoc), "feedback-processing");
 
 // DON'T: await these in the request handler
 await trackTokenUsage(...); // blocks response unnecessarily
+// DON'T: raw fire-and-forget without wrapper (swallows errors silently)
+trackTokenUsage(...); // no error logging
 ```
+
+### Constants from Config
+All magic numbers are centralized in `config/constants.ts`:
+```typescript
+import { SCORING, LEARNING, PIPELINE, GENERATION, CACHE, LIMITS } from "../config/constants";
+// SCORING.BASE_SCORE, PIPELINE.STEP_TIMEOUTS.PERSONA, CACHE.L1_CACHE_TTL_MS, etc.
+```
+
+### Circuit Breaker
+The Gemini API pipeline uses a circuit breaker (`utils/circuitBreaker.ts`):
+- **CLOSED**: Normal operation. Tracks consecutive failures.
+- **OPEN**: After 5 failures, blocks all requests for 60s (fail-fast).
+- **HALF_OPEN**: After cooldown, allows 1 test request. Success → CLOSED, failure → OPEN.
+
+### Rate Limiting
+Per-user rate limits applied via `middleware/rateLimit.ts`:
+- `generationLimiter`: 5 req/min (generation endpoints)
+- `chatLimiter`: 20 req/min (chat/refine endpoints)
+- `aiCheckLimiter`: 10 req/min (AI detection/humanize endpoints)
+Key: `req.userId` (after `authenticate` middleware).
 
 ### Domain Classification
 `classifyDomain(industry, topics)` returns one of 14 `DomainCategory` values.
@@ -71,6 +95,8 @@ Never let the agent drift into the persona's general expertise.
 | New service | `apps/api/src/services/` | Business logic, external API wrappers. |
 | New route | `apps/api/src/routes/` | One file per resource group. Register in `index.ts`. |
 | New model | `apps/api/src/models/` | Mongoose schema. Add interface to `packages/shared-types/`. |
+| New config constant | `apps/api/src/config/constants.ts` | Add to existing group or create new group. |
+| New middleware | `apps/api/src/middleware/` | Per-request processing (auth, rate-limit, etc.). |
 | New util | `apps/api/src/utils/` | Pure functions, no side effects. |
 | New page | `apps/web/src/app/` | Next.js App Router convention. |
 | New component | `apps/web/src/components/<category>/` | Group by feature domain. |
@@ -122,8 +148,11 @@ Never let the agent drift into the persona's general expertise.
 | Hardcoding tech RSS feeds | Use `DOMAIN_RSS_FEEDS[domain]` — 14 domain categories. |
 | HN for all domains | Only `tech`, `business`, `finance`, `general` query HN. |
 | Content ideas ignoring trends | Trend-content anchoring CRITICAL RULE in contentGenerator. |
-| Awaiting fire-and-forget calls | `trackTokenUsage` and `processFeedback` should NOT be awaited. |
+| Awaiting fire-and-forget calls | Use `fireAndForget()` wrapper — never `await` these. |
+| Raw fire-and-forget without wrapper | Always use `fireAndForget(fn, label)` for error logging. |
+| Inline magic numbers | Use `config/constants.ts` — all numbers centralized. |
 | Modifying `packages/shared-types` without rebuilding | Run `npm run build` in root or restart dev server. |
+| Using `useSearchParams()` without Suspense | Next.js 14 requires wrapping in `<Suspense>` boundary. |
 | Forgetting to pass `domain` to fetch functions | `fetchRealTrendingContent` auto-classifies if not passed. |
 
 ### Type checking
@@ -146,10 +175,12 @@ npx tsc --noEmit --project apps/api/tsconfig.json
 
 ## 7. Token Usage & Limits
 
-- Every agent call tracked via `trackTokenUsage()` (fire-and-forget)
-- Users have configurable `tokenLimit` (null = unlimited)
-- Token check happens before generation in the pipeline
+- Every agent call tracked via `trackTokenUsage()` (fire-and-forget via `fireAndForget()`)
+- Users have configurable `tokenLimit` (null = use SystemConfig default)
+- `checkTokenQuota()` MUST be awaited before any expensive AI call
+- Grace buffer: `allowed = tokensUsed < tokenLimit * 1.1` (10% grace)
 - Admin can approve/reject token increase requests
+- Frontend rechecks quota before starting generation (dashboard `handleGenerate`)
 
 ---
 
@@ -167,15 +198,31 @@ npx tsc --noEmit --project apps/api/tsconfig.json
 
 ### Working well
 - Full 6-agent pipeline with 5 generation modes
-- Domain-aware trend fetching across 14 categories
-- Feedback learning loop with persona updates
+- Domain-aware trend fetching across 14 categories with deduplication
+- Two-tier trend caching (L1 in-memory + L2 MongoDB)
+- Feedback learning loop with explicit + implicit signals + performance weighting
+- Writing DNA: deterministic voice fingerprint (15+ metrics)
+- Persona confidence scoring (5-dimension, 0-100)
+- Content series detection and continuation suggestions
+- Scheduling hints based on domain and posting time data
 - Post editor with AI co-writing + AI detection
 - Admin dashboard with user management
+- Per-user rate limiting (generation, chat, AI-check)
+- Pipeline reliability: circuit breaker, step timeouts, exponential backoff
+- Audience engagement tracking with prompt signal injection
+- Persona evolution timeline with diff visualization
+- Suggestion set comparison view
+- Quick regeneration with per-suggestion refinements
+- A/B test framework for future experimentation
+- Competitor/peer awareness (MVP — topic differentiation)
 
 ### Areas for future work
 - Automated test suite (unit + integration)
-- Rate limiting per user (currently global only)
 - WebSocket for real-time generation progress
 - More RSS feeds per domain (some categories have untested feeds)
 - Mobile-responsive improvements
 - Export/import personas
+- LinkedIn OAuth for automated audience data (currently manual)
+- Personalized scheduling hints (currently domain-average)
+- A/B test analysis dashboard (framework in place, UI needed)
+- Redis store for rate limiting in multi-instance deployments

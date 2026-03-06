@@ -20,6 +20,7 @@ import { extractWritingDNA } from "../services/writingDNA";
 import { computeConfidenceScore } from "../services/personaConfidence";
 import { getSchedulingHint } from "../services/schedulingHints";
 import { detectContentSeries } from "../services/contentContinuity";
+import { getAudienceInsights, buildAudienceSignalsSection } from "../services/audienceTracker";
 import { classifyDomain } from "../services/trends";
 import { fireAndForget } from "../utils/fireAndForget";
 import { CircuitBreaker } from "../utils/circuitBreaker";
@@ -310,19 +311,24 @@ export async function runContentPipeline(
     trendIsLive = false;
   }
 
-  // ── STEP 3.5: Scheduling Hint + Content Series (Phase 4 #31, #34) ───────────
-  // Both are fast, deterministic (no LLM) — scheduling hint is a lookup,
-  // series detection does 1 DB query. Run in parallel for max speed.
+  // ── STEP 3.5: Scheduling Hint + Content Series + Audience Signals (Phase 4 #31, #34, #48) ──
+  // All are fast, deterministic (no LLM) — run in parallel for max speed.
   const domain = classifyDomain(
     persona.industry ?? "business",
     persona.topics.length ? persona.topics : persona.contentPillars,
   );
   const schedulingHint = getSchedulingHint(domain);
   let contentSeries: Awaited<ReturnType<typeof detectContentSeries>> = [];
+  let audienceSignals = "";
   try {
-    contentSeries = await detectContentSeries(input.userId);
+    const [series, insights] = await Promise.all([
+      detectContentSeries(input.userId),
+      getAudienceInsights(input.userId),
+    ]);
+    contentSeries = series;
+    audienceSignals = buildAudienceSignalsSection(insights);
   } catch {
-    // Non-fatal — proceed without series data
+    // Non-fatal — proceed without series/audience data
   }
 
   // ── STEP 4: Content Generation (Agent 4) ─────────────────────────────────────
@@ -340,6 +346,7 @@ export async function runContentPipeline(
         platforms: input.platforms,
         schedulingHint,
         contentSeries,
+        audienceSignals,
       }),
       PIPELINE.STEP_TIMEOUTS.content,
       "Content generation",

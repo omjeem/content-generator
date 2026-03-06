@@ -89,6 +89,13 @@ export interface IUserPersonaDocument extends Document {
     ctaPatterns: string[];
   };
 
+  // ── Peer insights (Phase 4 #51) ──────────────────────────────────────
+  peerInsights?: {
+    peerUrls: string[];
+    lastScrapedAt?: Date;
+    peerTopics: string[];
+  };
+
   // ── Confidence score (Phase 4 #22/23) ─────────────────────────────────
   confidenceScore?: {
     overall: number;
@@ -221,6 +228,19 @@ const userPersonaSchema = new Schema<IUserPersonaDocument>(
       ),
     },
     lastLearningUpdate: { type: Date },
+
+    // Peer insights — Phase 4 #51
+    peerInsights: {
+      type: new Schema(
+        {
+          peerUrls: { type: [String], default: [] },
+          lastScrapedAt: { type: Date },
+          peerTopics: { type: [String], default: [] },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
 
     // Writing DNA — Phase 4 #18
     writingDNA: {

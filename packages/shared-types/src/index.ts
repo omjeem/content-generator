@@ -102,6 +102,13 @@ export interface IPersonaConfidenceScore {
   };
 }
 
+// Peer insights — competitor/peer awareness (Phase 4 #51)
+export interface IPeerInsights {
+  peerUrls: string[];
+  lastScrapedAt?: string;
+  peerTopics: string[];
+}
+
 export interface IUserPersona {
   _id: string;
   userId: string;
@@ -133,6 +140,8 @@ export interface IUserPersona {
   writingDNA?: IWritingDNA;
   // Confidence score — how well we know this creator (Phase 4 #22)
   confidenceScore?: IPersonaConfidenceScore;
+  // Peer insights — competitor awareness (Phase 4 #51)
+  peerInsights?: IPeerInsights;
   createdAt: string;
   updatedAt: string;
 }
@@ -713,4 +722,46 @@ export interface IPersonaLearningResult {
     topicsRemoved: string[];
     formatsAdjusted: Record<string, number>;
   };
+}
+
+// --- Feature: Audience Resonance Tracking (Phase 4 #47-#48) ---
+
+export interface IAudienceEngagement {
+  likes: number;
+  comments: number;
+  reposts: number;
+  impressions?: number;
+}
+
+export interface IAudienceInsight {
+  _id: string;
+  userId: string;
+  postDraftId?: string;
+  postContent: string;
+  engagement: IAudienceEngagement;
+  topics: string[];
+  format: string;
+  dayOfWeek: string;
+  timeOfDay: string;
+  audienceQuestions: string[];
+  recordedAt: string;
+}
+
+export interface IAudienceInsightsResult {
+  topPerformingTopics: { topic: string; avgEngagement: number; count: number }[];
+  bestPostingTimes: { dayOfWeek: string; timeOfDay: string; avgEngagement: number }[];
+  formatPerformance: { format: string; avgEngagement: number; count: number }[];
+  totalRecords: number;
+  overallAvgEngagement: number;
+}
+
+// --- Feature: A/B Test Framework (Phase 4 #50) ---
+
+export interface IAbTestData {
+  servedPath: "default" | "experimental";
+  shadowResult?: {
+    suggestions: unknown[];
+    generatedAt: string;
+  };
+  enrolledAt: string;
 }

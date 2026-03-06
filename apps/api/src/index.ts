@@ -18,6 +18,7 @@ import tokenUsageRoutes from "./routes/tokenUsage";
 import feedbackRoutes from "./routes/feedback";
 import draftsRoutes from "./routes/drafts";
 import adminRoutes, { adminSetupRouter } from "./routes/admin";
+import audienceRoutes from "./routes/audience";
 
 // Services
 import { seedDefaultTokenLimit } from "./services/tokenUsage";
@@ -151,6 +152,7 @@ app.use("/api/tokens", tokenUsageRoutes);
 // Feedback routes: handles /api/suggestions/:setId/feedback and /api/feedback/summary
 app.use("/api", feedbackRoutes);
 app.use("/api/drafts", draftsRoutes);
+app.use("/api/audience", audienceRoutes);
 app.use("/api/admin", adminRoutes);
 // Admin setup (one-time): auth required but NOT admin role (admin can't log in yet)
 app.use("/api/admin-setup", adminSetupRouter);

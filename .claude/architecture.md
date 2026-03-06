@@ -1,7 +1,7 @@
 # Architecture — Low-Level Design
 
 > Complete technical architecture with flow diagrams.
-> Last synced: 2026-03-04
+> Last synced: 2026-03-06
 
 ---
 
@@ -37,7 +37,7 @@
              ┌──────────┐     ┌──────────────┐    ┌──────────────┐
              │ MongoDB  │     │   Gemini API  │    │ External APIs│
              │ Atlas M0 │     │ (ai.google)   │    │ Tavily, HN,  │
-             │ 11 colls │     │ gemini-2.5    │    │ RSS, G-News  │
+             │ 13 colls │     │ gemini-2.5    │    │ RSS, G-News  │
              └──────────┘     └──────────────┘    └──────────────┘
 ```
 
@@ -135,8 +135,13 @@
        ▼
   ┌──────────────────────────────────────────────────────────────┐
   │  ORCHESTRATOR (agents/mastra.ts)                              │
+  │  with: token quota check, pipeline timeout (90s),             │
+  │        circuit breaker, exponential backoff retry              │
   │                                                                │
-  │  Step 1: Load UserPersona from MongoDB                        │
+  │  Pre-flight: checkTokenQuota(userId) — blocks if over limit   │
+  │       │                                                        │
+  │  Step 1: Load UserPersona + extract WritingDNA (deterministic) │
+  │       │  + recompute confidence score (fire-and-forget)        │
   │       │                                                        │
   │       ▼                                                        │
   │  ┌─────────────────────────┐                                   │
@@ -144,12 +149,18 @@
   │  │ trendResearch.ts        │      classifyDomain() → RSS pool  │
   │  │                         │      HN (tech only) + Google News │
   │  │ 1. Fetch raw items      │      Tavily (if key set)          │
-  │  │ 2. Score by persona     │                                   │
+  │  │ 2. Score by persona     │      L1→L2 two-tier cache         │
   │  │ 3. Balanced selection   │                                   │
   │  │ 4. Heuristic or LLM    │                                   │
   │  │    enrichment           │                                   │
   │  └──────────┬──────────────┘                                   │
   │             │  TrendResult { trends[], rawTrends[] }           │
+  │             ▼                                                  │
+  │  Step 3.5 (parallel):                                          │
+  │   - getSchedulingHint(domain) → posting time suggestion        │
+  │   - detectContentSeries(userId) → existing series clusters     │
+  │   - getAudienceInsights(userId) → audience signal prompt       │
+  │             │                                                  │
   │             ▼                                                  │
   │  ┌─────────────────────────────┐                               │
   │  │ Agent 4: Content Generator   │                               │
@@ -160,18 +171,23 @@
   │  │  - trends (WHAT to write)    │                               │
   │  │  - context overrides         │                               │
   │  │  - feedback profile          │                               │
+  │  │  - writingDNA section        │                               │
+  │  │  - confidence directive      │                               │
+  │  │  - format strategy           │                               │
+  │  │  - audience signals          │                               │
+  │  │  - peer differentiation      │                               │
+  │  │  - content series context    │                               │
   │  │                              │                               │
   │  │ Output:                      │                               │
   │  │  5-10 ISuggestion objects    │                               │
-  │  │  (topic, angle, format,      │                               │
-  │  │   hook, whyItFits,           │                               │
-  │  │   seoKeywords, postPointers, │                               │
-  │  │   clickbaitHooks, CTA)       │                               │
+  │  │  + schedulingHint            │                               │
+  │  │  + seriesTag (if applicable) │                               │
   │  └──────────┬───────────────────┘                               │
   │             │                                                  │
   │             ▼                                                  │
+  │  postProcessIdeas(): attach scheduling hints + series tags     │
   │  Save to ContentSuggestion collection                          │
-  │  Track token usage (fire-and-forget)                           │
+  │  Track token usage (fire-and-forget via fireAndForget())       │
   │                                                                │
   │  Return: { suggestions[], id, trendsUsed[], trendSource }     │
   └──────────────────────────────────────────────────────────────┘
@@ -537,35 +553,43 @@
 
 | File | Purpose |
 |---|---|
-| `trends.ts` | Multi-tier domain-aware trend fetching (Tavily → HN → RSS → Google News) |
-| `trendCache.ts` | 30-min in-memory cache for raw trend items |
+| `trends.ts` | Multi-tier domain-aware trend fetching with deduplication (Tavily → HN → RSS → Google News) |
+| `trendCache.ts` | Two-tier caching: L1 in-memory (5-min TTL) + L2 MongoDB (30-min TTL auto-expiry) |
 | `trendDiscoveryCache.ts` | Per-user discovery session cache for Browse Trends flow |
 | `linkedin.ts` | Puppeteer-based LinkedIn profile scraper |
 | `feedbackProcessor.ts` | Fire-and-forget signal extraction from suggestion feedback |
-| `personaLearning.ts` | Aggregates feedback signals → updates UserPersona.feedbackProfile |
+| `personaLearning.ts` | Aggregates explicit + implicit feedback → updates UserPersona.feedbackProfile |
 | `personaMerge.ts` | Incremental persona analysis when user adds more posts |
 | `draftService.ts` | PostDraft CRUD + version history management |
-| `aiDetection.ts` | Heuristic AI-content scoring + LLM-based humanization |
+| `aiDetection.ts` | Heuristic AI-content scoring + LLM-based humanization (with JSON parse fallback) |
 | `tokenUsage.ts` | Per-agent token consumption tracking + limit enforcement |
 | `chatSessionService.ts` | ChatSession CRUD for conversation persistence |
 | `userPersonaService.ts` | UserPersona helper queries |
 | `healthCheck.ts` | MongoDB + external API health monitoring |
 | `adminSeed.ts` | First-run admin account creation from env vars |
+| `writingDNA.ts` | Deterministic writing pattern extraction (15+ metrics, no LLM) |
+| `personaConfidence.ts` | 5-dimension confidence score calculator (0-100 scale) |
+| `schedulingHints.ts` | Domain-based optimal posting time lookup (14 domain categories) |
+| `contentContinuity.ts` | Content series detection via keyword clustering (2+ posts = series) |
+| `audienceTracker.ts` | Audience engagement recording + analytics + prompt signal builder |
+| `performanceTracker.ts` | Performance-weighted learning from published post outcomes |
+| `abTest.ts` | A/B test framework (10% enrollment, shadow results, stats aggregation) |
 
 ### Routes (`apps/api/src/routes/`)
 
 | File | Mount Point | Key Endpoints |
 |---|---|---|
 | `auth.ts` | `/api/auth` | register, login, logout, me, refresh-token |
-| `persona.ts` | `/api/persona` | analyze, get, add-posts, posts, history |
+| `persona.ts` | `/api/persona` | analyze, get, add-posts, posts, history, peers |
 | `onboarding.ts` | `/api/onboarding` | chat, session, status |
 | `trends.ts` | `/api/trends` | get, discover |
-| `suggestions.ts` | `/api/suggestions` | generate, refine-context, list, get/:id, topic-ideas, generate-from-topic |
+| `suggestions.ts` | `/api/suggestions` | generate, refine-context, list, get/:id, topic-ideas, generate-from-topic, /:setId/regenerate |
 | `personaChat.ts` | `/api/persona-chat` | chat, apply-changes, history, persona |
-| `feedback.ts` | `/api/feedback` | submit (POST /:setId/:index), get |
-| `drafts.ts` | `/api/drafts` | CRUD, editor-chat, ai-check, humanize |
+| `feedback.ts` | `/api/feedback` | submit (POST /:setId/:index), get, implicit, reset |
+| `drafts.ts` | `/api/drafts` | CRUD, editor-chat, ai-check, humanize, /:id/performance |
 | `tokenUsage.ts` | `/api/token-usage` | summary, request-increase |
 | `admin.ts` | `/api/admin` | users, analytics, token-requests, audit-log, config |
+| `audience.ts` | `/api/audience` | record, insights |
 
 ### Utils (`apps/api/src/utils/`)
 
@@ -575,6 +599,25 @@
 | `extractJSON.ts` | Robust JSON extraction from LLM responses (handles markdown code blocks) |
 | `sanitizeInput.ts` | Input sanitization for user-submitted text |
 | `chatHistory.ts` | Chat history formatting helpers |
+| `fireAndForget.ts` | Safe fire-and-forget wrapper with error logging |
+| `circuitBreaker.ts` | Circuit breaker for Gemini API (closed → open → half-open states) |
+
+### Config (`apps/api/src/config/`)
+
+| File | Purpose |
+|---|---|
+| `db.ts` | MongoDB connection setup |
+| `env.ts` | Environment variable validation (Zod) |
+| `constants.ts` | Centralized magic numbers: SCORING, LEARNING, PIPELINE, GENERATION, CACHE, LIMITS |
+
+### Middleware (`apps/api/src/middleware/`)
+
+| File | Purpose |
+|---|---|
+| `auth.ts` | JWT authentication middleware |
+| `adminAuth.ts` | Admin role verification middleware |
+| `errorHandler.ts` | Global error handler |
+| `rateLimit.ts` | Per-user rate limiting: generation (5/min), chat (20/min), AI-check (10/min) |
 
 ### Frontend (`apps/web/src/`)
 
@@ -583,9 +626,11 @@
 | `app/(auth)/login/page.tsx` | Login form |
 | `app/(auth)/register/page.tsx` | Registration form |
 | `app/onboarding/page.tsx` | 2-step onboarding: URL/paste + interview chat |
-| `app/dashboard/page.tsx` | Main dashboard: generate ideas + suggestion cards |
-| `app/dashboard/profile/page.tsx` | Persona viewer + AI strategy chat |
-| `app/dashboard/suggestions/page.tsx` | Suggestion history |
+| `app/dashboard/page.tsx` | Main dashboard: generate ideas + suggestion cards + confidence badge + feedback summary + performance notifications |
+| `app/dashboard/profile/page.tsx` | Persona viewer + AI strategy chat + feedback insights |
+| `app/dashboard/profile/evolution/page.tsx` | Persona version history with diffs and triggers |
+| `app/dashboard/suggestions/page.tsx` | Suggestion history + compare action |
+| `app/dashboard/suggestions/compare/page.tsx` | Side-by-side comparison of 2 suggestion sets |
 | `app/dashboard/suggestions/[id]/editor/page.tsx` | Post editor |
 | `app/admin/*` | Admin dashboard pages |
 | `components/chat/ChatInterface.tsx` | Reusable chat UI component |
@@ -600,8 +645,9 @@
 | `components/persona/PendingChangesCard.tsx` | AI-proposed persona changes review |
 | `components/persona/PersonaDiffCard.tsx` | Persona before/after comparison |
 | `components/layout/Navbar.tsx` | Top navigation bar |
-| `lib/api.ts` | API client (authApi, personaApi, suggestionsApi, etc.) |
+| `lib/api.ts` | API client (authApi, personaApi, suggestionsApi, feedbackApi, draftsApi, tokenApi, audienceApi, etc.) |
 | `lib/auth.ts` | Token/cookie helpers |
+| `lib/implicitTracking.ts` | Implicit feedback signal tracker (debounced batch POST) |
 | `middleware.ts` | Next.js route protection (redirect unauthed to /login) |
 
 ---
@@ -633,17 +679,88 @@ Used by:
 
 ---
 
-## 12. Caching Strategy
+## 12. Pipeline Reliability (Phase 4)
+
+```
+  runContentPipelineWithRetry(input)
+       │
+       ▼
+  ┌──────────────────────────────────────────────────┐
+  │ Circuit Breaker Check                             │
+  │ (pipelineBreaker — singleton CircuitBreaker)      │
+  │                                                    │
+  │ State: CLOSED → OPEN (after 5 failures)           │
+  │        OPEN → HALF_OPEN (after 60s cooldown)      │
+  │        HALF_OPEN → CLOSED (1 success) or OPEN     │
+  │                                                    │
+  │ If OPEN: return error immediately (fail fast)     │
+  └──────────────┬───────────────────────────────────┘
+                 │ allowed
+                 ▼
+  ┌──────────────────────────────────────────────────┐
+  │ Retry Loop (max 2 attempts)                       │
+  │                                                    │
+  │  Attempt 1 → runContentPipeline()                 │
+  │    └── timeout: 90s overall                       │
+  │    └── step timeouts: 30s/15s/45s                 │
+  │                                                    │
+  │  On failure → exponential backoff                 │
+  │    └── attempt 1: wait 1s                         │
+  │    └── attempt 2: wait 2s                         │
+  │                                                    │
+  │  Success → breaker.recordSuccess()                │
+  │  Failure → breaker.recordFailure()                │
+  └──────────────────────────────────────────────────┘
+```
+
+### Rate Limiting
+
+```
+  Incoming Request
+       │
+       ▼
+  ┌──────────────────────────────────────────────────┐
+  │ Rate Limiter (middleware/rateLimit.ts)             │
+  │ Key: req.userId (per-user, not per-IP)            │
+  │                                                    │
+  │ ┌─────────────────────┐                            │
+  │ │ generationLimiter   │  5 req/min                 │
+  │ │ /generate           │  /generate-from-trends     │
+  │ │                     │  /generate-from-topic      │
+  │ └─────────────────────┘                            │
+  │ ┌─────────────────────┐                            │
+  │ │ chatLimiter         │  20 req/min                │
+  │ │ /refine-context     │  /:id/chat                 │
+  │ └─────────────────────┘                            │
+  │ ┌─────────────────────┐                            │
+  │ │ aiCheckLimiter      │  10 req/min                │
+  │ │ /:id/ai-check       │  /:id/humanize             │
+  │ └─────────────────────┘                            │
+  │                                                    │
+  │ Over limit → 429 Too Many Requests                │
+  └──────────────────────────────────────────────────┘
+```
+
+---
+
+## 13. Caching Strategy
 
 ```
   ┌─────────────────────────────────────────┐
-  │ Trend Cache (trendCache.ts)              │
+  │ Trend Cache (trendCache.ts) — Two-tier   │
   │                                          │
   │ Key: hash(keywords + industry + geo)     │
-  │ TTL: 30 minutes                          │
-  │ Storage: in-memory Map                   │
+  │                                          │
+  │ L1 — In-memory Map                       │
+  │   TTL: 5 minutes (CACHE.L1_CACHE_TTL_MS) │
+  │   Lookup: instant                        │
+  │                                          │
+  │ L2 — MongoDB (TrendCache model)          │
+  │   TTL: 30 minutes (auto-expiry TTL index)│
+  │   Lookup: L1 miss → L2 query            │
+  │                                          │
+  │ Write: stores in both L1 + L2            │
   │ Purpose: avoid duplicate API calls       │
-  │          within same time window         │
   └─────────────────────────────────────────┘
 
   ┌─────────────────────────────────────────┐

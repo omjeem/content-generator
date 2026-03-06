@@ -46,6 +46,12 @@ export interface IContentSuggestionDocument extends Document {
   contextOptions?: IGenerateContextOptions;
   // Generation analytics (#54)
   generationMeta?: IGenerationMeta;
+  // A/B test data (Phase 4 #50)
+  abTestData?: {
+    servedPath: "default" | "experimental";
+    shadowResult?: { suggestions: unknown[]; generatedAt: Date };
+    enrolledAt: Date;
+  };
   createdAt: Date;
 }
 
@@ -162,6 +168,27 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
           parentSetId: { type: String }, // Phase 4 #43: link to regenerated-from set
         },
         { _id: false, strict: false }, // strict:false for backward compat
+      ),
+      default: undefined,
+    },
+    // A/B test data — Phase 4 #50
+    abTestData: {
+      type: new Schema(
+        {
+          servedPath: { type: String, enum: ["default", "experimental"] },
+          shadowResult: {
+            type: new Schema(
+              {
+                suggestions: { type: [Schema.Types.Mixed], default: [] },
+                generatedAt: { type: Date },
+              },
+              { _id: false },
+            ),
+            default: undefined,
+          },
+          enrolledAt: { type: Date },
+        },
+        { _id: false },
       ),
       default: undefined,
     },

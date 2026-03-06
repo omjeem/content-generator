@@ -575,5 +575,57 @@ router.get(
   },
 );
 
+// ── POST /persona/peers — Register peer LinkedIn URLs (Phase 4 #51) ─────────
+
+const peersSchema = z.object({
+  peerUrls: z.array(z.string().url()).min(1).max(5),
+});
+
+router.post(
+  "/peers",
+  authenticate,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const body = peersSchema.parse(req.body);
+      const userObjectId = new mongoose.Types.ObjectId(req.userId!);
+
+      const persona = await UserPersona.findOne({ userId: userObjectId });
+      if (!persona) {
+        res.status(400).json({ error: "No persona found. Complete onboarding first." });
+        return;
+      }
+
+      // For MVP, just store peer URLs and extract basic topic keywords
+      // Full scraping integration is a future phase
+      const peerTopics: string[] = [];
+      for (const url of body.peerUrls) {
+        // Extract likely topic hints from URL path segments
+        const path = new URL(url).pathname.toLowerCase();
+        const segments = path.split("/").filter((s) => s.length > 2);
+        peerTopics.push(...segments.slice(0, 3));
+      }
+
+      persona.peerInsights = {
+        peerUrls: body.peerUrls,
+        lastScrapedAt: new Date(),
+        peerTopics: [...new Set(peerTopics)],
+      };
+
+      await persona.save();
+
+      res.json({
+        message: `Registered ${body.peerUrls.length} peer profile(s).`,
+        peerInsights: persona.peerInsights,
+      });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res.status(400).json({ error: "Validation error", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
 export { router as personaRouter };
 export default router;

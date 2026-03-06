@@ -1,7 +1,7 @@
 # Architecture & Technology Decisions Log
 
 > Reference this when unsure about any choice. Newest decisions at the bottom.
-> Last synced: 2026-03-04
+> Last synced: 2026-03-06
 
 ---
 
@@ -167,3 +167,84 @@ domains query Hacker News (`TECH_ADJACENT_DOMAINS`).
 - **Problem**: Content generator treated trends as "inspiration" and generated ideas about the creator's general expertise instead of the provided trends.
 - **Solution**: Added CRITICAL RULE to agent instructions that every idea MUST be anchored to a provided trend. Relabeled prompt section to "TRENDING TOPICS TO BASE IDEAS ON". Added `trendAnchorDirective` to enforce constraint.
 - **File**: `agents/contentGenerator.ts`
+
+## Decision 21: Centralized Constants & Fire-and-Forget Wrapper — 2026-03-05 (Phase 4)
+
+- **Problem**: Magic numbers scattered across 10+ files. Fire-and-forget calls silently swallowed errors.
+- **Solution**:
+  - `config/constants.ts`: Groups — SCORING, LEARNING, PIPELINE, GENERATION, CACHE, LIMITS. All magic numbers centralized.
+  - `utils/fireAndForget.ts`: `fireAndForget(fn, label)` wrapper — catches errors, logs with `[fireAndForget:label]` prefix. Applied to all `trackTokenUsage()` and `processFeedback()` calls.
+- **Why**: Maintainability (single source of truth for tuning parameters), debuggability (errors logged instead of silent).
+
+## Decision 22: Writing DNA — Deterministic Voice Fingerprint — 2026-03-05 (Phase 4)
+
+- **Problem**: Content generator had limited understanding of the user's specific writing style. Only had broad descriptors like "professional" or "conversational".
+- **Solution**: `services/writingDNA.ts` — fully deterministic (no LLM), extracts 15+ quantitative metrics from user's posts: sentence/paragraph length, opening patterns (question/story/statistic/boldClaim ratios), emoji frequency and types, hashtag usage, post length range, reading level (syllable counting), first-person ratio, CTA patterns.
+- **Storage**: `UserPersona.writingDNA` sub-document. Recomputed on every persona analysis and post addition.
+- **Consumption**: `buildWritingDNASection(persona)` in content generator + voice hints in post editor prompt.
+- **Why**: Free, fast, testable. Provides quantitative voice constraints the LLM can follow (not just "be professional").
+
+## Decision 23: Persona Confidence Score — 2026-03-05 (Phase 4)
+
+- **Problem**: No way to know how well the system "knows" a user. Users with 2 posts got the same confidence level as users with 50 posts + interview + feedback.
+- **Solution**: `services/personaConfidence.ts` — 5-dimension scoring (0-100 total):
+  - Post volume: max 25 (2.5 per post)
+  - Interview complete: max 20 (4 per field)
+  - Feedback volume: max 25 (2.5 per feedback)
+  - Performance data: max 15 (5 per published draft)
+  - Recency: max 15 (decays 0.5/day)
+- **Impact**: Content generator adjusts strategy based on confidence: < 40 → broader/exploratory, > 70 → highly specific/niche. Dashboard shows "We understand you X%" with colored bar.
+- **Why**: Users understand what actions improve their personalization. System adjusts generation aggressiveness accordingly.
+
+## Decision 24: Pipeline Reliability — Circuit Breaker, Timeouts, Backoff — 2026-03-05 (Phase 4)
+
+- **Problem**: Pipeline had no protection against Gemini API outages. Requests would hang or cascade failures.
+- **Solution**:
+  - **Per-step timeouts**: persona analysis (30s), trend research (15s), content generation (45s). Overall pipeline: 90s. Uses `Promise.race()`.
+  - **Circuit breaker** (`utils/circuitBreaker.ts`): CLOSED → OPEN (5 failures) → HALF_OPEN (60s cooldown, 1 test request) → CLOSED on success.
+  - **Exponential backoff**: `Math.pow(2, attempt - 1) * 1000` — 1s, 2s between retry attempts. Max 2 retries.
+  - **Rate limiting**: `middleware/rateLimit.ts` — per-user via `req.userId`. Three tiers: generation (5/min), chat (20/min), AI-check (10/min). Uses `express-rate-limit`.
+- **Config**: All constants in `PIPELINE.STEP_TIMEOUTS`, `PIPELINE.CIRCUIT_BREAKER`, `PIPELINE.MAX_RETRY_ATTEMPTS`.
+
+## Decision 25: Two-Tier Trend Cache — 2026-03-05 (Phase 4)
+
+- **Problem**: In-memory trend cache lost on server restart. Identical queries hit external APIs repeatedly after cold start.
+- **Solution**:
+  - **L1**: In-memory Map, 5-min TTL (`CACHE.L1_CACHE_TTL_MS`). Instant hot-path lookup.
+  - **L2**: MongoDB collection `TrendCache` with TTL index (auto-expiry at 30 min). Survives restarts.
+  - **Lookup**: L1 → L2 → API. Store: L1 + L2 simultaneously.
+  - **Deduplication**: `deduplicateAndRank()` rewrote with `normalizeTitleKey()` (lowercase, strip non-alnum, sort words). Keeps highest `sourceQuality()` winner across tiers.
+- **Model**: `models/TrendCache.ts` — key, items (Mixed array), createdAt, expires.
+
+## Decision 26: Implicit Feedback & Performance Learning — 2026-03-05 (Phase 4)
+
+- **Problem**: Learning loop only had explicit ratings. Most users don't rate every suggestion.
+- **Solution**:
+  - **Implicit signals** (`lib/implicitTracking.ts`): Tracks hook_copied (0.75), brief_copied (1.0), write_clicked (1.5), time_spent >30s (0.3), skipped (−0.1). Batched POST to `/api/feedback/implicit` every 10s or on page unload.
+  - **0.5× multiplier**: Implicit signals carry half the weight of explicit ratings.
+  - **Performance tracking** (`services/performanceTracker.ts`): After publishing, user reports likes/comments/reposts. High-engagement posts → "loved" SuggestionFeedback, normal → "good". Median comparison across all reported posts. Fire-and-forget to `aggregateAndUpdatePersona()`.
+  - **Frontend**: Dashboard shows notification for 24-72h old published drafts without performance data: "How did your post perform?"
+
+## Decision 27: Scheduling Hints & Content Series — 2026-03-05 (Phase 4)
+
+- **Problem**: Users didn't know optimal posting times. No content continuity between suggestion sets.
+- **Solution**:
+  - **Scheduling hints** (`services/schedulingHints.ts`): Hardcoded `OPTIMAL_POSTING_TIMES` for all 14 domain categories with best day, time range, reasoning. Attached to every suggestion in `postProcessIdeas()`. UI shows amber chip: "Best posted: {day}, {timeRange}".
+  - **Content series** (`services/contentContinuity.ts`): Scans recent published/ready drafts, clusters by ≥50% keyword overlap, assigns series names. Generator receives series data with directive "Suggest 1-2 follow-up ideas". `postProcessIdeas()` matches and tags with `seriesTag: { name, sequenceNumber, previousPosts }`. UI shows purple chip: "Part N of '{series}'".
+- **Both**: Domain-average confidence (not personalized). Personalized hints from performance data is future work.
+
+## Decision 28: Audience Tracking & Peer Awareness — 2026-03-06 (Phase 4)
+
+- **Problem**: Content generator had no data about what resonates with the user's audience. No awareness of what peers/competitors cover.
+- **Solution**:
+  - **Audience tracking** (`models/AudienceInsight.ts`, `services/audienceTracker.ts`): Manual engagement reporting (likes, comments, reposts, impressions). `getAudienceInsights()` computes top topics, best posting times, format performance. `buildAudienceSignalsSection()` generates prompt section injected into content generator (minimum 3 records required).
+  - **Peer awareness** (`UserPersona.peerInsights`): Register 2-5 peer LinkedIn URLs. `buildPeerSection()` in content generator injects differentiation directive: "These peers cover {topics} — differentiate by offering unique angles."
+  - **A/B test framework** (`services/abTest.ts`): 10% random enrollment, stores shadow results alongside served results. `getAbTestStats()` aggregation pipeline for comparison. Framework in place; analysis UI is future work.
+- **Routes**: `POST /api/audience/record`, `GET /api/audience/insights`, `POST /api/persona/peers`.
+
+## Decision 29: Regeneration with Refinement — 2026-03-06 (Phase 4)
+
+- **Problem**: Users had to start fresh to get different suggestions. No way to say "more like #3, different angle for #5".
+- **Solution**: `POST /api/suggestions/:setId/regenerate` — loads original set's trends + context, accepts refinement body: `{ moreLike?: number[], differentAngle?: number[], avoid?: string, preferredFormats?: PostFormat[] }`. Generates new set linked via `parentSetId` in contextOptions.
+- **Frontend**: "Regenerate with Tweaks" button below suggestion set. Inline panel with per-suggestion "More like this" / "Different angle" toggle buttons. Avoid text input and preferred formats.
+- **Why**: Most users want small adjustments, not a complete redo. Preserves trend context.

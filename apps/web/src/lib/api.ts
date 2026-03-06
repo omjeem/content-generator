@@ -211,6 +211,42 @@ export const personaApi = {
       currentVersion: number;
       totalVersions: number;
     }>("/api/persona/history"),
+
+  /** Register peer LinkedIn URLs (Phase 4 #51) */
+  registerPeers: (peerUrls: string[]) =>
+    request<{ message: string; peerInsights: { peerUrls: string[]; peerTopics: string[] } }>(
+      "/api/persona/peers",
+      { method: "POST", body: JSON.stringify({ peerUrls }) },
+    ),
+};
+
+// ── Audience ──────────────────────────────────────────────────────────────────
+
+export const audienceApi = {
+  /** Record post engagement data (Phase 4 #48) */
+  record: (data: {
+    postDraftId?: string;
+    postContent: string;
+    engagement: { likes: number; comments: number; reposts: number; impressions?: number };
+    topics: string[];
+    format: string;
+    dayOfWeek: string;
+    timeOfDay: string;
+  }) =>
+    request<{ message: string; id: string }>("/api/audience/record", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  /** Get computed audience insights (Phase 4 #48) */
+  getInsights: () =>
+    request<{
+      topPerformingTopics: { topic: string; avgEngagement: number; count: number }[];
+      bestPostingTimes: { dayOfWeek: string; timeOfDay: string; avgEngagement: number }[];
+      formatPerformance: { format: string; avgEngagement: number; count: number }[];
+      totalRecords: number;
+      overallAvgEngagement: number;
+    }>("/api/audience/insights"),
 };
 
 // ── Onboarding ────────────────────────────────────────────────────────────────

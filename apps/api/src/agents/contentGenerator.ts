@@ -376,6 +376,15 @@ function buildPlatformSection(platforms?: string[]): string {
   return lines.join("\n");
 }
 
+// ── Peer awareness section (Phase 4 #51) ─────────────────────────────────────
+
+function buildPeerSection(persona: IUserPersonaDocument): string {
+  const peers = persona.peerInsights;
+  if (!peers?.peerTopics?.length) return "";
+
+  return `\n## COMPETITOR/PEER AWARENESS\nYour peers recently posted about: ${peers.peerTopics.join(", ")}.\n→ Suggest angles that DIFFERENTIATE this creator from their peers. Avoid rehashing the same take — offer a contrarian view, deeper insight, or unique personal experience.`;
+}
+
 // ── Usage tuple type ──────────────────────────────────────────────────────────
 
 export interface ContentGenerationResult {
@@ -394,8 +403,10 @@ export async function generateContentIdeas(input: {
   schedulingHint?: ISchedulingHint;
   /** Detected content series for continuation prompts (Phase 4 #34) */
   contentSeries?: IContentSeries[];
+  /** Audience resonance signals (Phase 4 #48) */
+  audienceSignals?: string;
 }): Promise<ContentGenerationResult> {
-  const { persona, trends, context, platforms, schedulingHint, contentSeries } = input;
+  const { persona, trends, context, platforms, schedulingHint, contentSeries, audienceSignals } = input;
 
   const trendsList = trends.trends.length
     ? trends.trends
@@ -475,7 +486,7 @@ ${feedbackSection}${writingDNASection}${confidenceDirective}${formatStrategySect
 ## TRENDING TOPICS TO BASE IDEAS ON
 ${trendsList}
 ${hasTrends ? "\nEach generated idea MUST clearly connect to one of these trends. Use the creator's voice to write about THESE topics." : ""}
-${platformSection}${seriesDirective}
+${platformSection}${seriesDirective}${audienceSignals ?? ""}${buildPeerSection(persona)}
 ${contextSection}
 Return ONLY the JSON object with the ideas array.`;
 
