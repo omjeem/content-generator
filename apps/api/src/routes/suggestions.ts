@@ -5,6 +5,7 @@ import { runContentPipelineWithRetry } from "../agents/mastra";
 import { ContentSuggestion } from "../models/ContentSuggestion";
 import { UserPersona } from "../models/UserPersona";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
+import type { PostFormat } from "@repo/shared-types";
 import {
   getSelectedTrends,
   storeTopicDiscovery,
@@ -1002,6 +1003,228 @@ If you don't have enough context yet, do NOT include the summary block — just 
         topicFocus,
         targetAudienceOverride,
         platformGoal,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ── POST /api/suggestions/:setId/regenerate — Phase 4 #43 ───────────────────
+/**
+ * @swagger
+ * /api/suggestions/{setId}/regenerate:
+ *   post:
+ *     tags: [Suggestions]
+ *     summary: Regenerate content ideas with refinements (Phase 4 #43)
+ *     description: |
+ *       Loads the original suggestion set's trends + context, applies user
+ *       refinement instructions, and generates a new set linked via parentSetId.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: setId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               moreLike:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Indices of suggestions to generate more like
+ *               differentAngle:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Indices to rethink with a different angle
+ *               avoid:
+ *                 type: string
+ *                 description: Topics/angles to avoid
+ *               preferredFormats:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Regenerated content ideas
+ *       400:
+ *         description: Original set not found
+ *       429:
+ *         description: Token quota exceeded
+ */
+const regenerateSchema = z.object({
+  moreLike: z.array(z.number().int().min(0)).max(10).optional(),
+  differentAngle: z.array(z.number().int().min(0)).max(10).optional(),
+  avoid: z.string().max(500).optional(),
+  preferredFormats: z.array(z.string()).max(5).optional(),
+});
+
+router.post(
+  "/:setId/regenerate",
+  generationLimiter,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { setId } = req.params as { setId: string };
+      if (!mongoose.Types.ObjectId.isValid(setId)) {
+        res.status(400).json({ error: "Invalid suggestion set ID" });
+        return;
+      }
+
+      const body = regenerateSchema.parse(req.body);
+      const userObjectId = new mongoose.Types.ObjectId(req.userId!);
+
+      // Quota check
+      const quota = await checkTokenQuota(req.userId!);
+      if (!quota.allowed) {
+        res.status(429).json({
+          error: "Token quota exceeded",
+          tokensUsed: quota.tokensUsed,
+          tokenLimit: quota.tokenLimit,
+        });
+        return;
+      }
+
+      // Load the original suggestion set
+      const original = await ContentSuggestion.findOne({
+        _id: setId,
+        userId: userObjectId,
+      }).lean();
+
+      if (!original) {
+        res.status(404).json({ error: "Original suggestion set not found." });
+        return;
+      }
+
+      // Load persona
+      const persona = await UserPersona.findOne({ userId: userObjectId });
+      if (!persona) {
+        res.status(400).json({ error: "No persona found." });
+        return;
+      }
+
+      // Build refinement context from user selections
+      const refinementParts: string[] = [];
+
+      if (body.moreLike && body.moreLike.length > 0) {
+        const liked = body.moreLike
+          .map((i) => original.suggestions[i])
+          .filter((s): s is (typeof original.suggestions)[number] => !!s)
+          .map((s) => `"${s.topic}" (${s.format}, angle: ${s.angle})`);
+        if (liked.length > 0) {
+          refinementParts.push(`GENERATE MORE ideas like these (user loved them): ${liked.join("; ")}`);
+        }
+      }
+
+      if (body.differentAngle && body.differentAngle.length > 0) {
+        const rethink = body.differentAngle
+          .map((i) => original.suggestions[i])
+          .filter((s): s is (typeof original.suggestions)[number] => !!s)
+          .map((s) => `"${s.topic}"`);
+        if (rethink.length > 0) {
+          refinementParts.push(`RETHINK these topics with COMPLETELY DIFFERENT angles: ${rethink.join(", ")}`);
+        }
+      }
+
+      if (body.avoid) {
+        refinementParts.push(`AVOID these topics/angles entirely: ${body.avoid}`);
+      }
+
+      const refinementContext = refinementParts.length > 0
+        ? refinementParts.join("\n")
+        : "Generate fresh alternatives to the previous batch.";
+
+      // Build a trend result from the original's trends
+      const trendResult = {
+        trends: original.trendsUsed.map((t) => ({
+          topic: t,
+          relevanceReason: "Reused from previous generation",
+          contentAngle: "",
+          source: "regenerated",
+        })),
+        rawTrends: original.trendsUsed,
+      };
+
+      // Generate new content ideas
+      const pipelineStart = Date.now();
+      const { ideas: contentIdeas, usage: contentUsage } =
+        await generateContentIdeas({
+          persona,
+          trends: trendResult,
+          context: {
+            mode: "chat-refined" as const,
+            chatRefinementContext: refinementContext,
+            preferredFormats: body.preferredFormats as PostFormat[] | undefined,
+          },
+          platforms: original.contextOptions?.platforms?.map(String),
+        });
+      const llmDurationMs = Date.now() - pipelineStart;
+
+      // Persist results with parentSetId reference
+      const saved = await ContentSuggestion.create({
+        userId: userObjectId,
+        generatedAt: new Date(),
+        trendsUsed: original.trendsUsed,
+        trendSource: original.trendSource ?? "live",
+        generationMode: "chat-refined",
+        contextOptions: {
+          mode: "chat-refined",
+          chatRefinementContext: refinementContext,
+          preferredFormats: body.preferredFormats,
+          parentSetId: setId,
+        },
+        generationMeta: {
+          pipelineDurationMs: llmDurationMs,
+          trendFetchDurationMs: 0,
+          llmDurationMs,
+          tokenCost: {
+            input: contentUsage.inputTokens,
+            output: contentUsage.outputTokens,
+            total: contentUsage.inputTokens + contentUsage.outputTokens,
+          },
+          trendSource: original.trendSource ?? "live",
+          modelId: "gemini-2.5-flash",
+        },
+        suggestions: contentIdeas.ideas.map((idea) => ({
+          topic: idea.topic,
+          angle: idea.angle,
+          format: idea.format,
+          hook: idea.hook,
+          whyItFits: idea.whyItFits,
+          seoKeywords: idea.seoKeywords ?? [],
+          clickbaitHooks: idea.clickbaitHooks ?? [],
+          postPointers: idea.postPointers ?? [],
+          callToAction: idea.callToAction ?? "",
+          platform: idea.platform ?? "linkedin",
+        })),
+      });
+
+      // Track token usage — fire-and-forget
+      trackTokenUsage({
+        userId: req.userId!,
+        agent: "content-generator",
+        operation: "content_generation",
+        inputTokens: contentUsage.inputTokens,
+        outputTokens: contentUsage.outputTokens,
+        totalTokens: contentUsage.inputTokens + contentUsage.outputTokens,
+        metadata: { suggestionId: String(saved._id) },
+      });
+
+      res.json({
+        suggestions: contentIdeas.ideas as ISuggestion[],
+        id: String(saved._id),
+        parentSetId: setId,
+        trendsUsed: original.trendsUsed,
+        trendSource: original.trendSource ?? "live",
+        generatedAt: new Date().toISOString(),
       });
     } catch (err) {
       next(err);

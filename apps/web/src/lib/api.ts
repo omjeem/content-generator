@@ -191,6 +191,26 @@ export const personaApi = {
     }),
 
   getPosts: () => request<IPersonaPostsResponse>("/api/persona/posts"),
+
+  /** Get persona evolution timeline (Phase 4 #45) */
+  getHistory: () =>
+    request<{
+      timeline: {
+        version: number;
+        snapshotAt: string;
+        trigger: string;
+        snapshot: {
+          writingStyle?: string;
+          tone?: string;
+          topics: string[];
+          postFormats?: string[];
+          contentPillars?: string[];
+        };
+        isCurrent?: boolean;
+      }[];
+      currentVersion: number;
+      totalVersions: number;
+    }>("/api/persona/history"),
 };
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
@@ -294,6 +314,21 @@ export const suggestionsApi = {
 
   getById: (id: string) =>
     request<{ suggestion: IContentSuggestion }>(`/api/suggestions/${id}`),
+
+  /** Regenerate with refinement tweaks (Phase 4 #43) */
+  regenerate: (
+    setId: string,
+    body: {
+      moreLike?: number[];
+      differentAngle?: number[];
+      avoid?: string;
+      preferredFormats?: string[];
+    },
+  ) =>
+    requestAI<ISuggestionsGenerateResponse & { parentSetId: string }>(
+      `/api/suggestions/${setId}/regenerate`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
 };
 
 // ── Token Usage ───────────────────────────────────────────────────────────────

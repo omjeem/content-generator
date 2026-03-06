@@ -159,6 +159,7 @@ const contentSuggestionSchema = new Schema<IContentSuggestionDocument>(
           platforms: { type: [String], default: undefined },
           selectedTrendIds: { type: [String], default: undefined },
           preferredFormats: { type: [String], default: undefined },
+          parentSetId: { type: String }, // Phase 4 #43: link to regenerated-from set
         },
         { _id: false, strict: false }, // strict:false for backward compat
       ),

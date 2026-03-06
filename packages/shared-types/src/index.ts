@@ -243,6 +243,8 @@ export interface IContentSuggestion {
   generatedAt: string;
   trendsUsed: string[];
   suggestions: ISuggestion[];
+  generationMode?: string;
+  contextOptions?: IGenerateContextOptions;
   createdAt: string;
 }
 
@@ -342,6 +344,8 @@ export interface IGenerateContextOptions {
   selectedTrendIds?: string[];
   /** Preferred formats filter — hard constraint overriding learned preferences (Phase 4 #29) */
   preferredFormats?: PostFormat[];
+  /** Link to the parent suggestion set this was regenerated from (Phase 4 #43) */
+  parentSetId?: string;
 }
 
 export interface ISuggestionsGenerateResponse {

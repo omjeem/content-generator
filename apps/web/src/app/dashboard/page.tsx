@@ -73,6 +73,13 @@ export default function DashboardPage() {
   // Phase 4 #9: Cache last generation options for retry
   const [lastGenerationContext, setLastGenerationContext] = useState<IGenerateContextOptions | null>(null);
 
+  // Phase 4 #43: Regenerate with tweaks
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenMoreLike, setRegenMoreLike] = useState<Set<number>>(new Set());
+  const [regenDiffAngle, setRegenDiffAngle] = useState<Set<number>>(new Set());
+  const [regenAvoid, setRegenAvoid] = useState("");
+  const [regenLoading, setRegenLoading] = useState(false);
+
   // Phase 4 #39: Feedback summary state
   const [feedbackSummary, setFeedbackSummary] = useState<{
     totalFeedback: number;
@@ -295,7 +302,46 @@ export default function DashboardPage() {
     setTrendGenerating(false);
     setTopicIdeas([]);
     setTopicGenerating(false);
+    setRegenOpen(false);
+    setRegenMoreLike(new Set());
+    setRegenDiffAngle(new Set());
+    setRegenAvoid("");
   }, []);
+
+  // Phase 4 #43: Regenerate with tweaks
+  const handleRegenerate = useCallback(async () => {
+    if (!currentSuggestionSetId) return;
+    setRegenLoading(true);
+    setGenerateError("");
+
+    try {
+      const result = await suggestionsApi.regenerate(currentSuggestionSetId, {
+        moreLike: regenMoreLike.size > 0 ? Array.from(regenMoreLike) : undefined,
+        differentAngle: regenDiffAngle.size > 0 ? Array.from(regenDiffAngle) : undefined,
+        avoid: regenAvoid.trim() || undefined,
+      });
+      setSuggestions(result.suggestions);
+      setCurrentSuggestionSetId(result.id);
+      setTrendsUsed(result.trendsUsed);
+      setTrendSource(result.trendSource ?? "live");
+      setRegenOpen(false);
+      setRegenMoreLike(new Set());
+      setRegenDiffAngle(new Set());
+      setRegenAvoid("");
+      // Refresh quota
+      tokenApi.getUsage().then((u) => { setTokenUsage(u); if (!u.allowed) setQuotaExceeded(true); }).catch(() => {});
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setQuotaExceeded(true);
+        return;
+      }
+      setGenerateError(
+        err instanceof ApiError ? err.message : "Regeneration failed. Please try again.",
+      );
+    } finally {
+      setRegenLoading(false);
+    }
+  }, [currentSuggestionSetId, regenMoreLike, regenDiffAngle, regenAvoid]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -361,6 +407,52 @@ export default function DashboardPage() {
           ok={!!persona?.contentPillars?.length}
           pending={personaLoading}
         />
+      </div>
+
+      {/* Quick nav + token usage */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard/profile"
+            className="text-xs text-indigo-600 hover:underline font-medium flex items-center gap-1"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0" />
+            </svg>
+            View Profile
+          </Link>
+          <Link
+            href="/dashboard/posts"
+            className="text-xs text-indigo-600 hover:underline font-medium flex items-center gap-1"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
+            </svg>
+            My Posts
+          </Link>
+        </div>
+
+        {/* Token usage mini-bar */}
+        {tokenUsage && (
+          <div className="flex items-center gap-2 text-xs text-gray-500">
+            <span>Tokens:</span>
+            <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  tokenUsage.tokensUsed / tokenUsage.tokenLimit > 0.9
+                    ? "bg-red-500"
+                    : tokenUsage.tokensUsed / tokenUsage.tokenLimit > 0.7
+                      ? "bg-amber-400"
+                      : "bg-green-500"
+                }`}
+                style={{ width: `${Math.min(100, (tokenUsage.tokensUsed / tokenUsage.tokenLimit) * 100)}%` }}
+              />
+            </div>
+            <span className="font-medium">
+              {Math.round((tokenUsage.tokensUsed / tokenUsage.tokenLimit) * 100)}%
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Confidence score badge (Phase 4 #25) ───────────────────────── */}
@@ -622,20 +714,35 @@ export default function DashboardPage() {
               <CardContent className="p-8 text-center">
                 <div className="space-y-4">
                   <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600/10 mb-2">
-                    <span className="text-2xl animate-spin">⚙️</span>
+                    <svg className="w-7 h-7 text-indigo-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
                   </div>
                   <p className="text-gray-700 font-medium">
                     {currentLoadingSteps[loadingStep % currentLoadingSteps.length]}
                   </p>
                   <div className="mx-auto max-w-xs h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-indigo-600 rounded-full animate-pulse"
-                      style={{ width: "60%" }}
+                      className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                      style={{ width: `${((loadingStep + 1) / currentLoadingSteps.length) * 100}%` }}
                     />
                   </div>
                   <p className="text-xs text-gray-400">
-                    This takes 10–20 seconds
+                    This takes 10&ndash;20 seconds
                   </p>
+                </div>
+
+                {/* Skeleton preview of upcoming cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="rounded-xl border border-gray-100 bg-gray-50 p-4 animate-pulse">
+                      <div className="h-3 w-16 bg-gray-200 rounded mb-3" />
+                      <div className="h-5 w-full bg-gray-200 rounded mb-2" />
+                      <div className="h-3 w-3/4 bg-gray-200 rounded mb-1" />
+                      <div className="h-3 w-1/2 bg-gray-200 rounded" />
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -710,14 +817,145 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-gray-900">
               {suggestions.length} Content Ideas
             </h2>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-            >
-              + Generate New
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRegenOpen((o) => !o)}
+                disabled={regenLoading || quotaExceeded}
+              >
+                {regenOpen ? "Cancel Tweaks" : "Regenerate with Tweaks"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleReset}
+              >
+                + Generate New
+              </Button>
+            </div>
           </div>
+
+          {/* Phase 4 #43: Regenerate with tweaks panel */}
+          {regenOpen && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50/30 p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Refine Your Next Batch
+              </h3>
+              <p className="text-xs text-gray-500">
+                Select ideas you want more of, ideas to take in a different direction, or topics to avoid.
+              </p>
+
+              {/* More Like / Different Angle selectors */}
+              <div className="space-y-2">
+                {suggestions.map((s, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2"
+                  >
+                    <span className="text-xs text-gray-400 w-5 shrink-0">
+                      #{i + 1}
+                    </span>
+                    <p className="flex-1 text-sm text-gray-700 truncate">
+                      {s.hook}
+                    </p>
+                    <button
+                      onClick={() => {
+                        setRegenMoreLike((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i); else next.add(i);
+                          return next;
+                        });
+                        // Remove from diffAngle if selected
+                        setRegenDiffAngle((prev) => {
+                          const next = new Set(prev);
+                          next.delete(i);
+                          return next;
+                        });
+                      }}
+                      className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                        regenMoreLike.has(i)
+                          ? "bg-green-600 text-white border-green-600"
+                          : "bg-white text-gray-600 border-gray-200 hover:border-green-400"
+                      }`}
+                    >
+                      More like this
+                    </button>
+                    <button
+                      onClick={() => {
+                        setRegenDiffAngle((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(i)) next.delete(i); else next.add(i);
+                          return next;
+                        });
+                        // Remove from moreLike if selected
+                        setRegenMoreLike((prev) => {
+                          const next = new Set(prev);
+                          next.delete(i);
+                          return next;
+                        });
+                      }}
+                      className={`shrink-0 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                        regenDiffAngle.has(i)
+                          ? "bg-amber-600 text-white border-amber-600"
+                          : "bg-white text-gray-600 border-gray-200 hover:border-amber-400"
+                      }`}
+                    >
+                      Different angle
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Avoid text */}
+              <div>
+                <label className="text-xs font-medium text-gray-600 block mb-1">
+                  Topics / angles to avoid (optional)
+                </label>
+                <input
+                  type="text"
+                  value={regenAvoid}
+                  onChange={(e) => setRegenAvoid(e.target.value)}
+                  placeholder="e.g. generic advice, hiring posts..."
+                  className="w-full text-sm rounded-lg border border-gray-200 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  maxLength={300}
+                />
+              </div>
+
+              {/* Selection summary */}
+              <div className="flex items-center gap-4 text-xs text-gray-500">
+                {regenMoreLike.size > 0 && (
+                  <span className="text-green-600 font-medium">
+                    {regenMoreLike.size} &ldquo;more like&rdquo;
+                  </span>
+                )}
+                {regenDiffAngle.size > 0 && (
+                  <span className="text-amber-600 font-medium">
+                    {regenDiffAngle.size} &ldquo;different angle&rdquo;
+                  </span>
+                )}
+                {regenAvoid.trim() && (
+                  <span className="text-red-500 font-medium">Avoiding topics</span>
+                )}
+              </div>
+
+              {/* Submit */}
+              <Button
+                onClick={() => void handleRegenerate()}
+                disabled={
+                  regenLoading ||
+                  (regenMoreLike.size === 0 &&
+                    regenDiffAngle.size === 0 &&
+                    !regenAvoid.trim())
+                }
+                className="w-full"
+              >
+                {regenLoading
+                  ? "Regenerating..."
+                  : "Regenerate Ideas"}
+              </Button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
             {suggestions.map((s, i) => (
@@ -735,7 +973,7 @@ export default function DashboardPage() {
               href="/dashboard/suggestions"
               className="text-sm text-indigo-600 hover:underline"
             >
-              View all past suggestion sets →
+              View all past suggestion sets &rarr;
             </Link>
           </div>
         </div>
@@ -762,28 +1000,43 @@ function StatusCard({
   return (
     <Card>
       <CardContent className="p-4">
-        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-          {label}
-        </p>
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-lg ${pending ? "text-gray-300" : ok ? "text-green-500" : "text-amber-400"}`}
-          >
-            {pending ? "○" : ok ? "✓" : "!"}
-          </span>
-          <span
-            className={`text-sm font-medium ${ok ? "text-gray-900" : "text-gray-500"}`}
-          >
-            {value}
-          </span>
-        </div>
-        {action && (
-          <Link
-            href={action.href}
-            className="mt-2 block text-xs text-indigo-600 hover:underline"
-          >
-            {action.label} →
-          </Link>
+        {pending ? (
+          /* Skeleton loader */
+          <div className="animate-pulse space-y-2">
+            <div className="h-3 w-24 bg-gray-200 rounded" />
+            <div className="h-5 w-32 bg-gray-200 rounded" />
+          </div>
+        ) : (
+          <>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+              {label}
+            </p>
+            <div className="flex items-center gap-2">
+              {/* SVG icon instead of Unicode */}
+              {ok ? (
+                <svg className="w-5 h-5 text-green-500 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+                </svg>
+              )}
+              <span
+                className={`text-sm font-medium ${ok ? "text-gray-900" : "text-gray-500"}`}
+              >
+                {value}
+              </span>
+            </div>
+            {action && (
+              <Link
+                href={action.href}
+                className="mt-2 block text-xs text-indigo-600 hover:underline"
+              >
+                {action.label} &rarr;
+              </Link>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

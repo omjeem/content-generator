@@ -66,12 +66,20 @@ export default function SuggestionsHistoryPage() {
             All your previously generated content idea sets
           </p>
         </div>
-        <Link
-          href="/dashboard"
-          className="text-sm text-indigo-600 hover:underline font-medium"
-        >
-          ← Back to Dashboard
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/dashboard/suggestions/compare"
+            className="text-sm text-indigo-600 hover:underline font-medium"
+          >
+            Compare Sets
+          </Link>
+          <Link
+            href="/dashboard"
+            className="text-sm text-indigo-600 hover:underline font-medium"
+          >
+            &larr; Back to Dashboard
+          </Link>
+        </div>
       </div>
 
       {/* Loading */}

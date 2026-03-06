@@ -489,5 +489,91 @@ router.get(
   },
 );
 
+// ── GET /api/persona/history — Phase 4 #45 ────────────────────────────────────
+/**
+ * @swagger
+ * /api/persona/history:
+ *   get:
+ *     tags: [Persona]
+ *     summary: Get persona evolution timeline (Phase 4 #45)
+ *     description: |
+ *       Returns the persona's version history, showing what changed at each
+ *       version and what triggered the update. Used for the evolution timeline page.
+ *     security:
+ *       - cookieAuth: []
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Persona evolution timeline
+ *       404:
+ *         description: No persona found
+ */
+router.get(
+  "/history",
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const persona = await UserPersona.findOne({
+        userId: new mongoose.Types.ObjectId(req.userId!),
+      }).select(
+        "analysisHistory postMetadata personaVersion writingStyle tone topics contentPillars targetAudience industry goals platformGoal confidenceScore createdAt updatedAt",
+      );
+
+      if (!persona) {
+        res.status(404).json({ error: "No persona found." });
+        return;
+      }
+
+      // Build timeline entries from analysisHistory snapshots
+      const timeline = (persona.analysisHistory ?? []).map((snapshot, i) => {
+        // Find corresponding postMetadata entry by proximity in time
+        const snapshotDate = new Date(snapshot.snapshotAt).getTime();
+        const matchingBatch = persona.postMetadata.find((b) => {
+          const batchDate = new Date(b.addedAt).getTime();
+          return Math.abs(batchDate - snapshotDate) < 60_000; // within 1 minute
+        });
+
+        return {
+          version: snapshot.personaVersion,
+          snapshotAt: snapshot.snapshotAt,
+          trigger: matchingBatch
+            ? `Added ${matchingBatch.postCount} posts (${matchingBatch.source})`
+            : i === 0
+              ? "Initial persona analysis"
+              : "Profile update",
+          snapshot: {
+            writingStyle: snapshot.writingStyle,
+            tone: snapshot.tone,
+            topics: snapshot.topics,
+            postFormats: snapshot.postFormats,
+          },
+        };
+      });
+
+      // Add current version as the latest entry
+      const currentEntry = {
+        version: persona.personaVersion,
+        snapshotAt: persona.updatedAt?.toISOString() ?? new Date().toISOString(),
+        trigger: "Current version",
+        snapshot: {
+          writingStyle: persona.writingStyle,
+          tone: persona.tone,
+          topics: persona.topics,
+          contentPillars: persona.contentPillars ?? [],
+          postFormats: persona.postFormats,
+        },
+        isCurrent: true,
+      };
+
+      res.json({
+        timeline: [...timeline, currentEntry],
+        currentVersion: persona.personaVersion,
+        totalVersions: timeline.length + 1,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 export { router as personaRouter };
 export default router;

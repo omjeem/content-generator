@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PendingChangesCard } from "@/components/persona/PendingChangesCard";
@@ -255,12 +256,20 @@ export default function ProfilePage() {
   return (
     <main className="container max-w-6xl mx-auto px-4 py-8">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-gray-900">My Content Profile</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Chat with your AI strategy coach to refine your persona, goals, and
-          content pillars.
-        </p>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">My Content Profile</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Chat with your AI strategy coach to refine your persona, goals, and
+            content pillars.
+          </p>
+        </div>
+        <Link
+          href="/dashboard/profile/evolution"
+          className="text-sm text-indigo-600 hover:underline font-medium"
+        >
+          View Evolution Timeline &rarr;
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
