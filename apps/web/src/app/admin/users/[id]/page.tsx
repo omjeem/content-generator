@@ -297,7 +297,7 @@ export default function AdminUserDetailPage() {
                 {user.tokensUsed.toLocaleString()} used
               </span>
               <span className="text-gray-400">
-                {(user.tokenLimit ?? 100_000).toLocaleString()} limit
+                {(user.tokenLimit ?? 400_000).toLocaleString()} limit
               </span>
             </div>
             <div className="h-3 bg-gray-100 rounded-full overflow-hidden">

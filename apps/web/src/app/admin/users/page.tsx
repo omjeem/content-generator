@@ -25,7 +25,7 @@ function TokenBar({
   used: number;
   limit: number | null;
 }) {
-  const cap = limit ?? 100_000;
+  const cap = limit ?? 400_000;
   const pct = Math.min(100, Math.round((used / cap) * 100));
   const color =
     pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-indigo-500";
