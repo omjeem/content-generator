@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
+import { FeatureTour } from "@/components/layout/FeatureTour";
 import { authApi } from "@/lib/api";
 
 export default function DashboardLayout({
@@ -23,6 +24,7 @@ export default function DashboardLayout({
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       <Navbar userName={userName} />
       <div className="flex-1 min-h-0 overflow-auto">{children}</div>
+      <FeatureTour />
     </div>
   );
 }

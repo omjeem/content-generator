@@ -1,7 +1,7 @@
 # Development Rules & Conventions
 
 > Read this to understand how this codebase works and avoid common pitfalls.
-> Last synced: 2026-03-06
+> Last synced: 2026-03-10
 
 ---
 
@@ -13,7 +13,7 @@ These are non-negotiable. The user explicitly chose them:
 |---|---|
 | Backend is **Express** | NOT Hono. Switched 2026-02-20. |
 | LLM is **Gemini** | NOT OpenAI, NOT Claude API. Uses `@ai-sdk/google`. |
-| Scraper is **Puppeteer** | NOT linkedin-api, NOT RapidAPI. |
+| Post input is **manual paste only** | Puppeteer removed 2026-03-10. `scrapeLinkedInProfile()` stubs to throw error. |
 | Auth is **JWT in httpOnly cookies** | NOT localStorage. Backend sets `Set-Cookie`. |
 | DB is **MongoDB** | NOT PostgreSQL. Mongoose ODM. |
 | Ports: API=**5006**, Web=**3000** | |

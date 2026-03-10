@@ -1,7 +1,7 @@
 # How to Resume This Project
 
 > Read this FIRST when starting a new Claude session.
-> Last synced: 2026-03-04
+> Last synced: 2026-03-10
 
 ---
 
@@ -21,7 +21,7 @@ ls apps/api/src/agents/     # 7 files: 6 agents + orchestrator
 ls apps/api/src/services/   # 16 files: all backend services
 ls apps/api/src/routes/     # 10 files: all API route groups
 ls apps/api/src/models/     # 11 files: all MongoDB models
-ls apps/web/src/components/  # 8 dirs: chat, editor, layout, persona, posts, suggestions, trends, ui
+ls apps/web/src/components/  # 9 dirs: chat, editor, landing, layout, persona, posts, suggestions, trends, ui
 ```
 
 ## Step 3: Start dev servers
@@ -47,7 +47,7 @@ Or via `.claude/launch.json` preview configs:
 - **Backend**: Express + TypeScript (NOT Hono)
 - **LLM**: Gemini 2.5 Flash via `@ai-sdk/google` (NOT OpenAI, NOT Claude API)
 - **AI Framework**: Mastra AI (`@mastra/core`)
-- **Scraper**: Puppeteer (with manual paste fallback)
+- **Post Input**: Manual paste only (Puppeteer removed 2026-03-10 for Docker size)
 - **Trends**: Multi-tier real APIs (Tavily → HN → Domain RSS → Google News → Evergreen)
 - **Auth**: JWT in httpOnly cookies
 - **DB**: MongoDB via Mongoose (Atlas free M0)
@@ -81,11 +81,11 @@ PORT=5006
 NEXT_PUBLIC_API_URL=http://localhost:5006
 ```
 
-### MongoDB Collections (11)
+### MongoDB Collections (13)
 
 `users`, `user_personas`, `chat_sessions`, `content_suggestions`,
 `suggestion_feedbacks`, `post_drafts`, `token_usage_logs`, `token_requests`,
-`admin_audit_logs`, `system_configs`, `refresh_tokens`
+`admin_audit_logs`, `system_configs`, `refresh_tokens`, `trend_caches`, `audience_insights`
 
 ---
 
@@ -113,3 +113,7 @@ NEXT_PUBLIC_API_URL=http://localhost:5006
 
 **Post-Phase 7 improvements** (2026-03): Domain-aware trends, trend-content anchoring,
 scoring system, feedback learning loop, AI detector, post editor, admin dashboard.
+
+**UX Polish** (2026-03-10): Docker optimization (2.66GB → 338MB), Puppeteer removal,
+landing page system diagram, feature tour for new users, smart "Add posts" navigation,
+mobile editor responsiveness, AI detector scroll fix.

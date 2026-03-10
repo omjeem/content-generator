@@ -1,7 +1,7 @@
 # Architecture & Technology Decisions Log
 
 > Reference this when unsure about any choice. Newest decisions at the bottom.
-> Last synced: 2026-03-06
+> Last synced: 2026-03-10
 
 ---
 
@@ -21,12 +21,13 @@
 - **Reason**: Free tier at ai.google.dev, no credit card needed
 - **Usage**: All 6 agents use `google('gemini-2.5-flash')` as model
 
-## Decision 3: Puppeteer for LinkedIn Scraping
+## Decision 3: Manual Post Paste (Puppeteer removed 2026-03-10)
 
-- **Chosen**: Puppeteer
-- **Rejected**: linkedin-api (requires credentials), RapidAPI (paid)
-- **Reason**: No API key needed. Renders JavaScript-heavy LinkedIn pages.
-- **Caveat**: LinkedIn blocks scrapers — includes random delays, UA spoofing, manual paste fallback
+- **Originally**: Puppeteer for LinkedIn scraping
+- **Updated**: Puppeteer removed entirely on 2026-03-10
+- **Reason**: Not actively used — users prefer manual paste. Chromium added 726 MB to Docker image.
+- **Current**: `scrapeLinkedInProfile()` throws `ScrapingBlockedError` with message to paste manually. `parseManualPosts()` remains.
+- **Impact**: API Docker image: 2.66 GB → 338 MB (87% reduction)
 - **File**: `apps/api/src/services/linkedin.ts`
 
 ## Decision 4: Real-API Trend Fetching (domain-aware) — updated 2026-03-04
@@ -248,3 +249,31 @@ domains query Hacker News (`TECH_ADJACENT_DOMAINS`).
 - **Solution**: `POST /api/suggestions/:setId/regenerate` — loads original set's trends + context, accepts refinement body: `{ moreLike?: number[], differentAngle?: number[], avoid?: string, preferredFormats?: PostFormat[] }`. Generates new set linked via `parentSetId` in contextOptions.
 - **Frontend**: "Regenerate with Tweaks" button below suggestion set. Inline panel with per-suggestion "More like this" / "Different angle" toggle buttons. Avoid text input and preferred formats.
 - **Why**: Most users want small adjustments, not a complete redo. Preserves trend context.
+
+## Decision 30: Docker Optimization with turbo prune — 2026-03-10
+
+- **Problem**: API Docker image was 2.66 GB vs web at 277 MB. Root cause: `npm prune --omit=dev --workspace=apps/api` doesn't remove web workspace dependencies (Next.js, React, etc.) from hoisted root `node_modules`.
+- **Solution**: Multi-stage Dockerfile using `turbo prune @repo/api --docker` which generates a pruned lockfile excluding web workspace. Must `COPY tsconfig.base.json ./` in builder stage for `skipLibCheck: true` (required by `@mastra/core` `.d.ts` files).
+- **Result**: 2.66 GB → 1.43 GB (turbo prune) → 338 MB (Puppeteer removal)
+- **File**: `apps/api/Dockerfile`
+
+## Decision 31: Feature Tour for New Users — 2026-03-10
+
+- **Problem**: New users struggled to navigate the dashboard — unclear what each feature does or how to start.
+- **Solution**: `FeatureTour` component in dashboard layout. Uses spotlight overlay (SVG mask), popover with icon/title/description, step-by-step progression. Tracks completion in `localStorage` (no backend needed). User can skip or dismiss permanently.
+- **Steps**: Confidence Score → Generate Section → My Profile → History → My Posts
+- **Tracking**: `postmind-tour-completed` (step IDs array), `postmind-tour-dismissed` (boolean flag)
+- **Target**: `data-tour` attributes on DOM elements for flexible selector-based targeting
+- **File**: `apps/web/src/components/layout/FeatureTour.tsx`
+
+## Decision 32: Smart "Add Posts" Navigation — 2026-03-10
+
+- **Problem**: Confidence badge showed "Add more posts to improve" as plain text. "My Posts" link navigated to drafts, not the post-paste section.
+- **Solution**: Made "Add more posts to improve" a clickable link to `/dashboard/profile?addPosts=true`. Profile page reads `searchParams`, auto-expands "Add More Posts" section and scrolls to it. Renamed dashboard "My Posts" quick link to "My Drafts" for clarity.
+- **Files**: `dashboard/page.tsx`, `dashboard/profile/page.tsx`
+
+## Decision 33: Landing Page System Diagram — 2026-03-10
+
+- **Problem**: Landing page revealed too much internal system info (auth flow, MongoDB models, API descriptions, component names). Needed a single interactive diagram instead.
+- **Solution**: Replaced Technical/Non-Technical toggle + AnimatedPipeline with a single `SystemDiagram` SVG component. 16 interconnected nodes, 17 animated arrow paths, click/hover tooltips, pulsing central hub, horizontal scroll on mobile.
+- **File**: `apps/web/src/components/landing/SystemDiagram.tsx`

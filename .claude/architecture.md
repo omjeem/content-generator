@@ -1,7 +1,7 @@
 # Architecture — Low-Level Design
 
 > Complete technical architecture with flow diagrams.
-> Last synced: 2026-03-06
+> Last synced: 2026-03-10
 
 ---
 
@@ -773,4 +773,59 @@ Used by:
   │          between discover → generate     │
   │          steps in Browse Trends flow     │
   └─────────────────────────────────────────┘
+```
+
+---
+
+## 14. UX Enhancements (2026-03-10)
+
+### Feature Tour (New User Onboarding)
+
+```
+First login → dashboard layout mounts <FeatureTour />
+  │
+  ├── Check localStorage('postmind-tour-dismissed') → skip if true
+  ├── Check localStorage('postmind-tour-completed') → filter out seen steps
+  │
+  ├── Step 1: Confidence Score badge (data-tour="confidence-score")
+  ├── Step 2: Generate Section (data-tour="generate-section")
+  ├── Step 3: My Profile nav link (data-tour="nav-profile")
+  ├── Step 4: History nav link (data-tour="nav-history")
+  └── Step 5: My Posts nav link (data-tour="nav-posts")
+
+Each step:
+  ├── Spotlight overlay (SVG mask) highlights target element
+  ├── Popover with icon, title, description
+  ├── "Next" advances to next uncompleted step
+  ├── "Skip tour" dismisses permanently (localStorage flag)
+  └── Clicking overlay also dismisses
+
+Tracking: localStorage-based (no backend needed)
+  - postmind-tour-completed: string[] of completed step IDs
+  - postmind-tour-dismissed: "true" if user skipped
+```
+
+### Smart Navigation: "Add more posts to improve"
+
+```
+Dashboard confidence badge (<40%):
+  "Add more posts to improve →" (clickable link)
+    ↓
+  navigates to /dashboard/profile?addPosts=true
+    ↓
+  Profile page reads searchParams, auto-expands "Add More Posts"
+  section, scrolls to it
+```
+
+### Docker Optimization
+
+```
+Before: API image = 2.66 GB (Chromium 726 MB + web deps hoisted)
+After:  API image = 338 MB (87% reduction)
+
+Key changes:
+  1. turbo prune @repo/api --docker → excludes web workspace deps
+  2. COPY tsconfig.base.json → fixes skipLibCheck for @mastra/core
+  3. Puppeteer/Chromium removed → 726 MB savings
+  4. node_modules cleanup (*.md, *.map, tests, docs) → extra 100 MB
 ```

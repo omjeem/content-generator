@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,16 @@ interface PersonaChatResponse {
   changesApplied: boolean;
 }
 
+// ── Sanitize PERSONA_CHANGES markers from chat display ─────────────────────────
+// The backend strips these, but old history or LLM format variations may leak through.
+
+const PERSONA_CHANGES_DISPLAY_RE =
+  /<!--?\s*PERSONA_CHANGES[\s\S]*?PERSONA_CHANGES\s*(?:-->|→|$)/g;
+
+function sanitizeChatContent(text: string): string {
+  return text.replace(PERSONA_CHANGES_DISPLAY_RE, "").trim();
+}
+
 // ── Chat bubble ────────────────────────────────────────────────────────────────
 
 function ChatBubble({
@@ -34,6 +45,7 @@ function ChatBubble({
   content: string;
 }) {
   const isUser = role === "user";
+  const displayContent = isUser ? content : sanitizeChatContent(content);
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3`}>
       {!isUser && (
@@ -48,7 +60,7 @@ function ChatBubble({
             : "bg-gray-100 text-gray-800 rounded-bl-sm"
         }`}
       >
-        {content}
+        {displayContent}
       </div>
     </div>
   );
@@ -81,9 +93,17 @@ function PersonaField({
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
+// ── Main page (wrapped in Suspense for useSearchParams) ──────────────────────
 
 export default function ProfilePage() {
+  return (
+    <Suspense fallback={null}>
+      <ProfilePageContent />
+    </Suspense>
+  );
+}
+
+function ProfilePageContent() {
   const [persona, setPersona] = useState<IUserPersona | null>(null);
   const [personaLoading, setPersonaLoading] = useState(true);
 
@@ -99,6 +119,11 @@ export default function ProfilePage() {
     useState<IPersonaPendingChanges | null>(null);
   const [applying, setApplying] = useState(false);
   const [applySuccess, setApplySuccess] = useState("");
+
+  // Query param to auto-open add-posts section
+  const searchParams = useSearchParams();
+  const addPostsRef = useRef<HTMLDivElement>(null);
+  const pendingChangesRef = useRef<HTMLDivElement>(null);
 
   // Add More Posts section
   const [showAddPosts, setShowAddPosts] = useState(false);
@@ -146,6 +171,27 @@ export default function ProfilePage() {
     // Phase 4 #40: Fetch feedback insights
     feedbackApi.getSummary().then(setFeedbackSummary).catch(() => {});
   }, []);
+
+  // Auto-open and scroll to "Add More Posts" section when ?addPosts=true
+  useEffect(() => {
+    if (searchParams.get("addPosts") === "true" && !personaLoading) {
+      setShowAddPosts(true);
+      // Small delay to allow DOM to render the section
+      setTimeout(() => {
+        addPostsRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [searchParams, personaLoading]);
+
+  // Auto-scroll to PendingChangesCard when AI suggests profile changes
+  useEffect(() => {
+    if (pendingChanges && Object.keys(pendingChanges).length > 0) {
+      // Small delay to allow the card to render in the DOM
+      setTimeout(() => {
+        pendingChangesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 300);
+    }
+  }, [pendingChanges]);
 
   // Auto-scroll — scroll only within the chat box, not the whole page.
   // We scroll the parent overflow-y-auto container, NOT the chatEndRef marker,
@@ -355,6 +401,7 @@ export default function ProfilePage() {
           </Card>
 
           {/* Add More Posts */}
+          <div ref={addPostsRef}>
           <Card>
             <CardContent className="p-5">
               <div className="flex items-center justify-between mb-3">
@@ -443,6 +490,7 @@ export default function ProfilePage() {
                 )}
             </CardContent>
           </Card>
+          </div>
 
           {/* Phase 4 #40: Feedback Insights */}
           {feedbackSummary && feedbackSummary.totalFeedback >= 3 && (
@@ -563,12 +611,14 @@ export default function ProfilePage() {
 
           {/* Pending changes */}
           {pendingChanges && Object.keys(pendingChanges).length > 0 && (
-            <PendingChangesCard
-              changes={pendingChanges}
-              onApply={handleApplyChanges}
-              onDiscard={() => setPendingChanges(null)}
-              applying={applying}
-            />
+            <div ref={pendingChangesRef}>
+              <PendingChangesCard
+                changes={pendingChanges}
+                onApply={handleApplyChanges}
+                onDiscard={() => setPendingChanges(null)}
+                applying={applying}
+              />
+            </div>
           )}
         </div>
 

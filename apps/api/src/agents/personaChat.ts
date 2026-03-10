@@ -161,11 +161,14 @@ Please respond to the user's latest message.`;
   // Parse pending changes
   const pendingChanges = parsePersonaChanges(reply);
 
-  // Persist messages
-  await persistMessages(session, message, reply);
+  // Strip marker block BEFORE persisting so history loads are clean too
+  const cleanReply = stripPersonaChangesBlock(reply);
+
+  // Persist the cleaned reply — raw markers should never be stored in history
+  await persistMessages(session, message, cleanReply);
 
   return {
-    reply: stripPersonaChangesBlock(reply),
+    reply: cleanReply,
     sessionId: session.sessionId,
     pendingChanges: pendingChanges ?? undefined,
     changesApplied: false,
@@ -198,11 +201,19 @@ function buildPersonaContext(persona: IUserPersonaDocument): string {
   ].join("\n");
 }
 
+// Flexible regex that handles LLM format variations:
+// <!--PERSONA_CHANGES ... PERSONA_CHANGES-->  (intended format)
+// <!--PERSONA_CHANGES ... PERSONA_CHANGES→    (arrow variant)
+// PERSONA_CHANGES ... PERSONA_CHANGES-->      (missing opening comment)
+// <!--PERSONA_CHANGES { ... } PERSONA_CHANGES (missing closing)
+const PERSONA_CHANGES_PARSE_RE =
+  /<!--\s*PERSONA_CHANGES\s*([\s\S]*?)\s*PERSONA_CHANGES\s*(?:-->|→|$)/;
+const PERSONA_CHANGES_STRIP_RE =
+  /<!--\s*PERSONA_CHANGES[\s\S]*?PERSONA_CHANGES\s*(?:-->|→|$)/g;
+
 function parsePersonaChanges(text: string): IPersonaPendingChanges | null {
   try {
-    const match = text.match(
-      /<!--PERSONA_CHANGES\s*([\s\S]*?)\s*PERSONA_CHANGES-->/,
-    );
+    const match = text.match(PERSONA_CHANGES_PARSE_RE);
     if (!match || !match[1]) return null;
     const parsed = PersonaChangesSchema.safeParse(JSON.parse(match[1]));
     if (!parsed.success) return null;
@@ -216,6 +227,6 @@ function parsePersonaChanges(text: string): IPersonaPendingChanges | null {
 
 function stripPersonaChangesBlock(text: string): string {
   return text
-    .replace(/<!--PERSONA_CHANGES[\s\S]*?PERSONA_CHANGES-->/g, "")
+    .replace(PERSONA_CHANGES_STRIP_RE, "")
     .trim();
 }

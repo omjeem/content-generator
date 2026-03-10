@@ -86,7 +86,7 @@ content-generator/
 │   │       │   ├── trends.ts          ← Multi-tier domain-aware trend fetching
 │   │       │   ├── trendCache.ts      ← Two-tier cache (L1 memory + L2 MongoDB)
 │   │       │   ├── trendDiscoveryCache.ts ← Per-user discovery session cache
-│   │       │   ├── linkedin.ts        ← Puppeteer scraper
+│   │       │   ├── linkedin.ts        ← Manual post parser (Puppeteer removed)
 │   │       │   ├── feedbackProcessor.ts ← Fire-and-forget signal extraction
 │   │       │   ├── personaLearning.ts ← Feedback → persona profile updates
 │   │       │   ├── personaMerge.ts    ← Incremental post analysis
@@ -123,7 +123,8 @@ content-generator/
 │           │   ├── editor/            ← PostEditorPane, EditorChatPane, AiDetectorPanel
 │           │   ├── persona/           ← PendingChangesCard, PersonaDiffCard
 │           │   ├── posts/             ← PostListItem
-│           │   ├── layout/            ← Navbar
+│           │   ├── landing/            ← SystemDiagram (interactive architecture)
+│           │   ├── layout/            ← Navbar, FeatureTour
 │           │   └── ui/               ← shadcn/ui (button, card, input, textarea, badge)
 │           └── lib/
 │               ├── api.ts             ← Full API client (all endpoints)
@@ -148,6 +149,7 @@ content-generator/
 - [x] Phase 7: Flexible generation (3 modes), Persona Chat, Rich Content Briefs (2026-02-21)
 - [x] Post-Phase: Domain-aware trends, trend anchoring, feedback loop, AI detector, admin (2026-03)
 - [x] Phase 4 Audit: Code quality, reliability, Writing DNA, confidence scoring, scheduling hints, content series, implicit feedback, performance tracking, audience resonance, A/B testing, peer awareness, UX polish (2026-03-05 to 2026-03-06) — 54 items across 8 sub-phases
+- [x] UX Polish: Docker optimization (2.66GB→338MB), Puppeteer removal, landing page system diagram, feature tour, smart navigation, mobile editor fix, AI detector scroll fix (2026-03-10)
 
 ---
 
@@ -166,7 +168,7 @@ content-generator/
 
 - Backend: **Express** (user requested on 2026-02-20 — was originally Hono)
 - LLM: **Gemini 2.5 Flash** via `@ai-sdk/google` (not OpenAI, not Claude API)
-- Scraper: **Puppeteer** (with manual paste fallback)
+- Post Input: **Manual paste only** (Puppeteer removed 2026-03-10 for Docker size)
 - Trends: **Multi-tier real APIs** — Tavily, HN Algolia (tech only), Domain RSS, Google News
 - Auth: **JWT in httpOnly cookies**
 - Ports: API=**5006**, Web=**3000**

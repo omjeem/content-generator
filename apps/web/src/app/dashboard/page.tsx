@@ -428,7 +428,7 @@ export default function DashboardPage() {
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z" />
             </svg>
-            My Posts
+            My Drafts
           </Link>
         </div>
 
@@ -457,7 +457,7 @@ export default function DashboardPage() {
 
       {/* ── Confidence score badge (Phase 4 #25) ───────────────────────── */}
       {persona?.confidenceScore && (
-        <div className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-3">
+        <div data-tour="confidence-score" className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-5 py-3">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-gray-600">
               We understand you
@@ -484,13 +484,20 @@ export default function DashboardPage() {
               style={{ width: `${persona.confidenceScore.overall}%` }}
             />
           </div>
-          <span className="text-xs text-gray-500 whitespace-nowrap">
-            {persona.confidenceScore.overall < 40
-              ? "Add more posts to improve"
-              : persona.confidenceScore.overall < 70
+          {persona.confidenceScore.overall < 40 ? (
+            <Link
+              href="/dashboard/profile?addPosts=true"
+              className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline whitespace-nowrap font-medium"
+            >
+              Add more posts to improve →
+            </Link>
+          ) : (
+            <span className="text-xs text-gray-500 whitespace-nowrap">
+              {persona.confidenceScore.overall < 70
                 ? "Good — keep providing feedback"
                 : "Excellent — highly personalized"}
-          </span>
+            </span>
+          )}
         </div>
       )}
 
@@ -616,7 +623,7 @@ export default function DashboardPage() {
 
       {/* Generate section */}
       {generateState !== "done" && (
-        <div className="mb-8">
+        <div data-tour="generate-section" className="mb-8">
           {/* Idle — show two generation options */}
           {generateState === "idle" && (
             <Card>

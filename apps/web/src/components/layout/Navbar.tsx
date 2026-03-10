@@ -64,18 +64,21 @@ export function Navbar({ userName }: NavbarProps) {
           </Link>
           <Link
             href="/dashboard/suggestions"
+            data-tour="nav-history"
             className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             History
           </Link>
           <Link
             href="/dashboard/posts"
+            data-tour="nav-posts"
             className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             My Posts
           </Link>
           <Link
             href="/dashboard/profile"
+            data-tour="nav-profile"
             className="text-gray-600 hover:text-indigo-600 transition-colors"
           >
             My Profile

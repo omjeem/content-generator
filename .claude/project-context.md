@@ -1,6 +1,6 @@
 # Project Context — Quick Reference
 
-> Last synced: 2026-03-06
+> Last synced: 2026-03-10
 
 ---
 
@@ -23,7 +23,7 @@
 | AI Framework | Mastra AI (`@mastra/core`) | 6 agents + orchestrator |
 | LLM | **Gemini 2.5 Flash** (`@ai-sdk/google`) | Free tier, no credit card |
 | Trends | Multi-tier real APIs | Tavily → HN Algolia → Domain RSS → Google News → Evergreen |
-| LinkedIn | Puppeteer | With manual paste fallback |
+| LinkedIn | Manual paste only | Puppeteer removed (2026-03-10) to reduce Docker image |
 | Database | MongoDB + Mongoose | Atlas free M0. 13 collections |
 | Auth | JWT in httpOnly cookies | bcrypt + jsonwebtoken + cookie-parser |
 | Frontend | Next.js 14 App Router | Port 3000. Tailwind + shadcn/ui |
@@ -105,8 +105,8 @@ NEXT_PUBLIC_API_URL=http://localhost:5006
 | `/login` | Login | Email + password form |
 | `/register` | Register | Name + email + password form |
 | `/onboarding` | Onboarding | Step 1: LinkedIn URL/paste. Step 2: Chat interview |
-| `/dashboard` | Dashboard | Generate ideas (5 modes) + browse trends + suggestion cards + confidence badge + feedback summary + performance notifications |
-| `/dashboard/profile` | Profile | View persona + AI strategy chat + pending changes + feedback insights |
+| `/dashboard` | Dashboard | Generate ideas (5 modes) + browse trends + suggestion cards + confidence badge + feedback summary + feature tour |
+| `/dashboard/profile` | Profile | View persona + AI strategy chat + add posts (auto-opens via `?addPosts=true`) + feedback insights |
 | `/dashboard/profile/evolution` | Evolution Timeline | Persona version history with diffs and triggers |
 | `/dashboard/suggestions` | History | Full history of suggestion sets + compare action |
 | `/dashboard/suggestions/compare` | Compare Sets | Side-by-side comparison of any 2 suggestion sets |
@@ -119,7 +119,7 @@ NEXT_PUBLIC_API_URL=http://localhost:5006
 
 | Service | File | Purpose |
 |---|---|---|
-| LinkedIn Scraper | `services/linkedin.ts` | Puppeteer-based profile scraping |
+| LinkedIn Parser | `services/linkedin.ts` | Manual post paste parser (Puppeteer removed 2026-03-10) |
 | Trend Fetcher | `services/trends.ts` | Multi-tier domain-aware trend fetching with deduplication |
 | Trend Cache | `services/trendCache.ts` | Two-tier caching: L1 in-memory (5-min) + L2 MongoDB (30-min TTL) |
 | Discovery Cache | `services/trendDiscoveryCache.ts` | Per-user trend discovery session cache |
@@ -153,6 +153,24 @@ NEXT_PUBLIC_API_URL=http://localhost:5006
 8. **Constants from config** — all magic numbers in `config/constants.ts`, not inline
 9. **Fire-and-forget via wrapper** — use `fireAndForget(fn, label)` from `utils/fireAndForget.ts`
 10. **Rate limiting** — generation (5/min), chat (20/min), AI-check (10/min) via `middleware/rateLimit.ts`
+
+---
+
+## New Frontend Components (2026-03-10)
+
+| Component | File | Purpose |
+|---|---|---|
+| Feature Tour | `components/layout/FeatureTour.tsx` | Guided step-by-step tour for new users with localStorage tracking |
+| System Diagram | `components/landing/SystemDiagram.tsx` | Interactive SVG architecture diagram for landing page |
+
+---
+
+## Docker Optimization (2026-03-10)
+
+- API image reduced from **2.66 GB → 338 MB** (87% reduction)
+- Used `turbo prune @repo/api --docker` to exclude web workspace deps
+- Removed Puppeteer/Chromium (was 726 MB alone)
+- `tsconfig.base.json` must be copied in Dockerfile builder stage (for `skipLibCheck: true`)
 
 ---
 
