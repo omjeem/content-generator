@@ -23,7 +23,6 @@
     "google-trends-api": "^4.9.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.2.1",
-    "puppeteer": "^24.37.5",
     "rss-parser": "^3.13.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
