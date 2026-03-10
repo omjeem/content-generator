@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { SystemDiagram } from "@/components/landing/SystemDiagram";
 
 // ── Icon helpers (inline SVGs) ──────────────────────────────────────────────
 
@@ -98,290 +98,10 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
-// ── Animated Architecture Pipeline (Technical view) ─────────────────────────
+// ── AnimatedPipeline, TechnicalArchitecture, NonTechnicalGuide removed ──────
+// Replaced by SystemDiagram component in components/landing/SystemDiagram.tsx
 
-function AnimatedPipeline() {
-  const nodes = [
-    { icon: "📋", label: "Your Posts", sub: "5-10 posts pasted", bg: "from-blue-500 to-blue-600", delay: "0s" },
-    { icon: "🔬", label: "Persona Analyst", sub: "Agent 1: Voice + Writing DNA", bg: "from-violet-500 to-violet-600", delay: "0.3s" },
-    { icon: "🤝", label: "Onboarding", sub: "Agent 2: Goals & audience", bg: "from-purple-500 to-purple-600", delay: "0.6s" },
-    { icon: "📡", label: "Trend Research", sub: "Agent 3: 60+ domain feeds", bg: "from-emerald-500 to-emerald-600", delay: "0.9s" },
-    { icon: "✨", label: "Content Engine", sub: "Agent 4: Rich briefs", bg: "from-orange-500 to-rose-500", delay: "1.2s" },
-    { icon: "🎯", label: "Your Feed", sub: "5-7 personalized ideas", bg: "from-indigo-500 to-indigo-700", delay: "1.5s" },
-  ];
-
-  return (
-    <div className="w-full overflow-x-auto pb-4">
-      <div className="flex items-center justify-center gap-0 min-w-[800px] py-4">
-        {nodes.map((node, i) => (
-          <div key={node.label} className="flex items-center">
-            <div className="flex flex-col items-center gap-2 animate-fadeInUp" style={{ animationDelay: node.delay }}>
-              <div className={`w-[72px] h-[72px] rounded-2xl bg-gradient-to-br ${node.bg} flex items-center justify-center shadow-lg text-2xl animate-pulse-slow`} style={{ animationDelay: node.delay }}>
-                {node.icon}
-              </div>
-              <span className="font-semibold text-gray-800 text-xs text-center whitespace-nowrap">{node.label}</span>
-              <span className="text-[10px] text-gray-400 text-center max-w-[100px] leading-tight">{node.sub}</span>
-            </div>
-            {i < nodes.length - 1 && (
-              <div className="flex items-center px-1 mt-[-24px]">
-                <div className="w-6 h-[2px] bg-gradient-to-r from-gray-300 to-gray-400 animate-flowRight" style={{ animationDelay: `${0.3 * i + 0.15}s` }} />
-                <svg className="w-2.5 h-2.5 text-gray-400 -ml-0.5" fill="currentColor" viewBox="0 0 6 10">
-                  <path d="M0 0l6 5-6 5V0z" />
-                </svg>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Technical Architecture Deep Dive ────────────────────────────────────────
-
-function TechnicalArchitecture() {
-  return (
-    <div className="space-y-10">
-      {/* System Architecture Diagram */}
-      <div className="bg-slate-900 rounded-2xl p-6 md:p-8 overflow-x-auto">
-        <h4 className="text-emerald-400 font-mono text-sm mb-4 uppercase tracking-wider">System Architecture</h4>
-        <pre className="text-xs md:text-sm text-slate-300 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-{`  Browser (Next.js 14 — port 3000)
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Landing ─→ Auth ─→ Onboarding ─→ Dashboard ─→ Editor       │
-  │                                    │                        │
-  │  Components: SuggestionCard, TrendBrowser, TopicBrowser,    │
-  │              PostEditorPane, EditorChatPane, AiDetectorPanel│
-  └────────────────────────┬────────────────────────────────────┘
-                           │ HTTP (axios)
-                           ▼
-  Express API (TypeScript — port 5006)
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Middleware: JWT Auth → Rate Limiter → Route Handler        │
-  │                                                             │
-  │  Routes: auth, persona, onboarding, trends, suggestions,    │
-  │          personaChat, feedback, drafts, tokenUsage,         │
-  │          admin, audience                                    │
-  │                                                             │
-  │  Agents (Mastra AI + Gemini 2.5 Flash):                     │
-  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │
-  │  │ Persona  │→ │Onboarding│→ │  Trend   │→ │Content   │     │
-  │  │ Analyst  │  │  Coach   │  │Researcher│  │Generator │     │
-  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘     │
-  │  ┌──────────┐  ┌──────────┐                                 │
-  │  │ Persona  │  │  Post    │  Services: writingDNA,          │
-  │  │  Chat    │  │ Editor   │  personaConfidence, trendCache, │
-  │  └──────────┘  └──────────┘  feedbackProcessor, abTest...   │
-  │                                                             │
-  │  Utils: circuitBreaker, fireAndForget, scoring, extractJSON │
-  └────────────────────────┬────────────────────────────────────┘
-                           │ Mongoose
-                           ▼
-  MongoDB (13 Collections)
-  ┌─────────────────────────────────────────────────────────────┐
-  │  users, user_personas, chat_sessions, content_suggestions,  │
-  │  suggestion_feedbacks, post_drafts, token_usage_logs,       │
-  │  token_requests, admin_audit_logs, system_configs,          │
-  │  refresh_tokens, trend_caches, audience_insights            │
-  └─────────────────────────────────────────────────────────────┘`}
-        </pre>
-      </div>
-
-      {/* Multi-Agent Pipeline Detail */}
-      <div className="bg-slate-900 rounded-2xl p-6 md:p-8 overflow-x-auto">
-        <h4 className="text-emerald-400 font-mono text-sm mb-4 uppercase tracking-wider">Multi-Agent Pipeline Flow</h4>
-        <pre className="text-xs md:text-sm text-slate-300 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-{`  POST /api/suggestions/generate
-  ┌──────────────────────────────────────────────────────────────┐
-  │ Step 0: Token Quota Check                                    │
-  │         ↓ (fail fast if exceeded)                            │
-  │ Step 1: Persona Analysis (Agent 1) ──── 30s timeout          │
-  │         Extract: tone, topics, writingStyle, expertise       │
-  │         + Writing DNA (deterministic, no LLM)                │
-  │         + Confidence Score computation                       │
-  │         ↓                                                    │
-  │ Step 2: Interview Check (Agent 2) ──── skip if complete      │
-  │         Fills: goals, targetAudience, industry, pillars      │
-  │         ↓                                                    │
-  │ Step 3: Trend Research (Agent 3) ──── 15s timeout            │
-  │         classifyDomain() → select from 14 domain categories  │
-  │         Tier 1: Tavily web search (if API key available)     │
-  │         Tier 2: HN Algolia (tech-adjacent only) + Domain RSS │
-  │         Tier 2.5: Google News RSS fallback                   │
-  │         Tier 3: Evergreen fallback                           │
-  │         + Trend deduplication across sources                 │
-  │         + Scheduling hints from domain data                  │
-  │         + Content series detection                           │
-  │         ↓                                                    │
-  │ Step 4: Content Generation (Agent 4) ──── 45s timeout        │
-  │         Prompt includes: persona + Writing DNA + confidence  │
-  │         directive + feedback signals + format strategy +     │
-  │         trends + scheduling hints + series data + audience   │
-  │         signals + peer awareness                             │
-  │         Output: 5-7 rich content briefs with hooks, points,  │
-  │         CTAs, SEO keywords, scheduling hints, series tags    │
-  │         ↓                                                    │
-  │ Step 5: Persist to MongoDB + fire-and-forget token tracking  │
-  └──────────────────────────────────────────────────────────────┘
-  Overall pipeline timeout: 90s  |  Retry: 2 attempts + exp backoff
-  Circuit breaker: opens after 5 consecutive failures, 60s cooldown`}
-        </pre>
-      </div>
-
-      {/* Feedback Learning Loop */}
-      <div className="bg-slate-900 rounded-2xl p-6 md:p-8 overflow-x-auto">
-        <h4 className="text-emerald-400 font-mono text-sm mb-4 uppercase tracking-wider">Feedback Learning Loop</h4>
-        <pre className="text-xs md:text-sm text-slate-300 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-{`  User Action                  Signal Weight         Learning Path
-  ─────────────                  ─────────────         ─────────────
-  Rate "loved" + publish         2.0  × 1.0 = 2.0   →  personaLearning
-  Rate "good" + save             1.2  × 0.75 = 0.9  →  personaLearning
-  Rate "bad" + dismiss           1.0  × -1.0 = -1.0 →  personaLearning
-  Copy hook (implicit)           0.75 × 0.5 = 0.38  →  personaLearning
-  Copy brief (implicit)          1.0  × 0.5 = 0.5   →  personaLearning
-  Click "Write This Post"        1.5  × 0.5 = 0.75  →  personaLearning
-  Publish + report 500 likes     3.0  × 1.0 = 3.0   →  personaLearning
-  Publish + report 5 likes       1.0  × 1.0 = 1.0   →  personaLearning
-
-  All signals apply recency decay: weight × 0.5^(days/14)
-  First 3 feedbacks trigger learning on every single one
-  After that, every 3rd feedback triggers a learning cycle
-
-  Learning updates → UserPersona.feedbackProfile:
-    preferredTopics, avoidTopics, formatPreferences,
-    tonePreference, averageRating, implicitSignalCount`}
-        </pre>
-      </div>
-
-      {/* Domain-Aware Trend Fetching */}
-      <div className="bg-slate-900 rounded-2xl p-6 md:p-8 overflow-x-auto">
-        <h4 className="text-emerald-400 font-mono text-sm mb-4 uppercase tracking-wider">Domain-Aware Trend Fetching</h4>
-        <pre className="text-xs md:text-sm text-slate-300 font-mono leading-relaxed whitespace-pre overflow-x-auto">
-{`  classifyDomain(industry, topics)
-  ┌──────────────────────────────────────────────────-┐
-  │ tech       → TechCrunch, Ars Technica, Wired      │
-  │ healthcare → HealthIT News, MedPage Today, WHO    │
-  │ finance    → Bloomberg, CNBC, Financial Times     │
-  │ legal      → Law.com, ABA Journal, Reuters Legal  │
-  │ education  → EdSurge, Inside Higher Ed            │
-  │ creative   → Creative Bloq, Behance, Colossal     │
-  │ food       → Eater, Food & Wine, Bon Appetit      │
-  │ wellness   → Mindful, Well+Good, Psychology Today │
-  │ sustainability → GreenBiz, CleanTechnica          │
-  │ hr         → SHRM, HR Dive, People Matters        │
-  │ real-estate→ Inman, HousingWire                   │
-  │ manufacturing → IndustryWeek, The Fabricator      │
-  │ business   → HBR, Entrepreneur, Inc, Fast Company │
-  │ general    → CNN, BBC, Reuters                    │
-  └──────────────────────────────────────────────────-┘
-  60+ domain-specific RSS feeds across 14 categories
-  HN Algolia: only for tech-adjacent domains
-  Two-tier cache: L1 in-memory (5min) + L2 MongoDB (30min)`}
-        </pre>
-      </div>
-
-      {/* Tech Stack Details */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {[
-          { title: "Backend", items: ["Express + TypeScript", "Mastra AI framework", "Gemini 2.5 Flash LLM", "Mongoose ODM", "JWT httpOnly cookies", "Zod validation", "Rate limiting", "Circuit breaker"] },
-          { title: "Frontend", items: ["Next.js 14 App Router", "Tailwind CSS", "shadcn/ui components", "Axios HTTP client", "Lucide React icons", "React Hot Toast", "Implicit signal tracking"] },
-          { title: "Infrastructure", items: ["Turborepo monorepo", "MongoDB Atlas", "Docker Compose", "Swagger/OpenAPI docs", "13 DB collections", "TTL indexes", "Shared TypeScript types"] },
-        ].map((col) => (
-          <div key={col.title} className="bg-white rounded-xl border border-gray-200 p-5">
-            <h4 className="font-bold text-gray-900 text-sm mb-3 uppercase tracking-wide">{col.title}</h4>
-            <ul className="space-y-1.5">
-              {col.items.map((item) => (
-                <li key={item} className="flex items-center gap-2 text-sm text-gray-600">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Non-Technical User Guide ────────────────────────────────────────────────
-
-function NonTechnicalGuide() {
-  return (
-    <div className="space-y-8">
-      {/* Simple visual pipeline */}
-      <div className="bg-gradient-to-br from-blue-50 to-violet-50 rounded-2xl border border-blue-100 p-6 md:p-8">
-        <h4 className="text-lg font-bold text-gray-900 mb-6 text-center">How PostMind AI Works For You</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {[
-            { step: "1", icon: "📝", title: "You share your posts", desc: "Paste 5-10 of your best LinkedIn or Twitter posts. This teaches the AI what topics you care about, how you write, and what makes your voice unique.", color: "bg-blue-100 border-blue-200 text-blue-800" },
-            { step: "2", icon: "🧠", title: "AI learns your voice", desc: "Six specialized AI agents analyze your writing style, sentence patterns, emoji habits, and opening techniques. It builds a complete profile of YOU — not a generic template.", color: "bg-violet-100 border-violet-200 text-violet-800" },
-            { step: "3", icon: "🎯", title: "Get personalized ideas", desc: "The AI combines your unique voice with today's trending topics in your industry to suggest 5-7 post ideas complete with hooks, talking points, and calls-to-action.", color: "bg-emerald-100 border-emerald-200 text-emerald-800" },
-          ].map((item) => (
-            <div key={item.step} className={`rounded-xl border p-5 ${item.color}`}>
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">{item.icon}</span>
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider opacity-60">Step {item.step}</span>
-                  <h5 className="font-bold text-base">{item.title}</h5>
-                </div>
-              </div>
-              <p className="text-sm leading-relaxed opacity-80">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* What makes it different */}
-      <div className="bg-white rounded-2xl border border-gray-200 p-6 md:p-8">
-        <h4 className="text-lg font-bold text-gray-900 mb-2">What makes PostMind AI different from ChatGPT?</h4>
-        <p className="text-gray-500 text-sm mb-6">Most AI tools generate generic content. PostMind AI is purpose-built to understand YOU.</p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { bad: "Generic AI gives you the same ideas as everyone else", good: "PostMind AI generates ideas based on YOUR unique expertise and voice" },
-            { bad: "ChatGPT doesn't know what's trending in your industry", good: "PostMind AI pulls real-time news from 60+ sources in your specific field" },
-            { bad: "Generic AI forgets your preferences after each session", good: "PostMind AI learns from every interaction and gets smarter over time" },
-            { bad: "Other tools produce robotic-sounding content", good: "PostMind AI matches your sentence patterns, emoji habits, and vocabulary" },
-          ].map((row, i) => (
-            <div key={i} className="flex flex-col gap-2">
-              <div className="flex items-start gap-2 text-sm">
-                <span className="text-red-400 shrink-0 mt-0.5">&#10007;</span>
-                <span className="text-gray-400 line-through">{row.bad}</span>
-              </div>
-              <div className="flex items-start gap-2 text-sm">
-                <span className="text-emerald-500 shrink-0 mt-0.5">&#10003;</span>
-                <span className="text-gray-700 font-medium">{row.good}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* The learning cycle */}
-      <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl border border-amber-200 p-6 md:p-8">
-        <h4 className="text-lg font-bold text-gray-900 mb-2">The more you use it, the better it gets</h4>
-        <p className="text-gray-600 text-sm mb-6">PostMind AI has a built-in learning cycle. Here's how it works:</p>
-        <div className="space-y-4">
-          {[
-            { emoji: "1️⃣", title: "Generate ideas", desc: "The AI suggests 5-7 content ideas based on your profile + current trends" },
-            { emoji: "2️⃣", title: "Rate what you like", desc: "Tell the AI which ideas you loved, which were okay, and which missed the mark" },
-            { emoji: "3️⃣", title: "Write and publish", desc: "Use the built-in AI editor to turn an idea into a polished post — then publish it" },
-            { emoji: "4️⃣", title: "Report performance", desc: "Tell the AI how your post performed (likes, comments, reposts) — this is the most powerful signal" },
-            { emoji: "5️⃣", title: "Get better suggestions", desc: "Next time you generate, the AI uses everything it learned to give you even better ideas" },
-          ].map((step) => (
-            <div key={step.emoji} className="flex items-start gap-3">
-              <span className="text-lg shrink-0">{step.emoji}</span>
-              <div>
-                <h5 className="font-semibold text-gray-900 text-sm">{step.title}</h5>
-                <p className="text-gray-600 text-sm">{step.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
+// (TechnicalArchitecture and NonTechnicalGuide removed — replaced by SystemDiagram)
 
 // ── Best Practices / Efficient Usage Guide ──────────────────────────────────
 
@@ -516,8 +236,6 @@ function UsageGuide() {
 // ── Main Landing Page ───────────────────────────────────────────────────────
 
 export default function LandingPage() {
-  const [viewMode, setViewMode] = useState<"non-technical" | "technical">("non-technical");
-
   return (
     <div className="min-h-screen bg-white font-sans">
       {/* CSS animations */}
@@ -526,22 +244,8 @@ export default function LandingPage() {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
-        @keyframes pulse-slow {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.05); }
-        }
-        @keyframes flowRight {
-          from { width: 0; opacity: 0; }
-          to { width: 24px; opacity: 1; }
-        }
         .animate-fadeInUp {
           animation: fadeInUp 0.6s ease-out both;
-        }
-        .animate-pulse-slow {
-          animation: pulse-slow 3s ease-in-out infinite;
-        }
-        .animate-flowRight {
-          animation: flowRight 0.4s ease-out both;
         }
       `}</style>
 
@@ -556,7 +260,7 @@ export default function LandingPage() {
           </div>
           <nav className="hidden md:flex items-center gap-6 text-sm text-gray-600">
             <a href="#how-it-works" className="hover:text-[#6366f1] transition-colors">How it works</a>
-            <a href="#understand" className="hover:text-[#6366f1] transition-colors">Deep Dive</a>
+            <a href="#system" className="hover:text-[#6366f1] transition-colors">System</a>
             <a href="#best-practices" className="hover:text-[#6366f1] transition-colors">Best Practices</a>
             <a href="#features" className="hover:text-[#6366f1] transition-colors">Features</a>
           </nav>
@@ -655,54 +359,17 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Deep Dive: Technical vs Non-Technical Toggle ── */}
-      <section id="understand" className="py-20 md:py-28">
+      {/* ── System Architecture Diagram ── */}
+      <section id="system" className="py-20 md:py-28 bg-gradient-to-br from-slate-50 to-blue-50 border-y border-blue-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-10">
-            <span className="text-sm font-semibold text-violet-600 uppercase tracking-wider">Understand the Platform</span>
-            <h2 className="mt-2 text-3xl md:text-4xl font-extrabold text-gray-900">See How PostMind AI Works Under the Hood</h2>
+            <span className="text-sm font-semibold text-violet-600 uppercase tracking-wider">Under the Hood</span>
+            <h2 className="mt-2 text-3xl md:text-4xl font-extrabold text-gray-900">How PostMind AI Works</h2>
             <p className="mt-4 text-gray-500 max-w-2xl mx-auto">
-              Switch between a simple visual overview or a detailed technical architecture view.
+              Hover or tap any component to see how it works. Follow the animated data flow to understand the complete system.
             </p>
           </div>
-
-          {/* Toggle */}
-          <div className="flex items-center justify-center mb-10">
-            <div className="inline-flex rounded-xl bg-gray-100 p-1 border border-gray-200">
-              <button
-                onClick={() => setViewMode("non-technical")}
-                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${viewMode === "non-technical" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-              >
-                Simple Overview
-              </button>
-              <button
-                onClick={() => setViewMode("technical")}
-                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${viewMode === "technical" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
-              >
-                Technical Architecture
-              </button>
-            </div>
-          </div>
-
-          {/* Content based on mode */}
-          {viewMode === "non-technical" ? <NonTechnicalGuide /> : <TechnicalArchitecture />}
-        </div>
-      </section>
-
-      {/* ── Animated Pipeline (always visible) ── */}
-      <section className="py-16 bg-gradient-to-br from-slate-50 to-blue-50 border-y border-blue-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-8">
-            <h3 className="text-xl font-bold text-gray-900">The 6-Agent AI Pipeline</h3>
-            <p className="text-gray-500 text-sm mt-1">Each agent specializes in one task, passing context to the next</p>
-          </div>
-          <AnimatedPipeline />
-          <div className="flex items-center justify-center mt-6">
-            <div className="border-2 border-dashed border-blue-200 rounded-full px-6 py-2 text-sm text-blue-500 font-medium flex items-center gap-2">
-              <span>🔄</span>
-              <span>Every interaction trains the AI — it gets smarter about your style over time</span>
-            </div>
-          </div>
+          <SystemDiagram />
         </div>
       </section>
 

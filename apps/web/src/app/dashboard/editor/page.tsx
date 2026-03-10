@@ -71,6 +71,9 @@ function EditorPageContent() {
   // AI Detector modal state
   const [aiDetectorOpen, setAiDetectorOpen] = useState(false);
 
+  // Mobile pane toggle: "editor" or "chat"
+  const [mobilePane, setMobilePane] = useState<"editor" | "chat">("editor");
+
   // Chat history (loaded from server)
   const [initialMessages, setInitialMessages] = useState<ChatMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -270,16 +273,16 @@ function EditorPageContent() {
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: 0 }}>
       {/* ── Toolbar ───────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-100 bg-white shrink-0">
+      <div className="flex flex-wrap items-center justify-between px-3 md:px-4 py-2 border-b border-gray-100 bg-white shrink-0 gap-y-1">
         {/* Left: back + title */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
           <Link
             href="/dashboard"
-            className="text-sm text-gray-500 hover:text-gray-700 shrink-0"
+            className="text-xs md:text-sm text-gray-500 hover:text-gray-700 shrink-0"
           >
-            ← Dashboard
+            ← Back
           </Link>
-          <span className="text-gray-300 shrink-0">|</span>
+          <span className="text-gray-300 shrink-0 hidden sm:inline">|</span>
           <input
             type="text"
             value={title}
@@ -293,18 +296,18 @@ function EditorPageContent() {
               }
             }}
             placeholder="Untitled draft…"
-            className="text-sm font-medium text-gray-800 bg-transparent border-none outline-none truncate min-w-0 flex-1 placeholder-gray-400"
+            className="text-xs md:text-sm font-medium text-gray-800 bg-transparent border-none outline-none truncate min-w-0 flex-1 placeholder-gray-400"
           />
         </div>
 
         {/* Right: platform badge + AI check + save status + finalize */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           {/* Save feedback */}
           {saveSuccess && (
             <span className="text-xs text-green-600 font-medium">✓ Saved</span>
           )}
           {saveError && (
-            <span className="text-xs text-red-500 truncate max-w-[200px]">
+            <span className="text-xs text-red-500 truncate max-w-[120px] md:max-w-[200px]">
               {saveError}
             </span>
           )}
@@ -314,7 +317,7 @@ function EditorPageContent() {
             value={platform}
             onChange={(e) => setPlatform(e.target.value as DraftPlatform)}
             disabled={status === "published"}
-            className="text-xs border border-gray-200 rounded-md px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
+            className="text-xs border border-gray-200 rounded-md px-1.5 md:px-2 py-1 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50"
           >
             <option value="linkedin">LinkedIn</option>
             <option value="twitter">Twitter/X</option>
@@ -325,10 +328,10 @@ function EditorPageContent() {
             <button
               onClick={() => setAiDetectorOpen(true)}
               disabled={!content.trim() || content.trim().length < 50}
-              className="text-xs border border-gray-200 hover:border-indigo-300 text-gray-600 hover:text-indigo-600 font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              className="text-xs border border-gray-200 hover:border-indigo-300 text-gray-600 hover:text-indigo-600 font-medium px-2 md:px-3 py-1.5 rounded-md transition-colors disabled:opacity-50 flex items-center gap-1"
               title="Check for AI-generated patterns"
             >
-              🔍 AI Check
+              🔍 <span className="hidden sm:inline">AI Check</span>
             </button>
           )}
 
@@ -337,24 +340,53 @@ function EditorPageContent() {
             <button
               onClick={() => void handleFinalize()}
               disabled={finalizing || saving || !content.trim()}
-              className="text-xs bg-green-600 hover:bg-green-700 text-white font-medium px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
+              className="text-xs bg-green-600 hover:bg-green-700 text-white font-medium px-2 md:px-3 py-1.5 rounded-md transition-colors disabled:opacity-50"
             >
-              {finalizing ? "Finalizing…" : "✅ Finalize"}
+              {finalizing ? "…" : "✅ Finalize"}
             </button>
           )}
 
           {status === "published" && (
-            <span className="text-xs font-medium bg-green-100 text-green-700 px-3 py-1.5 rounded-md">
+            <span className="text-xs font-medium bg-green-100 text-green-700 px-2 md:px-3 py-1.5 rounded-md">
               ✓ Finalized
             </span>
           )}
         </div>
       </div>
 
+      {/* ── Mobile pane toggle (visible only on small screens) ──────────────── */}
+      <div className="flex md:hidden border-b border-gray-100 bg-gray-50 shrink-0">
+        <button
+          onClick={() => setMobilePane("editor")}
+          className={`flex-1 py-2 text-xs font-medium text-center transition-colors ${
+            mobilePane === "editor"
+              ? "text-indigo-700 bg-white border-b-2 border-indigo-600"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Editor
+        </button>
+        <button
+          onClick={() => setMobilePane("chat")}
+          className={`flex-1 py-2 text-xs font-medium text-center transition-colors ${
+            mobilePane === "chat"
+              ? "text-indigo-700 bg-white border-b-2 border-indigo-600"
+              : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          AI Chat
+        </button>
+      </div>
+
       {/* ── Dual-pane editor ──────────────────────────────────────────────────── */}
-      <div className="flex flex-1 gap-0 overflow-hidden" style={{ minHeight: 0 }}>
-        {/* Left pane — PostEditorPane */}
-        <div className="flex-1 p-4 overflow-y-auto border-r border-gray-100" style={{ minHeight: 0 }}>
+      <div className="flex flex-col md:flex-row flex-1 gap-0 overflow-hidden" style={{ minHeight: 0 }}>
+        {/* Left pane — PostEditorPane (hidden on mobile when chat is active) */}
+        <div
+          className={`flex-1 p-3 md:p-4 overflow-y-auto md:border-r border-gray-100 ${
+            mobilePane !== "editor" ? "hidden md:block" : ""
+          }`}
+          style={{ minHeight: 0 }}
+        >
           <PostEditorPane
             content={content}
             platform={platform}
@@ -366,12 +398,21 @@ function EditorPageContent() {
           />
         </div>
 
-        {/* Right pane — EditorChatPane: flex column, no outer scroll */}
-        <div className="w-[360px] shrink-0 flex flex-col overflow-hidden" style={{ minHeight: 0 }}>
+        {/* Right pane — EditorChatPane (hidden on mobile when editor is active) */}
+        <div
+          className={`w-full md:w-[360px] md:shrink-0 flex flex-col overflow-hidden ${
+            mobilePane !== "chat" ? "hidden md:flex" : "flex-1"
+          }`}
+          style={{ minHeight: 0 }}
+        >
           {historyLoaded && draftId ? (
             <EditorChatPane
               draftId={draftId}
-              onApplyEdit={handleApplyEdit}
+              onApplyEdit={(newContent) => {
+                handleApplyEdit(newContent);
+                // On mobile, switch to editor pane after AI applies content
+                setMobilePane("editor");
+              }}
               initialMessages={initialMessages}
               autoInit={shouldAutoInit}
               disabled={status === "published"}

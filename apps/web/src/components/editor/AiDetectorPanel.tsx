@@ -8,7 +8,7 @@
  * Shows score, verdict, signals, suggestions, and a humanize flow.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { draftsApi, ApiError } from "@/lib/api";
 import type { IAiCheckResponse, HumanizeIntensity } from "@repo/shared-types";
@@ -114,6 +114,16 @@ export function AiDetectorModal({
     changesSummary: string;
   } | null>(null);
 
+  const humanizeRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to humanize panel when it appears
+  useEffect(() => {
+    if (showHumanize && humanizeRef.current) {
+      humanizeRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [showHumanize]);
+
   const handleCheck = useCallback(async () => {
     if (checking || !content.trim()) return;
     setChecking(true);
@@ -202,7 +212,7 @@ export function AiDetectorModal({
         </div>
 
         {/* Content */}
-        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+        <div ref={scrollAreaRef} className="p-5 space-y-4 overflow-y-auto flex-1">
           {/* Initial state — run check */}
           {!result && !checking && (
             <div className="text-center py-6">
@@ -318,7 +328,7 @@ export function AiDetectorModal({
 
           {/* Humanize panel */}
           {showHumanize && (
-            <div className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-4 space-y-3">
+            <div ref={humanizeRef} className="bg-indigo-50/50 border border-indigo-100 rounded-lg p-4 space-y-3">
               <p className="text-sm font-semibold text-gray-700">
                 Humanization Intensity
               </p>
