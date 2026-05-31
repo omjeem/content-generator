@@ -28,7 +28,16 @@ services:
       - PORT=5006
       - MONGODB_URI=${MONGODB_URI}
       - JWT_SECRET=${JWT_SECRET}
-      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY}
+      # ── LLM provider selection (read from the host .env) ──────────────────
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-gemini}
+      # Gemini (used when MODEL_PROVIDER=gemini)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GOOGLE_GENERATIVE_AI_API_KEY=${GOOGLE_GENERATIVE_AI_API_KEY:-}
+      # Ollama (used when MODEL_PROVIDER=ollama — Cloud or self-hosted)
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-https://ollama.com/v1}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gpt-oss:120b}
       - TAVILY_API_KEY=${TAVILY_API_KEY:-}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:5006/api/health || exit 1"]
