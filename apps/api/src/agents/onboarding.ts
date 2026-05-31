@@ -1,6 +1,6 @@
 import { Agent } from "@mastra/core/agent";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
+import { getModel } from "../llm/provider";
 import { trackTokenUsage } from "../services/tokenUsage";
 import {
   findOrCreateSession,
@@ -54,7 +54,7 @@ export type InterviewAnswers = z.infer<typeof InterviewAnswersSchema>;
 export const onboardingAgent = new Agent({
   id: "onboarding-interview",
   name: "onboarding-interview",
-  model: google("gemini-2.5-flash"),
+  model: getModel(),
   instructions: `You are a friendly content strategist conducting an onboarding interview to understand a creator's posting strategy.
 
 Your job is to gather information by asking targeted questions ONE AT A TIME in a warm, conversational tone.

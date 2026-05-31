@@ -18,7 +18,7 @@
  */
 
 import { Agent } from "@mastra/core/agent";
-import { google } from "@ai-sdk/google";
+import { getModel } from "../llm/provider";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
 import {
   findOrCreateEditorSession,
@@ -35,7 +35,7 @@ import { getPlatformConfig } from "../config/platforms";
 export const postEditorAgent = new Agent({
   id: "post-editor",
   name: "post-editor",
-  model: google("gemini-2.5-flash"),
+  model: getModel(),
   instructions: `You are an expert LinkedIn and Twitter ghostwriter acting as an AI co-writing partner.
 
 ════════════════════════════════════════════════════

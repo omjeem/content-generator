@@ -1,11 +1,11 @@
 import { Agent } from "@mastra/core/agent";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import type { IUserPersonaDocument } from "../models/UserPersona";
 import type { TrendResult } from "./trendResearch";
 import type { IGenerateContextOptions, ISchedulingHint, ISeriesTag } from "@repo/shared-types";
 import type { TrendResearchResult } from "./trendResearch";
-import { extractJSON } from "../utils/extractJSON";
+import { getModel } from "../llm/provider";
+import { parseLLMJson } from "../llm/structured";
 import { getPlatformConfig } from "../config/platforms";
 import type { IContentSeries } from "../services/contentContinuity";
 
@@ -65,7 +65,7 @@ export type ContentIdeas = z.infer<typeof ContentIdeasSchema>;
 export const contentGeneratorAgent = new Agent({
   id: "content-generator",
   name: "content-generator",
-  model: google("gemini-2.5-flash"),
+  model: getModel(),
   instructions: `You are an expert LinkedIn ghostwriter and content strategist.
 
 You will receive a user persona AND a list of trending topics. Your job is to generate
@@ -502,12 +502,11 @@ Return ONLY the JSON object with the ideas array.`;
 
     try {
       const result = await contentGeneratorAgent.generate(promptToUse);
-      const text = result.text ?? "";
-      const raw = extractJSON<unknown>(
-        text,
+      const ideas = await parseLLMJson(
+        result.text ?? "",
+        ContentIdeasSchema,
         `content generator (attempt ${attempt})`,
       );
-      const ideas = ContentIdeasSchema.parse(raw);
 
       // ── Post-parse minimum count check (#5) ────────────────────────────────
       // ContentIdeasSchema requires min(5) via Zod, but guard against edge cases

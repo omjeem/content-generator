@@ -1,5 +1,4 @@
 import { Agent } from "@mastra/core/agent";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import {
   fetchRealTrendingContent,
@@ -13,7 +12,8 @@ import {
   getCachedTrends,
   setCachedTrends,
 } from "../services/trendCache";
-import { extractJSON } from "../utils/extractJSON";
+import { getModel } from "../llm/provider";
+import { parseLLMJson } from "../llm/structured";
 import { scoreAndRankTrends, selectBalancedTrends } from "../utils/scoring";
 import type { ScoredTrendItem } from "../utils/scoring";
 
@@ -52,7 +52,7 @@ export type TrendResult = z.infer<typeof TrendResultSchema>;
 export const trendResearchAgent = new Agent({
   id: "trend-research",
   name: "trend-research",
-  model: google("gemini-2.5-flash"),
+  model: getModel(),
   instructions: `You are a trend research specialist for LinkedIn content creators across ALL industries.
 
 You receive REAL article titles and stories fetched from live sources (industry-specific
@@ -369,25 +369,15 @@ Return ONLY the JSON object.`;
       outputTokens: agentResult.usage?.outputTokens ?? 0,
     };
 
-    let rawJson: unknown;
+    // parseLLMJson extracts + validates and self-repairs malformed JSON. If it
+    // still can't produce a valid TrendResult, fall back to evergreen topics.
+    let parsed: TrendResult;
     try {
-      rawJson = extractJSON(text, "trend research agent");
-    } catch {
+      parsed = await parseLLMJson(text, TrendResultSchema, "trend research agent");
+    } catch (parseErr) {
       console.warn(
-        "[trendResearch] No JSON in agent response — using fallback with raw titles",
-      );
-      return {
-        result: buildFallbackResult(input.industry, input.topics, allRawTitles),
-        usage,
-        isLive: false,
-      };
-    }
-
-    const parsed = TrendResultSchema.safeParse(rawJson);
-    if (!parsed.success) {
-      console.warn(
-        "[trendResearch] Schema validation failed:",
-        parsed.error.message,
+        "[trendResearch] Could not parse/repair agent response — using fallback with raw titles:",
+        (parseErr as Error).message,
       );
       return {
         result: buildFallbackResult(input.industry, input.topics, allRawTitles),
@@ -397,9 +387,9 @@ Return ONLY the JSON object.`;
     }
 
     console.log(
-      `[trendResearch] ✓ ${parsed.data.trends.length} curated trends from real data`,
+      `[trendResearch] ✓ ${parsed.trends.length} curated trends from real data`,
     );
-    return { result: parsed.data, usage, isLive: true };
+    return { result: parsed, usage, isLive: true };
   } catch (err) {
     console.error("[trendResearch] Agent error:", (err as Error).message);
     return {

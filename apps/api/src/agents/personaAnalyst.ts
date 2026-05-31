@@ -1,11 +1,11 @@
 import { Agent } from "@mastra/core/agent";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
 import {
   scrapeLinkedInProfile,
   parseManualPosts,
 } from "../services/linkedin";
-import { extractJSON } from "../utils/extractJSON";
+import { getModel } from "../llm/provider";
+import { parseLLMJson } from "../llm/structured";
 import { sanitizePosts, wrapPostContent } from "../utils/sanitizeInput";
 
 // ── Output schema ─────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ export type PersonaAnalysis = z.infer<typeof PersonaSchema>;
 export const personaAnalystAgent = new Agent({
   id: "persona-analyst",
   name: "persona-analyst",
-  model: google("gemini-2.5-flash"),
+  model: getModel(),
   instructions: `You are an expert LinkedIn content analyst.
 
 Given a collection of LinkedIn posts from a single author, analyse their content and extract:
@@ -103,12 +103,15 @@ ${postsText}`;
 
   const result = await personaAnalystAgent.generate(prompt);
 
-  // Robustly extract JSON from the model's text response
-  const text = result.text ?? "";
-  const raw = extractJSON<unknown>(text, "persona analyst");
+  // Robustly extract + validate JSON, with model-driven repair on failure.
+  const analysis = await parseLLMJson(
+    result.text ?? "",
+    PersonaSchema,
+    "persona analyst",
+  );
 
   return {
-    analysis: PersonaSchema.parse(raw),
+    analysis,
     usage: {
       inputTokens: result.usage?.inputTokens ?? 0,
       outputTokens: result.usage?.outputTokens ?? 0,

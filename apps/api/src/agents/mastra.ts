@@ -22,6 +22,7 @@ import { getSchedulingHint } from "../services/schedulingHints";
 import { detectContentSeries } from "../services/contentContinuity";
 import { getAudienceInsights, buildAudienceSignalsSection } from "../services/audienceTracker";
 import { classifyDomain } from "../services/trends";
+import { getModelId } from "../llm/provider";
 import { fireAndForget } from "../utils/fireAndForget";
 import { CircuitBreaker } from "../utils/circuitBreaker";
 import { PIPELINE } from "../config/constants";
@@ -396,7 +397,7 @@ export async function runContentPipeline(
         total: totalInputTokens + totalOutputTokens,
       },
       trendSource: trendIsLive ? "live" : "fallback",
-      modelId: "gemini-2.5-flash",
+      modelId: getModelId(),
     },
     suggestions: contentIdeas.ideas.map((idea) => {
       const ideaObj = idea as Record<string, unknown>;

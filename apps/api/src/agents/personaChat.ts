@@ -1,6 +1,6 @@
 import { Agent } from "@mastra/core/agent";
-import { google } from "@ai-sdk/google";
 import { z } from "zod";
+import { getModel } from "../llm/provider";
 import { checkTokenQuota, trackTokenUsage } from "../services/tokenUsage";
 import {
   findOrCreateSession,
@@ -42,7 +42,7 @@ export const PersonaChangesSchema = z.object({
 export const personaChatAgent = new Agent({
   id: "persona-chat",
   name: "persona-chat",
-  model: google("gemini-2.5-flash"),
+  model: getModel(),
   instructions: `You are a LinkedIn content strategy coach. The user wants to update or refine their content persona.
 
 Your role:
