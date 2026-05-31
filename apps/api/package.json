@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.30",
+    "@ai-sdk/openai-compatible": "^2.0.48",
     "@mastra/core": "^1.5.0",
     "@repo/shared-types": "*",
     "@tavily/core": "^0.7.1",
