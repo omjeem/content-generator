@@ -24,7 +24,7 @@ PostMind AI is a full-stack Applied AI platform that analyzes your LinkedIn pres
 | **Backend** | Express + TypeScript (port 5006) |
 | **Frontend** | Next.js 14 App Router (port 3000) |
 | **AI Framework** | Mastra AI with 6 specialized agents |
-| **LLM** | Google Gemini 2.5 Flash via `@ai-sdk/google` |
+| **LLM** | Pluggable — Google Gemini (`@ai-sdk/google`) or Ollama Cloud (`@ai-sdk/openai-compatible`), switchable via `MODEL_PROVIDER` |
 | **Database** | MongoDB with Mongoose (13 collections) |
 | **Auth** | JWT with httpOnly cookies + refresh tokens |
 | **Styling** | Tailwind CSS + shadcn/ui components |
@@ -94,7 +94,7 @@ content-generator/
 - **Node.js** >= 18.0.0
 - **npm** >= 9.0.0
 - **MongoDB** — free tier at [MongoDB Atlas](https://cloud.mongodb.com)
-- **Gemini API Key** — free at [Google AI Studio](https://ai.google.dev)
+- **An LLM provider** — either a **Gemini API Key** (free at [Google AI Studio](https://ai.google.dev)) or an **Ollama Cloud API Key** ([ollama.com/settings/keys](https://ollama.com/settings/keys); a local Ollama server also works)
 - **Tavily API Key** (optional) — free tier at [tavily.com](https://tavily.com)
 
 ### 1. Clone the repository
@@ -120,9 +120,20 @@ Edit `.env` and fill in your values:
 
 ```env
 # Required
-GEMINI_API_KEY=your_gemini_api_key
 MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/postmind
 JWT_SECRET=your_64_char_random_hex_string
+
+# LLM provider — "gemini" (default) or "ollama"
+MODEL_PROVIDER=gemini
+
+# If MODEL_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+
+# If MODEL_PROVIDER=ollama (Ollama Cloud shown; for local use http://localhost:11434/v1 and omit the key)
+# OLLAMA_API_KEY=your_ollama_cloud_key
+# OLLAMA_BASE_URL=https://ollama.com/v1
+# OLLAMA_MODEL=gpt-oss:120b
 
 # Optional (improves trend quality)
 TAVILY_API_KEY=your_tavily_key
@@ -132,6 +143,23 @@ PORT=5006
 FRONTEND_URL=http://localhost:3000
 NEXT_PUBLIC_API_URL=http://localhost:5006
 ```
+
+### Switching model providers
+
+The entire app is provider-agnostic — every agent and service resolves its model
+through a single factory ([apps/api/src/llm/provider.ts](apps/api/src/llm/provider.ts)).
+To switch providers, change `MODEL_PROVIDER` in `.env` and restart:
+
+| `MODEL_PROVIDER` | Key | Model var | Notes |
+|------------------|-----|-----------|-------|
+| `gemini` | `GEMINI_API_KEY` | `GEMINI_MODEL` | Default. Uses `@ai-sdk/google`. |
+| `ollama` | `OLLAMA_API_KEY` | `OLLAMA_MODEL` | Ollama Cloud via its OpenAI-compatible API (`OLLAMA_BASE_URL`, default `https://ollama.com/v1`). For a self-hosted server set `OLLAMA_BASE_URL=http://localhost:11434/v1` — no key required. |
+
+Because some models don't support native structured output, JSON is requested at
+the prompt level and validated centrally
+([apps/api/src/llm/structured.ts](apps/api/src/llm/structured.ts)). If a model
+returns malformed JSON, the helper makes one automatic "repair" call to coerce
+it into valid JSON before falling back — so any provider works without code changes.
 
 **Generate a JWT secret:**
 ```bash
@@ -299,9 +327,14 @@ Interactive Swagger UI available at `http://localhost:5006/api/docs` when the AP
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GEMINI_API_KEY` | Yes | Google Gemini API key ([get free](https://ai.google.dev)) |
 | `MONGODB_URI` | Yes | MongoDB connection string ([get free](https://cloud.mongodb.com)) |
 | `JWT_SECRET` | Yes | 64+ char random hex for JWT signing |
+| `MODEL_PROVIDER` | No | LLM provider: `gemini` (default) or `ollama` |
+| `GEMINI_API_KEY` | If `gemini` | Google Gemini API key ([get free](https://ai.google.dev)) |
+| `GEMINI_MODEL` | No | Gemini model name (default: `gemini-2.5-flash`) |
+| `OLLAMA_API_KEY` | If `ollama` (cloud) | Ollama Cloud API key ([get one](https://ollama.com/settings/keys)). Not needed for a local server. |
+| `OLLAMA_BASE_URL` | No | Ollama OpenAI-compatible endpoint (default: `https://ollama.com/v1`) |
+| `OLLAMA_MODEL` | No | Ollama model name (default: `gpt-oss:120b`) |
 | `TAVILY_API_KEY` | No | Tavily API key for premium trend search ([get free](https://tavily.com)) |
 | `PORT` | No | API port (default: 5006) |
 | `FRONTEND_URL` | No | Frontend origin for CORS (default: http://localhost:3000) |
