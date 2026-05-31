@@ -17,14 +17,24 @@
  * (canonical implementation) instead of being defined locally.
  */
 
+import { z } from "zod";
 import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
+import { getModel } from "../llm/provider";
+import { parseLLMJson } from "../llm/structured";
 import {
   SuggestionFeedback,
   type ISuggestionFeedbackDocument,
 } from "../models/SuggestionFeedback";
 import mongoose from "mongoose";
 import { aggregateAndUpdatePersona } from "./personaLearning";
+
+// Structured shape extracted from free-text feedback.
+const FeedbackSignalsSchema = z.object({
+  topicRelevance: z.enum(["on-brand", "off-brand", "neutral"]),
+  toneMatch: z.enum(["perfect", "close", "mismatch"]),
+  formatPreference: z.enum(["liked-format", "disliked-format", "neutral"]),
+  specificNotes: z.string().nullable().optional(),
+});
 
 // ── processFeedback ───────────────────────────────────────────────────────────
 
@@ -79,18 +89,16 @@ Analyze this feedback and return ONLY a valid JSON object:
 }`;
 
     const { text } = await generateText({
-      model: google("gemini-2.5-flash"),
+      model: getModel(),
       prompt,
     });
 
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("[feedbackProcessor] Could not extract JSON from LLM response");
-      return;
-    }
-
-    const signals = JSON.parse(jsonMatch[0]);
+    // Extract + validate JSON, with model-driven repair on malformed output.
+    const signals = await parseLLMJson(
+      text,
+      FeedbackSignalsSchema,
+      "feedback signal parsing",
+    );
 
     // Persist parsed signals on the feedback document
     await SuggestionFeedback.updateOne(

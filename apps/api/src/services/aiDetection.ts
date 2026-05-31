@@ -10,7 +10,8 @@
 
 import { z } from "zod";
 import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
+import { getModel } from "../llm/provider";
+import { parseLLMJson } from "../llm/structured";
 import type { IUserPersonaDocument } from "../models/UserPersona";
 import { buildPersonaSummary } from "../agents/contentGenerator";
 
@@ -67,16 +68,15 @@ TEXT TO ANALYZE:
 ${content}`;
 
   const { text, usage: genUsage } = await generateText({
-    model: google("gemini-2.5-flash"),
+    model: getModel(),
     prompt,
   });
 
-  // Phase 4 #8: Wrap parse with try/catch — return heuristic fallback on failure
+  // Phase 4 #8: Wrap parse with try/catch — return heuristic fallback on failure.
+  // parseLLMJson adds a model-driven JSON repair pass before giving up.
   let result: AiCheckResult;
   try {
-    const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
-    const parsed = JSON.parse(cleaned);
-    result = AiCheckResultSchema.parse(parsed);
+    result = await parseLLMJson(text, AiCheckResultSchema, "ai detection");
   } catch (parseErr) {
     console.error("[aiDetection] Parse failed, returning fallback:", parseErr);
     result = {
@@ -146,14 +146,12 @@ Return ONLY valid JSON (no markdown, no extra text):
 }`;
 
   const { text, usage: genUsage } = await generateText({
-    model: google("gemini-2.5-flash"),
+    model: getModel(),
     prompt,
   });
 
-  const cleaned = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
   try {
-    const parsed = JSON.parse(cleaned);
-    const result = HumanizeResultSchema.parse(parsed);
+    const result = await parseLLMJson(text, HumanizeResultSchema, "humanizer");
     return {
       result,
       usage: {

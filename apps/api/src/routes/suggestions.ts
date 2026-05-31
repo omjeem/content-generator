@@ -21,14 +21,27 @@ import {
 import { PostDraft } from "../models/PostDraft";
 import mongoose from "mongoose";
 import { generateText } from "ai";
-import { google } from "@ai-sdk/google";
+import { getModel, getModelId } from "../llm/provider";
+import { parseLLMJson } from "../llm/structured";
 import { sanitizeMessage } from "../utils/sanitizeInput";
-import { extractJSON } from "../utils/extractJSON";
 import { generationLimiter, chatLimiter } from "../middleware/rateLimit";
 import type { ISuggestion } from "@repo/shared-types";
 
 const router = Router();
 router.use(authenticate);
+
+// Shape of the AI topic-discovery response (id is assigned after parsing).
+const TopicIdeasSchema = z.object({
+  topics: z.array(
+    z.object({
+      title: z.string(),
+      category: z.string(),
+      reasoning: z.string(),
+      suggestedFormat: z.string(),
+      confidence: z.number(),
+    }),
+  ),
+});
 
 const platformGoalEnum = z.enum([
   "thought-leadership",
@@ -340,7 +353,7 @@ router.post(
             total: contentUsage.inputTokens + contentUsage.outputTokens,
           },
           trendSource: "live",
-          modelId: "gemini-2.5-flash",
+          modelId: getModelId(),
         },
         suggestions: contentIdeas.ideas.map((idea) => ({
           topic: idea.topic,
@@ -507,7 +520,7 @@ Return ONLY valid JSON (no markdown):
 }`;
 
       const { text, usage: genUsage } = await generateText({
-        model: google("gemini-2.5-flash"),
+        model: getModel(),
         prompt,
       });
 
@@ -521,9 +534,9 @@ Return ONLY valid JSON (no markdown):
         totalTokens: (genUsage?.inputTokens ?? 0) + (genUsage?.outputTokens ?? 0),
       });
 
-      // Parse response
-      const raw = extractJSON<{ topics: TopicDiscoveryItem[] }>(text, "topic-ideas");
-      const topics: TopicDiscoveryItem[] = (raw.topics ?? []).map((t) => ({
+      // Parse response (with model-driven JSON repair on malformed output)
+      const raw = await parseLLMJson(text, TopicIdeasSchema, "topic-ideas");
+      const topics: TopicDiscoveryItem[] = raw.topics.map((t) => ({
         ...t,
         id: generateTopicId(t.title),
       }));
@@ -671,7 +684,7 @@ router.post(
             total: contentUsage.inputTokens + contentUsage.outputTokens,
           },
           trendSource: "fallback",
-          modelId: "gemini-2.5-flash",
+          modelId: getModelId(),
         },
         suggestions: contentIdeas.ideas.map((idea) => ({
           topic: idea.topic,
@@ -933,7 +946,7 @@ If you don't have enough context yet, do NOT include the summary block — just 
       }));
 
       const { text, usage: genUsage } = await generateText({
-        model: google("gemini-2.5-flash"),
+        model: getModel(),
         system: systemPrompt,
         messages: aiMessages,
       });
@@ -1191,7 +1204,7 @@ router.post(
             total: contentUsage.inputTokens + contentUsage.outputTokens,
           },
           trendSource: original.trendSource ?? "live",
-          modelId: "gemini-2.5-flash",
+          modelId: getModelId(),
         },
         suggestions: contentIdeas.ideas.map((idea) => ({
           topic: idea.topic,
