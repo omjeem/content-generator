@@ -46,3 +46,4 @@ coverage
 *.pem
 cookies.txt
 test_*
+claude_*
