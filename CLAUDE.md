@@ -104,6 +104,7 @@ content-generator/
 │   │       │   ├── audienceTracker.ts ← Audience engagement tracking
 │   │       │   ├── performanceTracker.ts ← Performance-weighted learning
 │   │       │   └── abTest.ts         ← A/B test framework
+│   │       ├── llm/                   ← provider.ts (model factory: text + JSON mode), structured.ts (the ONE JSON path)
 │   │       ├── utils/                 ← scoring.ts, extractJSON.ts, sanitizeInput.ts, fireAndForget.ts, circuitBreaker.ts
 │   │       ├── middleware/            ← auth.ts, adminAuth.ts, errorHandler.ts, rateLimit.ts
 │   │       └── swagger/setup.ts       ← Swagger UI at /api/docs
@@ -174,4 +175,13 @@ content-generator/
 - Ports: API=**5006**, Web=**3000**
 - Secrets: Always via `process.env.VAR` — never hardcoded
 - Domain-aware: `classifyDomain()` routes trends to appropriate RSS pools per industry
+- Models: resolve ONLY through `llm/provider.ts` — `getModel()` for prose agents,
+  `getJsonModel()` for JSON agents (declare as `model: () => getJsonModel()` so the
+  JSON-mode kill-switch applies). Never construct a provider inline.
+- Structured output: NEVER pass a response schema to the SDK (`generateObject`/
+  `output`) — models without constrained decoding fail unpredictably. Every JSON
+  call goes through `generateJSON()` / `generateAgentJSON()` in `llm/structured.ts`:
+  native JSON mode → prompt rule → local extract/repair/normalize → at most one
+  repair call → retry last. New JSON agents add a `normalize` hook rather than
+  tightening the parse-time schema.
 - Trend anchoring: Content ideas MUST connect to provided trends (not general expertise)

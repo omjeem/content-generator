@@ -4,8 +4,8 @@ import {
   scrapeLinkedInProfile,
   parseManualPosts,
 } from "../services/linkedin";
-import { getModel } from "../llm/provider";
-import { parseLLMJson } from "../llm/structured";
+import { getJsonModel } from "../llm/provider";
+import { generateAgentJSON, JSON_OUTPUT_RULE } from "../llm/structured";
 import { sanitizePosts, wrapPostContent } from "../utils/sanitizeInput";
 
 // ── Output schema ─────────────────────────────────────────────────────────────
@@ -37,7 +37,8 @@ export type PersonaAnalysis = z.infer<typeof PersonaSchema>;
 export const personaAnalystAgent = new Agent({
   id: "persona-analyst",
   name: "persona-analyst",
-  model: getModel(),
+  // Resolved per call so the JSON-mode kill-switch applies to agent calls too.
+  model: () => getJsonModel(),
   instructions: `You are an expert LinkedIn content analyst.
 
 Given a collection of LinkedIn posts from a single author, analyse their content and extract:
@@ -59,7 +60,9 @@ Respond with valid JSON matching this exact structure:
   "estimatedPostFrequency": "string",
   "engagementPatterns": "string",
   "summary": "string"
-}`,
+}
+
+${JSON_OUTPUT_RULE}`,
   // Note: linkedinScrapeTool removed (#35) — scraping is done by resolvePostsFromInput()
   // before calling this agent. The agent only analyses pre-fetched text.
 });
@@ -101,22 +104,54 @@ export async function analyzePersona(
 POSTS TO ANALYZE:
 ${postsText}`;
 
-  const result = await personaAnalystAgent.generate(prompt);
-
-  // Robustly extract + validate JSON, with model-driven repair on failure.
-  const analysis = await parseLLMJson(
-    result.text ?? "",
+  // Native JSON mode + local extraction/repair; one model repair call only if
+  // both fail. See llm/structured.ts.
+  const { data: analysis, usage } = await generateAgentJSON(
+    personaAnalystAgent,
+    prompt,
     PersonaSchema,
-    "persona analyst",
+    { context: "persona analyst", normalize: normalizePersona },
   );
 
-  return {
-    analysis,
-    usage: {
-      inputTokens: result.usage?.inputTokens ?? 0,
-      outputTokens: result.usage?.outputTokens ?? 0,
-    },
+  return { analysis, usage };
+}
+
+/**
+ * Coerces the shapes models commonly return instead of the documented one —
+ * a comma-separated string where an array is expected, or a snake_case key.
+ * Cheaper than a repair call and far cheaper than a re-analysis.
+ */
+function normalizePersona(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+
+  const aliases: Record<string, string> = {
+    writing_style: "writingStyle",
+    post_formats: "postFormats",
+    formats: "postFormats",
+    estimated_post_frequency: "estimatedPostFrequency",
+    postFrequency: "estimatedPostFrequency",
+    engagement_patterns: "engagementPatterns",
+    themes: "topics",
   };
+
+  const out: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+    out[aliases[key] ?? key] = val;
+  }
+
+  for (const field of ["topics", "postFormats"]) {
+    const val = out[field];
+    if (typeof val === "string") {
+      out[field] = val
+        .split(/[,\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (!Array.isArray(val)) {
+      out[field] = [];
+    }
+  }
+
+  return out;
 }
 
 // ── Helper: resolve posts from URL or manual paste ────────────────────────────

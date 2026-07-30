@@ -12,8 +12,8 @@ import {
   getCachedTrends,
   setCachedTrends,
 } from "../services/trendCache";
-import { getModel } from "../llm/provider";
-import { parseLLMJson } from "../llm/structured";
+import { getJsonModel } from "../llm/provider";
+import { generateAgentJSON, JSON_OUTPUT_RULE } from "../llm/structured";
 import { scoreAndRankTrends, selectBalancedTrends } from "../utils/scoring";
 import type { ScoredTrendItem } from "../utils/scoring";
 
@@ -52,7 +52,8 @@ export type TrendResult = z.infer<typeof TrendResultSchema>;
 export const trendResearchAgent = new Agent({
   id: "trend-research",
   name: "trend-research",
-  model: getModel(),
+  // Resolved per call so the JSON-mode kill-switch applies to agent calls too.
+  model: () => getJsonModel(),
   instructions: `You are a trend research specialist for LinkedIn content creators across ALL industries.
 
 You receive REAL article titles and stories fetched from live sources (industry-specific
@@ -84,7 +85,9 @@ Return ONLY a valid JSON object (no markdown, no code blocks):
   "rawTrends": ["title 1", "title 2", ...]
 }
 
-rawTrends should list ALL the input titles (up to 30).`,
+rawTrends should list ALL the input titles (up to 30).
+
+${JSON_OUTPUT_RULE}`,
 });
 
 // ── Usage tuple type ──────────────────────────────────────────────────────────
@@ -359,45 +362,82 @@ Select the 4-8 most relevant stories. Add relevance reason and content angle for
 Use language appropriate to the creator's domain — avoid tech jargon for non-tech industries.
 Return ONLY the JSON object.`;
 
+  // Tracked outside the try so tokens spent on an unparseable response are
+  // still billed when we fall back.
+  let usage = { inputTokens: 0, outputTokens: 0 };
+
   try {
-    const agentResult = await trendResearchAgent.generate(prompt);
-    const text = agentResult.text ?? "";
-    console.log(`[trendResearch] Agent responded (${text.length} chars)`);
-
-    const usage = {
-      inputTokens: agentResult.usage?.inputTokens ?? 0,
-      outputTokens: agentResult.usage?.outputTokens ?? 0,
-    };
-
-    // parseLLMJson extracts + validates and self-repairs malformed JSON. If it
-    // still can't produce a valid TrendResult, fall back to evergreen topics.
-    let parsed: TrendResult;
-    try {
-      parsed = await parseLLMJson(text, TrendResultSchema, "trend research agent");
-    } catch (parseErr) {
-      console.warn(
-        "[trendResearch] Could not parse/repair agent response — using fallback with raw titles:",
-        (parseErr as Error).message,
-      );
-      return {
-        result: buildFallbackResult(input.industry, input.topics, allRawTitles),
-        usage,
-        isLive: false,
-      };
-    }
+    // Native JSON mode + local extract/repair/normalise. A repair call is not
+    // worth its latency here — an evergreen fallback is already available and
+    // this step is on the critical path of the pipeline.
+    const { data: parsed } = await generateAgentJSON(
+      trendResearchAgent,
+      prompt,
+      TrendResultSchema,
+      {
+        context: "trend research agent",
+        normalize: (value) => normalizeTrends(value, allRawTitles),
+        allowRepair: false,
+        onUsage: (u) => {
+          usage = u;
+        },
+      },
+    );
 
     console.log(
       `[trendResearch] ✓ ${parsed.trends.length} curated trends from real data`,
     );
     return { result: parsed, usage, isLive: true };
   } catch (err) {
-    console.error("[trendResearch] Agent error:", (err as Error).message);
+    console.warn(
+      "[trendResearch] Agent/parse failed — using fallback with raw titles:",
+      (err as Error).message,
+    );
     return {
       result: buildFallbackResult(input.industry, input.topics, allRawTitles),
-      usage: { inputTokens: 0, outputTokens: 0 },
+      usage,
       isLive: false,
     };
   }
+}
+
+/**
+ * Repairs the near-misses this agent produces: a bare array instead of the
+ * wrapper object, snake_case keys, a missing `rawTrends` list (which we already
+ * have locally), or a trends array longer than the schema allows.
+ */
+function normalizeTrends(value: unknown, rawTitles: string[]): unknown {
+  const source =
+    Array.isArray(value) ? { trends: value } : (value as Record<string, unknown>);
+  if (typeof source !== "object" || source === null) return value;
+
+  const rawTrends = Array.isArray(source.rawTrends)
+    ? (source.rawTrends as unknown[]).map(String)
+    : rawTitles.slice(0, 30);
+
+  const trends = Array.isArray(source.trends) ? source.trends : [];
+
+  const normalized = trends
+    .map((item) => {
+      if (typeof item !== "object" || item === null) return null;
+      const t = item as Record<string, unknown>;
+      const topic = t.topic ?? t.title ?? t.headline;
+      if (typeof topic !== "string" || !topic.trim()) return null;
+      return {
+        topic: topic.trim(),
+        relevanceReason: String(
+          t.relevanceReason ?? t.relevance_reason ?? t.why ?? "Relevant to this creator's audience.",
+        ),
+        contentAngle: String(
+          t.contentAngle ?? t.content_angle ?? t.angle ?? `Share your perspective on ${topic}.`,
+        ),
+        ...(typeof t.source === "string" ? { source: t.source } : {}),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 15);
+
+  return { trends: normalized, rawTrends };
 }
 
 // ── Heuristic result builder (#32) ───────────────────────────────────────────

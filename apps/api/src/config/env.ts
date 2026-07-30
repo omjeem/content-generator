@@ -27,6 +27,30 @@ const envSchema = z
     OLLAMA_BASE_URL: z.string().default("https://ollama.com/v1"),
     OLLAMA_MODEL: z.string().default("gpt-oss:120b"),
 
+    // Reasoning budget for reasoning models (gpt-oss, deepseek-r1, …). The
+    // agents do extraction/formatting work, so "low" cuts latency sharply with
+    // no quality loss. Use "default" to send nothing and let the model decide.
+    OLLAMA_REASONING_EFFORT: z
+      .enum(["low", "medium", "high", "default"])
+      .default("low"),
+
+    // ── Structured output ────────────────────────────────────────────────────
+    // "on"  → JSON-producing calls use the provider's native JSON mode
+    //         (Ollama response_format=json_object / Gemini responseMimeType),
+    //         which makes malformed JSON — and the repair call it costs —
+    //         effectively impossible.
+    // "off" → prompt-level JSON only; the local parser + repair pass handles it.
+    LLM_JSON_MODE: z.enum(["on", "off"]).default("on"),
+
+    // Allow ONE model-driven repair call when local parsing/validation fails.
+    // Set to "off" to never spend a second call (the pipeline retries instead).
+    LLM_JSON_REPAIR: z.enum(["on", "off"]).default("on"),
+
+    // Multiplier applied to every pipeline step timeout. Local/large Ollama
+    // models are far slower than Gemini, so the default scales automatically —
+    // set this only to override.
+    LLM_TIMEOUT_SCALE: z.coerce.number().positive().optional(),
+
     // ── Ports & URLs (single source of truth) ────────────────────────────────
     // To change the API port: update PORT in the root .env file.
     // To change the frontend origin: update FRONTEND_URL in the root .env file.

@@ -4,8 +4,9 @@ import type { IUserPersonaDocument } from "../models/UserPersona";
 import type { TrendResult } from "./trendResearch";
 import type { IGenerateContextOptions, ISchedulingHint, ISeriesTag } from "@repo/shared-types";
 import type { TrendResearchResult } from "./trendResearch";
-import { getModel } from "../llm/provider";
-import { parseLLMJson } from "../llm/structured";
+import { getJsonModel } from "../llm/provider";
+import { generateAgentJSON, JSON_OUTPUT_RULE } from "../llm/structured";
+import { GENERATION, PIPELINE } from "../config/constants";
 import { getPlatformConfig } from "../config/platforms";
 import type { IContentSeries } from "../services/contentContinuity";
 
@@ -58,14 +59,217 @@ export const ContentIdeasSchema = z.object({
   ideas: z.array(SuggestionSchema).min(5).max(20),
 });
 
+/**
+ * Validation schema used at PARSE time.
+ *
+ * The strict bounds above describe what we ASK the model for. Enforcing them
+ * during validation is what made generation brittle: one six-item `seoKeywords`
+ * array, or four ideas instead of five, threw away an otherwise perfect batch
+ * and cost a full regeneration (and, on a slow model, the step timeout).
+ *
+ * So parsing only insists on what cannot be reconstructed — `normalizeIdeas()`
+ * repairs everything else locally, for free, before validation runs.
+ */
+const LenientSuggestionSchema = SuggestionSchema.extend({
+  seoKeywords: z.array(z.string()).min(1).max(8),
+  clickbaitHooks: z.array(z.string()).min(1).max(8),
+  postPointers: z.array(z.string()).min(2).max(12),
+});
+
+const LenientIdeasSchema = z.object({
+  ideas: z.array(LenientSuggestionSchema).min(1),
+});
+
 export type ContentIdeas = z.infer<typeof ContentIdeasSchema>;
+
+// ── Local normalisation (runs before validation, costs no model call) ────────
+
+/** Alternative key names models reach for instead of the documented ones. */
+const FIELD_ALIASES: Record<string, string> = {
+  title: "topic",
+  subject: "topic",
+  perspective: "angle",
+  post_format: "format",
+  postFormat: "format",
+  opening: "hook",
+  headline: "hook",
+  why_it_fits: "whyItFits",
+  why: "whyItFits",
+  seo_keywords: "seoKeywords",
+  keywords: "seoKeywords",
+  hashtags: "seoKeywords",
+  clickbait_hooks: "clickbaitHooks",
+  alternative_hooks: "clickbaitHooks",
+  altHooks: "clickbaitHooks",
+  post_pointers: "postPointers",
+  pointers: "postPointers",
+  outline: "postPointers",
+  bullet_points: "postPointers",
+  call_to_action: "callToAction",
+  cta: "callToAction",
+};
+
+const FORMAT_ALIASES: Record<string, string> = {
+  text: "text-post",
+  textpost: "text-post",
+  post: "text-post",
+  article: "text-post",
+  story: "text-post",
+  video: "video-script",
+  videoscript: "video-script",
+  reel: "video-script",
+  slides: "carousel",
+  deck: "carousel",
+  survey: "poll",
+  listicle: "list",
+  quotetweet: "quote-tweet",
+  imagetweet: "image-tweet",
+};
+
+const VALID_FORMATS = new Set([
+  "carousel",
+  "text-post",
+  "poll",
+  "video-script",
+  "list",
+  "tweet",
+  "thread",
+  "quote-tweet",
+  "image-tweet",
+]);
+
+/**
+ * Coerces "almost right" model output into the shape the schema expects:
+ * unwraps the ideas array whatever it was called, renames aliased/snake_case
+ * keys, repairs enum values, turns stringified lists back into arrays, and trims
+ * over-long arrays. Every fix here is one avoided regeneration.
+ */
+export function normalizeIdeas(value: unknown): unknown {
+  const ideas = findIdeasArray(value);
+  if (!ideas) return value;
+
+  const normalized = ideas
+    .map((raw) => normalizeIdea(raw))
+    .filter((idea): idea is Record<string, unknown> => idea !== null);
+
+  return { ideas: normalized };
+}
+
+/** Locates the ideas array however the model chose to wrap (or not wrap) it. */
+function findIdeasArray(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "object" || value === null) return null;
+
+  const obj = value as Record<string, unknown>;
+  const keys = ["ideas", "suggestions", "posts", "content_ideas", "contentIdeas", "results", "data"];
+  for (const key of keys) {
+    if (Array.isArray(obj[key])) return obj[key] as unknown[];
+  }
+
+  // Single-key wrapper with an array inside, e.g. { "linkedin_posts": [...] }.
+  const values = Object.values(obj);
+  if (values.length === 1 && Array.isArray(values[0])) return values[0];
+
+  // A lone idea object returned without the wrapper.
+  if ("topic" in obj || "title" in obj) return [obj];
+
+  return null;
+}
+
+function normalizeIdea(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== "object" || raw === null) return null;
+
+  const idea: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    idea[FIELD_ALIASES[key] ?? key] = val;
+  }
+
+  // Without a topic there is nothing to render — drop the item rather than
+  // failing the whole batch.
+  if (typeof idea.topic !== "string" || !idea.topic.trim()) return null;
+
+  idea.angle = asText(idea.angle) || idea.topic;
+  idea.hook = asText(idea.hook).slice(0, GENERATION.HOOK_MAX_CHARS) || idea.topic;
+  idea.whyItFits = asText(idea.whyItFits) || "Matches the creator's focus areas.";
+  idea.callToAction = asText(idea.callToAction) || "What's your take? Drop a comment.";
+
+  // Enums — models improvise here constantly.
+  const format = asText(idea.format).toLowerCase().replace(/[\s_]+/g, "-");
+  idea.format = VALID_FORMATS.has(format)
+    ? format
+    : (FORMAT_ALIASES[format.replace(/-/g, "")] ?? "text-post");
+
+  const platform = asText(idea.platform).toLowerCase();
+  idea.platform =
+    platform === "twitter" || platform === "x" ? "twitter" : "linkedin";
+
+  idea.seoKeywords = asStringArray(idea.seoKeywords, 8);
+  if ((idea.seoKeywords as string[]).length === 0) {
+    idea.seoKeywords = deriveHashtags(idea.topic as string);
+  }
+
+  idea.clickbaitHooks = asStringArray(idea.clickbaitHooks, 8);
+  if ((idea.clickbaitHooks as string[]).length === 0) {
+    idea.clickbaitHooks = [idea.hook as string];
+  }
+
+  idea.postPointers = asStringArray(idea.postPointers, 12);
+  if ((idea.postPointers as string[]).length < 2) {
+    return null; // an outline this thin isn't usable — drop the idea
+  }
+
+  return idea;
+}
+
+function asText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) return value.map(asText).filter(Boolean).join(" ");
+  return "";
+}
+
+/** Accepts an array, a newline/bullet list, or a comma-separated string. */
+function asStringArray(value: unknown, max: number): string[] {
+  let items: string[];
+
+  if (Array.isArray(value)) {
+    items = value.map(asText);
+  } else if (typeof value === "string") {
+    const text = value.trim();
+    items = /[\n•]|^\s*[-*]/m.test(text)
+      ? text.split(/\n+|•/)
+      : text.split(/,(?![^(]*\))/);
+  } else {
+    items = [];
+  }
+
+  return items
+    .map((item) => item.replace(/^\s*[-*\d.)\s]+/, "").trim())
+    .filter(Boolean)
+    .slice(0, max);
+}
+
+function deriveHashtags(topic: string): string[] {
+  const words = topic
+    .split(/\s+/)
+    .map((w) => w.replace(/[^A-Za-z0-9]/g, ""))
+    .filter((w) => w.length >= 3)
+    .slice(0, 3);
+  return words.length
+    ? words.map((w) => `#${w.charAt(0).toUpperCase()}${w.slice(1)}`)
+    : ["#LinkedIn"];
+}
 
 // ── Agent ─────────────────────────────────────────────────────────────────────
 
 export const contentGeneratorAgent = new Agent({
   id: "content-generator",
   name: "content-generator",
-  model: getModel(),
+  // Resolved per call (not at module load) so the JSON-mode kill-switch in
+  // llm/provider.ts also applies to agent calls.
+  model: () => getJsonModel(),
   instructions: `You are an expert LinkedIn ghostwriter and content strategist.
 
 You will receive a user persona AND a list of trending topics. Your job is to generate
@@ -118,7 +322,9 @@ Return ONLY a valid JSON object (no markdown, no extra text):
       "callToAction": "What's the worst microservices decision you've seen? Drop it below."
     }
   ]
-}`,
+}
+
+${JSON_OUTPUT_RULE}`,
 });
 
 // ── Feedback signals section (#19, Phase 3 #14 + #17) ───────────────────────
@@ -405,8 +611,21 @@ export async function generateContentIdeas(input: {
   contentSeries?: IContentSeries[];
   /** Audience resonance signals (Phase 4 #48) */
   audienceSignals?: string;
+  /** Cancels the in-flight model call when the pipeline step times out. */
+  abortSignal?: AbortSignal;
+  /** Epoch ms the step budget runs out — retries are skipped past this point. */
+  deadline?: number;
 }): Promise<ContentGenerationResult> {
-  const { persona, trends, context, platforms, schedulingHint, contentSeries, audienceSignals } = input;
+  const {
+    persona,
+    trends,
+    context,
+    platforms,
+    schedulingHint,
+    contentSeries,
+    audienceSignals,
+    abortSignal,
+  } = input;
 
   const trendsList = trends.trends.length
     ? trends.trends
@@ -493,7 +712,14 @@ Return ONLY the JSON object with the ideas array.`;
   // ── LLM call with granular retry (#16) ──────────────────────────────────────
   // Retry only the LLM call (not the whole pipeline). On retry, simplify the
   // prompt to reduce token count and improve parsing reliability.
-  const MAX_ATTEMPTS = 2;
+  //
+  // A retry is the most expensive recovery available (a whole extra generation),
+  // so it now runs LAST and only when the step budget can still absorb it — the
+  // transport-level JSON mode, the local repair pass and `normalizeIdeas()` all
+  // get a chance to save the response first.
+  const MAX_ATTEMPTS = PIPELINE.MAX_RETRY_ATTEMPTS;
+  const deadline =
+    input.deadline ?? Date.now() + PIPELINE.STEP_TIMEOUTS.content;
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -501,19 +727,25 @@ Return ONLY the JSON object with the ideas array.`;
       attempt === 1 ? prompt : buildSimplifiedPrompt(persona, trends);
 
     try {
-      const result = await contentGeneratorAgent.generate(promptToUse);
-      const ideas = await parseLLMJson(
-        result.text ?? "",
-        ContentIdeasSchema,
-        `content generator (attempt ${attempt})`,
+      const { data: ideas, usage } = await generateAgentJSON(
+        contentGeneratorAgent,
+        promptToUse,
+        LenientIdeasSchema,
+        {
+          context: `content generator (attempt ${attempt})`,
+          normalize: normalizeIdeas,
+          // The repair call is only worth its latency while budget remains.
+          allowRepair: remainingMs(deadline) > PIPELINE.MIN_RETRY_BUDGET_MS,
+          ...(abortSignal ? { abortSignal } : {}),
+        },
       );
 
       // ── Post-parse minimum count check (#5) ────────────────────────────────
-      // ContentIdeasSchema requires min(5) via Zod, but guard against edge cases
-      // where only a few ideas survive individual field validation.
-      if (ideas.ideas.length < 3) {
+      // Validation accepts any non-empty batch so a thin-but-valid response is
+      // never sent to the repair model; too few ideas is a retry, not a repair.
+      if (ideas.ideas.length < GENERATION.MIN_VALID_IDEAS) {
         throw new Error(
-          `Only ${ideas.ideas.length} valid ideas generated — expected at least 3. Retrying.`,
+          `Only ${ideas.ideas.length} valid ideas generated — expected at least ${GENERATION.MIN_VALID_IDEAS}. Retrying.`,
         );
       }
 
@@ -537,26 +769,36 @@ Return ONLY the JSON object with the ideas array.`;
       // ── Post-process: attach scheduling hints + series tags (#31, #34) ────
       const enrichedIdeas = postProcessIdeas(ideas, schedulingHint, contentSeries);
 
-      return {
-        ideas: enrichedIdeas,
-        usage: {
-          inputTokens: result.usage?.inputTokens ?? 0,
-          outputTokens: result.usage?.outputTokens ?? 0,
-        },
-      };
+      return { ideas: enrichedIdeas, usage };
     } catch (err) {
       lastError = err;
       console.warn(
         `[contentGenerator] Attempt ${attempt} failed:`,
         (err as Error).message,
       );
+
+      // The pipeline gave up on this step — a retry can only make it later.
+      if (abortSignal?.aborted) break;
+
       if (attempt < MAX_ATTEMPTS) {
+        const budget = remainingMs(deadline);
+        if (budget < PIPELINE.MIN_RETRY_BUDGET_MS) {
+          console.warn(
+            `[contentGenerator] Skipping retry — only ${budget}ms of the step budget left.`,
+          );
+          break;
+        }
         console.log("[contentGenerator] Retrying with simplified prompt...");
       }
     }
   }
 
   throw lastError;
+}
+
+/** Milliseconds left before the step budget expires. */
+function remainingMs(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
 }
 
 // ── Post-process: attach scheduling hints + series tags (#31, #34) ────────────

@@ -5,6 +5,8 @@
  * source of truth. Grouped by domain.
  */
 
+import { env } from "./env";
+
 // ── Scoring (trend relevance scoring in trendResearch.ts) ────────────────────
 
 export const SCORING = {
@@ -51,13 +53,30 @@ export const LEARNING = {
 
 // ── Pipeline (orchestrator timeouts & retries in mastra.ts) ──────────────────
 
+// Self-hosted / large open models (gpt-oss:120b and friends) are several times
+// slower than a hosted flash model — especially when they emit a reasoning
+// channel before the answer. Scale every step budget by provider so a slow model
+// runs to completion instead of tripping the timeout mid-answer.
+// Override with LLM_TIMEOUT_SCALE when your deployment is faster/slower.
+const TIMEOUT_SCALE =
+  env.LLM_TIMEOUT_SCALE ?? (env.MODEL_PROVIDER === "ollama" ? 3 : 1);
+
+const scaled = (ms: number) => Math.round(ms * TIMEOUT_SCALE);
+
 export const PIPELINE = {
   STEP_TIMEOUTS: {
-    persona: 30_000,
-    trends: 15_000,
-    content: 45_000,
-    overall: 90_000,
+    persona: scaled(30_000),
+    // Trend research is mostly HTTP fetches — only the enrichment call is LLM.
+    trends: scaled(15_000),
+    content: scaled(45_000),
+    overall: scaled(90_000),
   },
+  /**
+   * A retry is only worth starting if this much of the step budget is left.
+   * Prevents the "retry, then time out anyway" pattern that wasted a full
+   * model call on every slow generation.
+   */
+  MIN_RETRY_BUDGET_MS: scaled(20_000),
   MAX_RETRY_ATTEMPTS: 2,
   CIRCUIT_BREAKER: {
     failureThreshold: 5,

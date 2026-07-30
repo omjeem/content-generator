@@ -18,8 +18,7 @@
  */
 
 import { z } from "zod";
-import { generateText } from "ai";
-import { getModel } from "../llm/provider";
+import { generateJSON } from "../llm/structured";
 import { parseLLMJson } from "../llm/structured";
 import {
   SuggestionFeedback,
@@ -88,17 +87,14 @@ Analyze this feedback and return ONLY a valid JSON object:
   "specificNotes": "1-2 sentence summary of the user's key point (or null if nothing specific)"
 }`;
 
-    const { text } = await generateText({
-      model: getModel(),
+    // Native JSON mode + local repair. This runs fire-and-forget in the
+    // background, so a repair call here would only delay nothing visible —
+    // but it is still capped at one by generateJSON.
+    const { data: signals } = await generateJSON({
+      schema: FeedbackSignalsSchema,
       prompt,
+      context: "feedback signal parsing",
     });
-
-    // Extract + validate JSON, with model-driven repair on malformed output.
-    const signals = await parseLLMJson(
-      text,
-      FeedbackSignalsSchema,
-      "feedback signal parsing",
-    );
 
     // Persist parsed signals on the feedback document
     await SuggestionFeedback.updateOne(

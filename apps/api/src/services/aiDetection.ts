@@ -9,8 +9,7 @@
  */
 
 import { z } from "zod";
-import { generateText } from "ai";
-import { getModel } from "../llm/provider";
+import { generateJSON } from "../llm/structured";
 import { parseLLMJson } from "../llm/structured";
 import type { IUserPersonaDocument } from "../models/UserPersona";
 import { buildPersonaSummary } from "../agents/contentGenerator";
@@ -67,16 +66,21 @@ Rules for verdict:
 TEXT TO ANALYZE:
 ${content}`;
 
-  const { text, usage: genUsage } = await generateText({
-    model: getModel(),
-    prompt,
-  });
-
-  // Phase 4 #8: Wrap parse with try/catch — return heuristic fallback on failure.
-  // parseLLMJson adds a model-driven JSON repair pass before giving up.
+  // Phase 4 #8: Wrap in try/catch — return heuristic fallback on failure.
+  // generateJSON runs the call in native JSON mode and repairs locally first.
   let result: AiCheckResult;
+  let usage = { inputTokens: 0, outputTokens: 0 };
+
   try {
-    result = await parseLLMJson(text, AiCheckResultSchema, "ai detection");
+    const generated = await generateJSON({
+      schema: AiCheckResultSchema,
+      prompt,
+      context: "ai detection",
+      onUsage: (u) => {
+        usage = u;
+      },
+    });
+    result = generated.data;
   } catch (parseErr) {
     console.error("[aiDetection] Parse failed, returning fallback:", parseErr);
     result = {
@@ -87,13 +91,7 @@ ${content}`;
     };
   }
 
-  return {
-    result,
-    usage: {
-      inputTokens: genUsage?.inputTokens ?? 0,
-      outputTokens: genUsage?.outputTokens ?? 0,
-    },
-  };
+  return { result, usage };
 }
 
 // ── Humanization (#38) ──────────────────────────────────────────────────────
@@ -145,20 +143,13 @@ Return ONLY valid JSON (no markdown, no extra text):
   "estimatedScore": <estimated AI detection score after humanization, 0-100>
 }`;
 
-  const { text, usage: genUsage } = await generateText({
-    model: getModel(),
-    prompt,
-  });
-
   try {
-    const result = await parseLLMJson(text, HumanizeResultSchema, "humanizer");
-    return {
-      result,
-      usage: {
-        inputTokens: genUsage?.inputTokens ?? 0,
-        outputTokens: genUsage?.outputTokens ?? 0,
-      },
-    };
+    const { data: result, usage } = await generateJSON({
+      schema: HumanizeResultSchema,
+      prompt,
+      context: "humanizer",
+    });
+    return { result, usage };
   } catch (parseErr) {
     console.error("[humanizer] Parse failed:", parseErr);
     throw new Error("Humanization failed — AI response was malformed. Please try again.");

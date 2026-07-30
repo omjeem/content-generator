@@ -22,7 +22,7 @@ import { PostDraft } from "../models/PostDraft";
 import mongoose from "mongoose";
 import { generateText } from "ai";
 import { getModel, getModelId } from "../llm/provider";
-import { parseLLMJson } from "../llm/structured";
+import { generateJSON } from "../llm/structured";
 import { sanitizeMessage } from "../utils/sanitizeInput";
 import { generationLimiter, chatLimiter } from "../middleware/rateLimit";
 import type { ISuggestion } from "@repo/shared-types";
@@ -519,23 +519,22 @@ Return ONLY valid JSON (no markdown):
   ]
 }`;
 
-      const { text, usage: genUsage } = await generateText({
-        model: getModel(),
+      // Native JSON mode + local repair, one repair call at most.
+      const { data: raw } = await generateJSON({
+        schema: TopicIdeasSchema,
         prompt,
+        context: "topic-ideas",
+        // Bill tokens even if parsing ultimately fails.
+        onUsage: (usage) =>
+          trackTokenUsage({
+            userId: req.userId!,
+            agent: "content-generator",
+            operation: "content_generation",
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            totalTokens: usage.inputTokens + usage.outputTokens,
+          }),
       });
-
-      // Track token usage — fire-and-forget
-      trackTokenUsage({
-        userId: req.userId!,
-        agent: "content-generator",
-        operation: "content_generation",
-        inputTokens: genUsage?.inputTokens ?? 0,
-        outputTokens: genUsage?.outputTokens ?? 0,
-        totalTokens: (genUsage?.inputTokens ?? 0) + (genUsage?.outputTokens ?? 0),
-      });
-
-      // Parse response (with model-driven JSON repair on malformed output)
-      const raw = await parseLLMJson(text, TopicIdeasSchema, "topic-ideas");
       const topics: TopicDiscoveryItem[] = raw.topics.map((t) => ({
         ...t,
         id: generateTopicId(t.title),

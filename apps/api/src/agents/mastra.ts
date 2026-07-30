@@ -30,18 +30,28 @@ import type { ISuggestion, IGenerateContextOptions } from "@repo/shared-types";
 
 // ── Pipeline utilities (#12, #13) ────────────────────────────────────────────
 
-/** Wraps a promise with a timeout — rejects with descriptive error on expiry (#12) */
+/**
+ * Wraps a promise with a timeout — rejects with a descriptive error on expiry (#12).
+ *
+ * `run` receives an AbortSignal and a deadline so the step can cancel its
+ * in-flight model call instead of leaving it running (and paying for it) after
+ * the pipeline has already given up, and can skip retries it has no time for.
+ */
 function withTimeout<T>(
-  promise: Promise<T>,
+  run: (ctx: { signal: AbortSignal; deadline: number }) => Promise<T>,
   ms: number,
   label: string,
 ): Promise<T> {
+  const controller = new AbortController();
+  const deadline = Date.now() + ms;
+
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
-    promise.then(
+    const timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+
+    run({ signal: controller.signal, deadline }).then(
       (val) => { clearTimeout(timer); resolve(val); },
       (err) => { clearTimeout(timer); reject(err); },
     );
@@ -159,7 +169,7 @@ export async function runContentPipeline(
       }
 
       const { analysis, usage: personaUsage } = await withTimeout(
-        analyzePersona(posts),
+        () => analyzePersona(posts),
         PIPELINE.STEP_TIMEOUTS.persona,
         "Persona analysis",
       );
@@ -273,7 +283,7 @@ export async function runContentPipeline(
       usage: trendUsage,
       isLive,
     } = await withTimeout(
-      researchTrendsForUser({
+      () => researchTrendsForUser({
         industry: persona.industry ?? "business",
         topics: persona.topics.length ? persona.topics : persona.contentPillars,
         contentPillars: persona.contentPillars, // for balanced selection (#15)
@@ -340,15 +350,19 @@ export async function runContentPipeline(
     console.log("[pipeline] Step 4: Generating content ideas...");
     const llmStart = Date.now();
     const genResult = await withTimeout(
-      generateContentIdeas({
-        persona,
-        trends,
-        context: input.context,
-        platforms: input.platforms,
-        schedulingHint,
-        contentSeries,
-        audienceSignals,
-      }),
+      ({ signal, deadline }) =>
+        generateContentIdeas({
+          persona,
+          trends,
+          context: input.context,
+          platforms: input.platforms,
+          schedulingHint,
+          contentSeries,
+          audienceSignals,
+          // Cancel the model call on expiry and skip retries we cannot afford.
+          abortSignal: signal,
+          deadline,
+        }),
       PIPELINE.STEP_TIMEOUTS.content,
       "Content generation",
     );
@@ -462,7 +476,7 @@ export async function runContentPipelineWithRetry(
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         // Overall pipeline timeout (#12)
         lastResult = await withTimeout(
-          runContentPipeline(input),
+          () => runContentPipeline(input),
           PIPELINE.STEP_TIMEOUTS.overall,
           "Overall pipeline",
         );

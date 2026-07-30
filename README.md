@@ -134,6 +134,7 @@ GEMINI_MODEL=gemini-2.5-flash
 # OLLAMA_API_KEY=your_ollama_cloud_key
 # OLLAMA_BASE_URL=https://ollama.com/v1
 # OLLAMA_MODEL=gpt-oss:120b
+# OLLAMA_REASONING_EFFORT=low
 
 # Optional (improves trend quality)
 TAVILY_API_KEY=your_tavily_key
@@ -155,11 +156,26 @@ To switch providers, change `MODEL_PROVIDER` in `.env` and restart:
 | `gemini` | `GEMINI_API_KEY` | `GEMINI_MODEL` | Default. Uses `@ai-sdk/google`. |
 | `ollama` | `OLLAMA_API_KEY` | `OLLAMA_MODEL` | Ollama Cloud via its OpenAI-compatible API (`OLLAMA_BASE_URL`, default `https://ollama.com/v1`). For a self-hosted server set `OLLAMA_BASE_URL=http://localhost:11434/v1` — no key required. |
 
-Because some models don't support native structured output, JSON is requested at
-the prompt level and validated centrally
-([apps/api/src/llm/structured.ts](apps/api/src/llm/structured.ts)). If a model
-returns malformed JSON, the helper makes one automatic "repair" call to coerce
-it into valid JSON before falling back — so any provider works without code changes.
+### How structured (JSON) output is enforced
+
+No agent hands a response schema to the SDK — models without schema-constrained
+decoding fail unpredictably when you do. Structure is enforced in four layers,
+ordered cheapest-first, so extra model calls are the last resort
+([apps/api/src/llm/structured.ts](apps/api/src/llm/structured.ts)):
+
+| Layer | Mechanism | Cost |
+|-------|-----------|------|
+| 1. Transport | Provider-native JSON mode — Ollama `response_format: json_object`, Gemini `responseMimeType`. Applied to every JSON call by the provider factory, not per call site. | Free |
+| 2. Prompt | Every JSON agent appends the shared `JSON_OUTPUT_RULE`. | Free |
+| 3. Local | `extractJSON()` strips fences/reasoning channels, unwraps double-encoded JSON, repairs syntax (trailing commas, single quotes, unquoted keys, raw newlines) and salvages truncated output. A per-agent `normalize` hook then coerces near-misses — aliased/snake_case keys, stringified lists, invalid enums — before Zod validation. | Free |
+| 4. Repair | At most ONE schema-free repair call, and only if the step's time budget allows. | 1 call |
+
+A retry (full regeneration) only happens after all four fail. Conversational
+agents — onboarding, persona chat, post editor — use the plain text model, since
+their replies are prose.
+
+Set `LLM_JSON_MODE=off` if a model or endpoint rejects the JSON-mode flag; the
+app also disables it automatically for the process on the first such rejection.
 
 **Generate a JWT secret:**
 ```bash
@@ -335,6 +351,10 @@ Interactive Swagger UI available at `http://localhost:5006/api/docs` when the AP
 | `OLLAMA_API_KEY` | If `ollama` (cloud) | Ollama Cloud API key ([get one](https://ollama.com/settings/keys)). Not needed for a local server. |
 | `OLLAMA_BASE_URL` | No | Ollama OpenAI-compatible endpoint (default: `https://ollama.com/v1`) |
 | `OLLAMA_MODEL` | No | Ollama model name (default: `gpt-oss:120b`) |
+| `OLLAMA_REASONING_EFFORT` | No | Reasoning budget for reasoning models: `low` (default), `medium`, `high`, or `default` to send nothing. `low` cuts latency sharply on gpt-oss-class models. |
+| `LLM_JSON_MODE` | No | `on` (default) uses the provider's native JSON mode for JSON calls; `off` falls back to prompt-level JSON + local repair |
+| `LLM_JSON_REPAIR` | No | `on` (default) allows one model repair call when local parsing fails; `off` never spends a second call |
+| `LLM_TIMEOUT_SCALE` | No | Multiplier on pipeline step timeouts (default: 3 for `ollama`, 1 for `gemini`) |
 | `TAVILY_API_KEY` | No | Tavily API key for premium trend search ([get free](https://tavily.com)) |
 | `PORT` | No | API port (default: 5006) |
 | `FRONTEND_URL` | No | Frontend origin for CORS (default: http://localhost:3000) |
