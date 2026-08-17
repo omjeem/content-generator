@@ -38,7 +38,7 @@ export function middleware(request: NextRequest, event: NextFetchEvent) {
   if (source) {
     const trackingUrl = new URL(EXTERNAL_TRACK_URL);
     trackingUrl.searchParams.set("source", source);
-    trackingUrl.searchParams.set("domain", request.nextUrl.hostname);
+    trackingUrl.searchParams.set("domain", "PostMindAi");
     event.waitUntil(fetch(trackingUrl.toString()).catch(() => {}));
 
     const cleanUrl = request.nextUrl.clone();
