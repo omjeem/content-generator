@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
+
+const EXTERNAL_TRACK_URL = "https://ommishra.tech/api/track/external";
 
 // Protected routes that require authentication (any logged-in user)
 const protectedRoutes = ["/dashboard", "/onboarding"];
@@ -27,9 +29,22 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-export function middleware(request: NextRequest) {
+export function middleware(request: NextRequest, event: NextFetchEvent) {
   const token = request.cookies.get("token")?.value;
   const { pathname } = request.nextUrl;
+
+  // ── External source tracking — fire-and-forget ping, then strip from URL ──
+  const source = request.nextUrl.searchParams.get("source");
+  if (source) {
+    const trackingUrl = new URL(EXTERNAL_TRACK_URL);
+    trackingUrl.searchParams.set("source", source);
+    trackingUrl.searchParams.set("domain", request.nextUrl.hostname);
+    event.waitUntil(fetch(trackingUrl.toString()).catch(() => {}));
+
+    const cleanUrl = request.nextUrl.clone();
+    cleanUrl.searchParams.delete("source");
+    return NextResponse.redirect(cleanUrl);
+  }
 
   // ── Admin setup — any authenticated user can access (admin can't log in yet) ──
   // /admin/setup is the one-time setup page accessible before the admin role is set.
